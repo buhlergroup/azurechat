@@ -1,8 +1,9 @@
 "use client"
 import {ApplicationInsights, ITelemetryItem} from '@microsoft/applicationinsights-web';
 import {ReactPlugin} from '@microsoft/applicationinsights-react-js';
+import { SessionContextValue } from 'next-auth/react';
 
-function initializeTelemetry(instrumentationKey: string): { reactPlugin: ReactPlugin, appInsights: ApplicationInsights } {
+function initializeTelemetry(instrumentationKey: string, session: SessionContextValue): { reactPlugin: ReactPlugin, appInsights: ApplicationInsights } {
 
   const defaultBrowserHistory = {
     url: "/",
@@ -40,6 +41,8 @@ function initializeTelemetry(instrumentationKey: string): { reactPlugin: ReactPl
   appInsights.addTelemetryInitializer((env:ITelemetryItem) => {
       env.tags = env.tags || [];
       env.tags["ai.cloud.role"] = "Bühler ChatGPT";
+      env.data = env.data || [];
+      env.data["email"] = session?.data?.user?.email;
   });
 
   return { reactPlugin, appInsights };

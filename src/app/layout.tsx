@@ -28,25 +28,25 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full overflow-hidden">
       <body className={cn(inter.className, "flex w-full h-full")}>
-        <ApplicationInsightsProvider instrumentationKey={instrumentationKey}>
           <GlobalConfigProvider
             config={{ speechEnabled: process.env.PUBLIC_SPEECH_ENABLED }}
           >
             <Providers>
-              <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-                <div
-                  className={cn(
-                    inter.className,
-                    "flex w-full p-2 h-full gap-2 bg-primary"
-                  )}
-                >
-                  {children}
-                </div>
-                <Toaster />
-              </ThemeProvider>
+              <ApplicationInsightsProvider instrumentationKey={instrumentationKey}>
+                <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+                  <div
+                    className={cn(
+                      inter.className,
+                      "flex w-full p-2 h-full gap-2 bg-primary"
+                    )}
+                  >
+                    {children}
+                  </div>
+                  <Toaster />
+                </ThemeProvider>
+              </ApplicationInsightsProvider>
             </Providers>
           </GlobalConfigProvider>
-        </ApplicationInsightsProvider>
       </body>
     </html>
   );
