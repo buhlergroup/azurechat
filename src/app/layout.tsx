@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import ApplicationInsightsProvider from "./application-insights-provider";
+import { unstable_noStore as noStore } from 'next/cache'
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +23,12 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  noStore()
+  const instrumentationKey = process.env.APPINSIGHTS_INSTRUMENTATIONKEY || "";
   return (
     <html lang="en" className="h-full overflow-hidden">
       <body className={cn(inter.className, "flex w-full h-full")}>
-        <ApplicationInsightsProvider>
+        <ApplicationInsightsProvider instrumentationKey={instrumentationKey}>
           <GlobalConfigProvider
             config={{ speechEnabled: process.env.PUBLIC_SPEECH_ENABLED }}
           >

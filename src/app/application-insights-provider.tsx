@@ -2,14 +2,17 @@
 
 import { AppInsightsContext } from '@microsoft/applicationinsights-react-js'
 import { createContext } from 'react'
-import { reactPlugin } from './application-insights-service'
+import { initializeTelemetry } from './application-insights-service'
 
 export const ApplicationInsightsContext = createContext({})
 
 export default function ApplicationInsightsProvider({
-    children,
+  instrumentationKey,  
+  children,
 }: {
+    instrumentationKey: string,
     children: React.ReactNode
 }) {
+  const { reactPlugin } = initializeTelemetry(instrumentationKey)
   return <AppInsightsContext.Provider value={reactPlugin}>{children}</AppInsightsContext.Provider>
 }
