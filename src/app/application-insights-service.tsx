@@ -3,6 +3,8 @@ import {ApplicationInsights, ITelemetryItem} from '@microsoft/applicationinsight
 import {ReactPlugin} from '@microsoft/applicationinsights-react-js';
 import { SessionContextValue } from 'next-auth/react';
 
+let logger: ApplicationInsights;
+
 function initializeTelemetry(instrumentationKey: string, session: SessionContextValue): { reactPlugin: ReactPlugin, appInsights: ApplicationInsights } {
 
   const defaultBrowserHistory = {
@@ -45,7 +47,9 @@ function initializeTelemetry(instrumentationKey: string, session: SessionContext
       env.data["email"] = session?.data?.user?.email;
   });
 
+  logger = appInsights;
+
   return { reactPlugin, appInsights };
 }
 
-export { initializeTelemetry };
+export { initializeTelemetry, logger };
