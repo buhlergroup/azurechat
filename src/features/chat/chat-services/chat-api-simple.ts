@@ -45,7 +45,7 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
 
   try {
     const model = <TiktokenModel>process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME
-    const enc = encodingForModel(model);  // js-tiktoken
+    const enc = encodingForModel("gpt-4");  // js-tiktoken
 
     let promptTokens = 45; // static system prompt
 
