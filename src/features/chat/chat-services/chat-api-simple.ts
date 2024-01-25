@@ -6,7 +6,7 @@ import { initAndGuardChatSession } from "./chat-thread-service";
 import { CosmosDBChatMessageHistory } from "./cosmosdb/cosmosdb";
 import { PromptGPTProps } from "./models";
 import { encodingForModel, TiktokenModel} from "js-tiktoken"
-import { logger } from "@/app/application-insights-service";
+import { metrics } from "@opentelemetry/api";
 import { getServerSession } from "next-auth";
 
 export const ChatAPISimple = async (props: PromptGPTProps) => {
@@ -17,6 +17,18 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
   const openAI = OpenAIInstance();
 
   const userId = await userHashedId();
+
+  const meter = metrics.getMeter("chat");
+
+  const promptTokensUsed = meter.createHistogram("promptTokensUsed", {
+    description: "Number of tokens used in the input prompt",
+    unit: "tokens",
+  });
+
+  const completionsTokensUsed = meter.createHistogram("completionsTokensUsed", {
+    description: "Number of tokens used in the completions",
+    unit: "tokens",
+  });
 
   const chatHistory = new CosmosDBChatMessageHistory({
     sessionId: chatThread.id,
@@ -42,7 +54,7 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
       promptTokens += tokenList.length;
     }
 
-    logger.trackMetric({ name: "promptTokens", average: promptTokens, properties: { "model": model,  "email": session?.user.email }});
+    promptTokensUsed.record(promptTokens, { "model": model, "email": session?.user.email || "unknown" });
 
     const response = await openAI.chat.completions.create({
       messages: [
@@ -71,7 +83,7 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
           role: "assistant",
         });
 
-        logger.trackMetric({ name: "completionTokens", average: promptTokens, properties: { "model": model,  "email": session?.user.email }});
+        completionsTokensUsed.record(completionTokens, { "model": model, "email": session?.user.email || "unknown" });
       },
     });
 
