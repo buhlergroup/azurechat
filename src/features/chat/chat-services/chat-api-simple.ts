@@ -1,4 +1,4 @@
-import { userHashedId } from "@/features/auth/helpers";
+import { userHashedId, userSession } from "@/features/auth/helpers";
 import { OpenAIInstance } from "@/features/common/openai";
 import { AI_NAME } from "@/features/theme/customise";
 import { OpenAIStream, StreamingTextResponse } from "ai";
@@ -6,29 +6,15 @@ import { initAndGuardChatSession } from "./chat-thread-service";
 import { CosmosDBChatMessageHistory } from "./cosmosdb/cosmosdb";
 import { PromptGPTProps } from "./models";
 import { encodingForModel, TiktokenModel} from "js-tiktoken"
-import { metrics } from "@opentelemetry/api";
-import { getServerSession } from "next-auth";
+import { reportCompletionTokens, reportPromptTokens, reportUserChatMessage } from "./chat-metrics-service";
+import { ChatTokenService } from "./chat-token-service";
 
 export const ChatAPISimple = async (props: PromptGPTProps) => {
   const { lastHumanMessage, chatThread } = await initAndGuardChatSession(props);
 
-  const session = await getServerSession();
-
   const openAI = OpenAIInstance();
 
   const userId = await userHashedId();
-
-  const meter = metrics.getMeter("chat");
-
-  const promptTokensUsed = meter.createHistogram("promptTokensUsed", {
-    description: "Number of tokens used in the input prompt",
-    unit: "tokens",
-  });
-
-  const completionsTokensUsed = meter.createHistogram("completionsTokensUsed", {
-    description: "Number of tokens used in the completions",
-    unit: "tokens",
-  });
 
   const chatHistory = new CosmosDBChatMessageHistory({
     sessionId: chatThread.id,
@@ -43,18 +29,14 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
   const history = await chatHistory.getMessages();
   const topHistory = history.slice(history.length - 30, history.length);
 
+  const tokenService = new ChatTokenService();
+
   try {
-    const model = <TiktokenModel>process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME
-    const enc = encodingForModel("gpt-4");  // js-tiktoken
+    const promptTokens = tokenService.getTokenCountFromHistory(topHistory, 45);
 
-    let promptTokens = 45; // static system prompt
+    const model = "gpt-4";
 
-    for (const message of topHistory) {
-      const tokenList = enc.encode(message.content || "");
-      promptTokens += tokenList.length;
-    }
-
-    promptTokensUsed.record(promptTokens, { "model": model, "email": session?.user.email || "unknown" });
+    reportPromptTokens(promptTokens, model);
 
     const response = await openAI.chat.completions.create({
       messages: [
@@ -74,8 +56,7 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
 
     const stream = OpenAIStream(response, {
       async onToken(token) {
-        const tokenList = enc.encode(token);
-        completionTokens += tokenList.length;
+        completionTokens += tokenService.getTokenCount(token);
       },
       async onCompletion(completion) {
         await chatHistory.addMessage({
@@ -83,7 +64,8 @@ export const ChatAPISimple = async (props: PromptGPTProps) => {
           role: "assistant",
         });
 
-        completionsTokensUsed.record(completionTokens, { "model": model, "email": session?.user.email || "unknown" });
+        reportUserChatMessage(model);
+        reportCompletionTokens(completionTokens, model);
       },
     });
 
