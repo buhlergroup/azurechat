@@ -13,7 +13,7 @@
 - Fixed: Improved feedback when attempting to upload files that exceed size limits.
 - Added: Introduced a changelog to track updates.
 
-## [v2.0.0] – 2025-03-19
+## [v2.0.0] – 2024-06-13
 
 - Added: Re-worked UI with a modern Bühler-themed design, including a clean layout and Bühler colors.
 - Added: Sidebar now displays past chats and allows bookmarking important chats.
