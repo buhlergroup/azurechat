@@ -19,7 +19,7 @@ export const ChatHeader: FC<Props> = (props) => {
     props.chatThread.personaMessageTitle === undefined
       ? CHAT_DEFAULT_PERSONA
       : props.chatThread.personaMessageTitle;
-  
+
   return (
     <div className="bg-background border-b flex items-center py-2">
       <div className="container max-w-3xl flex justify-between items-center">
