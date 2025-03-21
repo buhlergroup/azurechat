@@ -9,9 +9,13 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/features/ui/sheet";
-import { VenetianMask } from "lucide-react";
+import { Copy, VenetianMask } from "lucide-react";
 import { FC } from "react";
 import { ChatThreadModel } from "../chat-services/models";
+import { personaStore } from "@/features/persona-page/persona-store";
+import { useRouter } from "next/navigation";
+import { FindChatThreadForCurrentUser } from "../chat-services/chat-thread-service";
+import { showError } from "@/features/globals/global-message-store";
 
 interface Props {
   chatThread: ChatThreadModel;
@@ -20,10 +24,34 @@ interface Props {
 export const PersonaDetail: FC<Props> = (props) => {
   const persona = props.chatThread.personaMessageTitle;
   const personaMessage = props.chatThread.personaMessage;
+  const router = useRouter();
+
+  const handleDublicateCustomize = async () => {
+    const chatThread = await FindChatThreadForCurrentUser(props.chatThread.id);
+    if (chatThread.status !== "OK") {
+      return showError("An error occurred while duplicating the persona.");
+    }
+
+    const dublicatePersona = {
+      name: persona + " Copy",
+      description: "Copy of " + persona,
+      personaMessage: personaMessage,
+      extensionIds: chatThread.response.extension,
+    };
+
+    personaStore.newPersonaAndOpen(dublicatePersona);
+
+    router.push("/persona");
+  };
+
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant={"outline"} size={"icon"} aria-label="Current Chat Persona Menu">
+        <Button
+          variant={"outline"}
+          size={"icon"}
+          aria-label="Current Chat Persona Menu"
+        >
           <VenetianMask size={16} />
         </Button>
       </SheetTrigger>
@@ -45,6 +73,17 @@ export const PersonaDetail: FC<Props> = (props) => {
             </div>
           </div>
         </ScrollArea>
+        <div className="mt-auto pt-4 border-t">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => handleDublicateCustomize()}
+            className="gap-2 w-full"
+          >
+            <Copy size={16} />
+            <p>Duplicate & Customise</p>
+          </Button>
+        </div>
       </SheetContent>
     </Sheet>
   );

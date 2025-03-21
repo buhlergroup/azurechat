@@ -61,12 +61,14 @@ class PersonaState {
     name: string;
     description: string;
     personaMessage: string;
+    extensionIds: string[]
   }) {
     this.persona = {
       ...this.defaultModel,
       name: persona.name,
       description: persona.description,
       personaMessage: persona.personaMessage,
+      extensionIds: persona.extensionIds
     };
     this.isOpened = true;
   }
