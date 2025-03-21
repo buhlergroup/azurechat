@@ -14,13 +14,11 @@ import { FC } from "react";
 import { ChatThreadModel } from "../chat-services/models";
 import { personaStore } from "@/features/persona-page/persona-store";
 import { useRouter } from "next/navigation";
-import { ExtensionModel } from "@/features/extensions-page/extension-services/models";
 import { FindChatThreadForCurrentUser } from "../chat-services/chat-thread-service";
 import { showError } from "@/features/globals/global-message-store";
 
 interface Props {
   chatThread: ChatThreadModel;
-  extensions: ExtensionModel[];
 }
 
 export const PersonaDetail: FC<Props> = (props) => {
