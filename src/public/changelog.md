@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [v2.2.0] – 2025-03-21
+
+- Added: Duplicate and customise personas.
+
 ## [v2.1.0] – 2025-03-19
 
 - Added: Feedback Form
