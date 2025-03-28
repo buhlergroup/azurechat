@@ -1,12 +1,12 @@
 "use server";
 import "server-only";
 
-import { OpenAIInstance } from "@/features/common/services/openai";
+import { OpenAIMiniInstance } from "@/features/common/services/openai";
 
 export const ChatApiText = async (
   userMessage: string
 ) => {
-  const openAI = OpenAIInstance();
+  const openAI = OpenAIMiniInstance();
 
   const response = await openAI.chat.completions.create({
     model: "",
