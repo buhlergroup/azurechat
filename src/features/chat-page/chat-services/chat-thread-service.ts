@@ -365,7 +365,11 @@ export const UpdateChatTitle = async (
                             - do not use quotes or colons
                             USERPROMPT: ${shorterPrompt}`;
 
-      chatThread.name = await ChatApiText(systemPrompt);
+      const name = await ChatApiText(systemPrompt);
+
+      if (name) {
+        chatThread.name = name;
+      }
 
       return await UpsertChatThread(chatThread);
     }
