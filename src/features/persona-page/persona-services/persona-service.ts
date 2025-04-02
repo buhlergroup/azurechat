@@ -27,6 +27,8 @@ interface PersonaInput {
 export const FindPersonaByID = async (
   id: string
 ): Promise<ServerActionResponse<PersonaModel>> => {
+  // ensure persona operation
+
   try {
     const querySpec: SqlQuerySpec = {
       query: "SELECT * FROM root r WHERE r.type=@type AND r.id=@id",
@@ -128,10 +130,13 @@ export const CreatePersona = async (
   }
 };
 
+// Persona access check
+
 export const EnsurePersonaOperation = async (
   personaId: string
 ): Promise<ServerActionResponse<PersonaModel>> => {
   const personaResponse = await FindPersonaByID(personaId);
+  // Persona access check
   const currentUser = await getCurrentUser();
   const hashedId = await userHashedId();
 
@@ -200,7 +205,7 @@ export const UpsertPersona = async (
           ? personaInput.isPublished
           : persona.isPublished,
         createdAt: new Date(),
-        extensionIds: personaInput.extensionIds
+        extensionIds: personaInput.extensionIds,
       };
 
       const validationResponse = ValidateSchema(modelToUpdate);
@@ -248,7 +253,7 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
   try {
     const querySpec: SqlQuerySpec = {
       query:
-        "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId) ORDER BY r.createdAt DESC",
+      "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId) ORDER BY r.createdAt DESC",
       parameters: [
         {
           name: "@type",
@@ -264,6 +269,7 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
         },
       ],
     };
+    // Adjust access with new persona sharing
 
     const { resources } = await HistoryContainer()
       .items.query<PersonaModel>(querySpec)

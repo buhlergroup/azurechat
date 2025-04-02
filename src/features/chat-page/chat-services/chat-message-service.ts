@@ -1,12 +1,13 @@
 "use server";
 import "server-only";
 
-import { userHashedId } from "@/features/auth-page/helpers";
+import { getCurrentUser, userHashedId } from "@/features/auth-page/helpers";
 import { ServerActionResponse } from "@/features/common/server-action-response";
 import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
 import { HistoryContainer } from "../../common/services/cosmos";
 import { ChatMessageModel, ChatRole, MESSAGE_ATTRIBUTE } from "./models";
+import { getGraphClient } from "@/features/common/services/microsoft-graph-client";
 
 export const FindTopChatMessagesForCurrentUser = async (
   chatThreadID: string,
@@ -121,6 +122,27 @@ export const CreateChatMessage = async ({
   multiModalImage?: string;
 }): Promise<ServerActionResponse<ChatMessageModel>> => {
   const userId = await userHashedId();
+  const { token } = await getCurrentUser();
+  const client = getGraphClient(token);
+
+  const batchRequestBody = {
+    requests: [
+      {
+        id: "1",
+        method: "GET",
+        url: "/drives/me/items/012DHJEC76RDK5WX3JJVAYG7UETZW2UZFD?$select=id",
+      },
+    ],
+  };
+
+  const batchResponse = await client.api("/$batch").post(batchRequestBody);
+
+  if (batchResponse && batchResponse.responses) {
+    console.log(batchResponse.responses[0]);
+  } else {
+    console.error("Batch request failed or returned no responses");
+  }
+
   const modelToSave: ChatMessageModel = {
     id: uniqueId(),
     createdAt: new Date(),

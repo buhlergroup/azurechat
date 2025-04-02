@@ -212,6 +212,7 @@ export const EnsureChatThreadOperation = async (
   chatThreadID: string
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   const response = await FindChatThreadForCurrentUser(chatThreadID);
+  // check access to Persona documents
   const currentUser = await getCurrentUser();
   const hashedId = await userHashedId();
 
