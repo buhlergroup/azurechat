@@ -25,6 +25,7 @@ import {
 } from "./persona-store";
 import { ExtensionDetail } from "../chat-page/chat-header/extension-detail";
 import { ExtensionModel } from "../extensions-page/extension-services/models";
+import { PersonaDocuments } from "./persona-documents/persona-documents";
 
 interface Props {
   extensions: Array<ExtensionModel>;
@@ -41,7 +42,7 @@ export const AddNewPersona: FC<Props> = (props) => {
   );
 
   const { data } = useSession();
-  
+
   const PublicSwitch = () => {
     if (data === undefined || data === null) return null;
 
@@ -124,6 +125,7 @@ export const AddNewPersona: FC<Props> = (props) => {
                   parent="persona"
                 />
               </div>
+              <PersonaDocuments/>
             </div>
           </ScrollArea>
           <SheetFooter className="py-2 flex sm:justify-between flex-row">
