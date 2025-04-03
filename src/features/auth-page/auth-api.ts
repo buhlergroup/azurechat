@@ -44,7 +44,7 @@ const configureIdentityProvider = () => {
         clientId: process.env.AZURE_AD_CLIENT_ID,
         clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
         tenantId: process.env.AZURE_AD_TENANT_ID,
-        authorization: { params: { scope: "openid profile User.Read email Files.ReadWrite" } },
+        authorization: { params: { scope: "openid profile User.Read email Files.Read.All Sites.Read.All AllSites.Read MyFiles.Read Group.Read.All" } },
         async profile(profile, tokens) {
           const profilePictureUrl = `https://graph.microsoft.com/v1.0/me/photos/48x48/$value`;
           const profilePicture = await fetch(profilePictureUrl, {

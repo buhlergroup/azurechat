@@ -107,6 +107,9 @@ export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
 };
 
 export const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
+  let accesGroupId = formData.get("accessGroupId") as string;
+  let personaDocumentIds = formData.getAll("personaDocumentIds") as string[];
+
   return {
     id: formData.get("id") as string,
     name: formData.get("name") as string,

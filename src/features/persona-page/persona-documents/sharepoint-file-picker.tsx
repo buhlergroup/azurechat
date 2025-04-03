@@ -3,25 +3,25 @@
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuid } from "uuid";
 import { Button } from "@/features/ui/button";
-import { ExternalLink, XIcon } from "lucide-react";
+import { Edit, ExternalLink, icons, XIcon } from "lucide-react";
 import { toast } from "@/features/ui/use-toast";
-
-export interface PickedFile {
-  id: string;
-  name: string;
-  size: number;
-  webUrl: string;
-  "@microsoft.graph.downloadUrl"?: string;
-  parentReference: {
-    driveId: string;
-  };
-  "@sharePoint.endpoint": string;
-}
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/features/ui/dialog";
+import { SharePointPickedFile } from "../persona-services/models";
+import {
+  SupportedFileExtensionsDocumentIntellicence,
+  SupportedFileExtensionsTextFiles,
+} from "@/features/chat-page/chat-services/models";
 
 interface SharePointFilePickerSelectorProps {
   tenantUrl: string;
   token: string;
-  onFilesSelected: (files: PickedFile[]) => void;
+  onFilesSelected: (files: SharePointPickedFile[]) => void;
 }
 
 export function SharePointFilePicker({
@@ -104,8 +104,11 @@ export function SharePointFilePicker({
                 },
               });
             } catch (error) {
-              // Replace with toast
-              console.error("Authentication error:", error);
+              toast({
+                title: "Error",
+                description: "Unable to open file picker. Please try again.",
+                variant: "destructive",
+              });
               portRef.current?.postMessage({
                 type: "result",
                 id: message.data.id,
@@ -122,16 +125,13 @@ export function SharePointFilePicker({
             break;
 
           case "close":
-            // Close the iframe picker
             setShowPicker(false);
             break;
-            console.log("Picked items:", command.items);
 
           case "pick":
             try {
               onFilesSelected(command.items);
 
-              // Let the picker know the pick command was handled
               portRef.current?.postMessage({
                 type: "result",
                 id: message.data.id,
@@ -185,18 +185,22 @@ export function SharePointFilePicker({
       // https://learn.microsoft.com/en-us/onedrive/developer/controls/file-pickers/v8-schema?view=odsp-graph-online
       const options = {
         sdk: "8.0",
-        entry: {
-          sharepoint: {},
-        },
+        entry: {},
         messaging: {
           origin: window.location.origin,
           channelId: channelIdRef.current,
         },
         search: { enabled: true },
-        authentication: {},
         typesAndSources: {
           mode: "files",
-          filters: [], // TODO: Filter for supported file types
+          filters: [
+            ...Object.values(SupportedFileExtensionsDocumentIntellicence).map(
+              (ext) => `.${ext}`
+            ),
+            ...Object.values(SupportedFileExtensionsTextFiles).map(
+              (ext) => `.${ext}`
+            ),
+          ],
         },
         selection: {
           mode: "multiple", // Allow multiple file selection
@@ -213,7 +217,7 @@ export function SharePointFilePicker({
         locale: "en-us",
       });
 
-      const url = `${tenantUrl}/_layouts/15/FilePicker.aspx?${queryString}`;
+      const url = `${tenantUrl}_layouts/15/FilePicker.aspx?${queryString}`;
 
       // We need to wait for the iframe to be in the DOM
       setTimeout(() => {
@@ -223,7 +227,6 @@ export function SharePointFilePicker({
             iframeRef.current.contentWindow?.document;
 
           if (iframeDoc) {
-            // Create a form to POST to the picker
             const form = iframeDoc.createElement("form");
             form.setAttribute("action", url);
             form.setAttribute("method", "POST");
@@ -254,64 +257,54 @@ export function SharePointFilePicker({
 
   return (
     <div className="relative">
-      <div className="space-y-4">
-        <Button
-          onClick={openFilePicker}
-          disabled={isLoading || !token || showPicker}
-          className="w-full"
-        >
-          {isLoading ? "Opening File Picker..." : "Open OneDrive File Picker"}
-        </Button>
-      </div>
+      <Button
+        size={"icon"}
+        onClick={openFilePicker}
+        className="p-1 cursor-pointer"
+        variant={"ghost"}
+        type="button"
+      >
+        <Edit size={15} />
+      </Button>
 
-      {/* Iframe File Picker Modal */}
-      {showPicker && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="relative bg-white rounded-lg w-[90vw] h-[80vh] max-w-6xl flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div>
-                <h2 className="text-xl font-semibold text-black">
-                  Select Files
-                </h2>
-                <span className="inline-flex items-center gap-2 text-black">
-                  Do not upload documents with a classification higher than B2.
-                  <a
-                    href={process.env.NEXT_PUBLIC_BUHLER_AI_RULES ?? ""}
-                    target="_blank"
-                  >
-                    <Button
-                      variant={"link"}
-                      className="gap-1 p-0 h-auto"
-                      type="button"
-                    >
-                      Bühler AI Policy <ExternalLink size={14} />
-                      {isLoading && ("a")}
-                    </Button>
-                  </a>
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowPicker(false)}
-                aria-label="Close"
-                className="text-black"
+      <Dialog open={showPicker} onOpenChange={setShowPicker}>
+        <DialogContent className="w-[90vw] max-w-[1500px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
+              Select Files
+            </DialogTitle>
+            <DialogDescription className="inline-flex items-center gap-2">
+              Do not upload documents with a classification higher than B2.
+              <a
+                href={process.env.NEXT_PUBLIC_BUHLER_AI_RULES ?? ""}
+                target="_blank"
               >
-                <XIcon className="h-5 w-5" />
-              </Button>
-            </div>
-            <div className="flex-1 relative">
-              <iframe
-                ref={iframeRef}
-                className="absolute inset-0 w-full h-full border-0 rounded-lg"
-                title="OneDrive File Picker"
-                onLoad={() => setIsLoading(false)}
-                onLoadStart={() => setIsLoading(true)}
-              />
-            </div>
+                <Button
+                  variant={"link"}
+                  className="gap-1 p-0 h-auto"
+                  type="button"
+                >
+                  Bühler AI Policy <ExternalLink size={14} />
+                </Button>
+              </a>
+              {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background opacity-80 text-red-950">
+                  <div className="loader">Loading...</div>
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="h-[50vh] max-h-[1000px]">
+            <iframe
+              ref={iframeRef}
+              className="inset-0 w-full h-full border-0 rounded-lg"
+              title="OneDrive File Picker"
+              onLoad={() => setIsLoading(false)}
+              onLoadStart={() => setIsLoading(true)}
+            />
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

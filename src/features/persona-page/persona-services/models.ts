@@ -36,3 +36,16 @@ export interface AccessGroup {
   name: string;
   description: string;
 }
+
+export interface DocumentMetadata extends SharePointPickedFile {
+    name: string;
+    createdBy: string;
+    createdDateTime: string;
+}
+
+export interface SharePointPickedFile {
+  id: string;
+  parentReference: {
+    driveId: string;
+  };
+}

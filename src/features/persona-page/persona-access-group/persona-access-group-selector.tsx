@@ -5,38 +5,39 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/features/ui/dialog";
-import { Info, Search } from "lucide-react";
+import { Edit, Info, Search } from "lucide-react";
 import { Input } from "@/features/ui/input";
 import { Label } from "@/features/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/features/ui/radio-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/features/ui/tooltip";
 import { AccessGroup } from "../persona-services/models";
-import { getAccessGroups } from "@/features/common/services/access-group-service";
+import { UserAccessGroups } from "@/features/persona-page/persona-services/access-group-service";
 import { ScrollArea } from "@/features/ui/scroll-area";
+import { toast } from "@/features/ui/use-toast";
+import { Button } from "@/features/ui/button";
 
 interface Props {
   onSelectGroup: (group: any) => void;
-  selectedAccessGroupId: string
+  selectedAccessGroupId: string;
 }
 
-type IsSelected = boolean;
-
 type SelectedAccessGroup = AccessGroup & {
-  isSelected: IsSelected;
+  isSelected: boolean;
 };
 
 export const PersonaAccessGroupSelector: FC<Props> = (props) => {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [accessGroups, setAccessGroups] = useState<SelectedAccessGroup[]>([]);
+
   const filteredAccessGroups = accessGroups.filter((group) =>
-    group.id.toLowerCase().includes(searchQuery.toLowerCase())
+    group.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   useEffect(() => {
     const fetchAccessGroups = async () => {
       try {
-        const groups = await getAccessGroups();
+        const groups = await UserAccessGroups();
 
         const selectedGroups = groups.map((group) => ({
           ...group,
@@ -45,8 +46,11 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
 
         setAccessGroups(selectedGroups);
       } catch (error) {
-        // Replace with toast
-        console.error("Error fetching access groups:", error);
+        toast({
+          title: "Error",
+          description: "Error fetching access groups. Please try again later.",
+          variant: "destructive",
+        });
       }
     };
 
@@ -62,12 +66,9 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
 
   return (
     <>
-      <div
-        onClick={() => setOpen(true)}
-        className="flex items-center space-x-2 cursor-pointer"
-      >
-        Open it
-      </div>
+      <Button onClick={() => setOpen(true)} className="p-1 cursor-pointer" variant={"ghost"} type="button" size={"icon"}>
+        <Edit size={15} />
+      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -92,10 +93,10 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <div className="ml-4">
+              <div className="ml-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="ml-2 h-4 w-4 text-muted-foreground cursor-pointer" />
+                    <Info className="mx-4 h-5 w-5 text-muted-foreground cursor-pointer" />
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Search through groups from Sharepoint</p>
@@ -106,7 +107,10 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
 
             <ScrollArea className="h-[300px] w-full">
               <RadioGroup
-                defaultValue={accessGroups.find((g) => g.id == props.selectedAccessGroupId)?.id}
+                defaultValue={
+                  accessGroups.find((g) => g.id == props.selectedAccessGroupId)
+                    ?.id
+                }
                 className="space-y-2"
                 onValueChange={handleSelectGroup}
               >
@@ -120,9 +124,6 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
                           </Label>
                           <div className="mt-2 text-muted-foreground">
                             <p>{group.description}</p>
-                          </div>
-                          <div className="mt-2 text-muted-foreground">
-                            <p>{group.id}</p>
                           </div>
                         </div>
                         <RadioGroupItem value={group.id} id={group.id} />
