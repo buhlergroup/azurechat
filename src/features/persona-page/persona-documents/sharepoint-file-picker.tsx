@@ -273,7 +273,7 @@ export function SharePointFilePicker({
                 <h2 className="text-xl font-semibold text-black">
                   Select Files
                 </h2>
-                <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center gap-2 text-black">
                   Do not upload documents with a classification higher than B2.
                   <a
                     href={process.env.NEXT_PUBLIC_BUHLER_AI_RULES ?? ""}
