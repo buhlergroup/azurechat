@@ -30,3 +30,9 @@ export const PersonaModelSchema = z.object({
   type: z.literal(PERSONA_ATTRIBUTE),
   createdAt: z.date(),
 });
+
+export interface AccessGroup {
+  id: string;
+  name: string;
+  description: string;
+}
