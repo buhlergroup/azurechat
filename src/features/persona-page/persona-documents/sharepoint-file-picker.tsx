@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/features/ui/dialog";
-import { SharePointPickedFile } from "../persona-services/models";
+import { SharePointFile } from "../persona-services/models";
 import {
   SupportedFileExtensionsDocumentIntellicence,
   SupportedFileExtensionsTextFiles,
@@ -21,7 +21,7 @@ import {
 interface SharePointFilePickerSelectorProps {
   tenantUrl: string;
   token: string;
-  onFilesSelected: (files: SharePointPickedFile[]) => void;
+  onFilesSelected: (files: SharePointFile[]) => void;
 }
 
 export function SharePointFilePicker({
@@ -203,13 +203,10 @@ export function SharePointFilePicker({
           ],
         },
         selection: {
-          mode: "multiple", // Allow multiple file selection
+          mode: "multiple",
           enablePersistence: true,
-          maximumCount: 10,
-        },
-        commands: {
-          theme: "dark",
-        },
+          maximumCount: process.env.MAX_PERSONA_DOCUMENT_LIMIT,
+        }
       };
 
       const queryString = new URLSearchParams({

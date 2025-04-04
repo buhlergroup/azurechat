@@ -3,11 +3,14 @@ import "server-only";
 import { getGraphClient } from "../../common/services/microsoft-graph-client";
 import { getCurrentUser } from "@/features/auth-page/helpers";
 import { AccessGroup } from "@/features/persona-page/persona-services/models";
+import { ServerActionResponse } from "@/features/common/server-action-response";
 
-export async function UserAccessGroups(): Promise<AccessGroup[]> {
+export async function UserAccessGroups(): Promise<
+  ServerActionResponse<AccessGroup[]>
+> {
   try {
     const user = await getCurrentUser();
-    let client = getGraphClient(user.token);
+    const client = getGraphClient(user.token);
 
     const response = await client
       .api("/me/memberOf/$/microsoft.graph.group")
@@ -21,12 +24,29 @@ export async function UserAccessGroups(): Promise<AccessGroup[]> {
       description: group.description,
     })) as AccessGroup[];
 
-    return accessGroups;
+    return {
+      status: "OK",
+      response: accessGroups,
+    };
   } catch (error: unknown) {
     if (error instanceof Error) {
-      throw new Error(`Failed to fetch access groups: ${error.message}`);
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `Failed to fetch access groups: ${error.message}`,
+          },
+        ],
+      };
     } else {
-      throw new Error("Failed to fetch access groups: Unknown error");
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: "Failed to fetch access groups: Unknown error",
+          },
+        ],
+      };
     }
   }
 }

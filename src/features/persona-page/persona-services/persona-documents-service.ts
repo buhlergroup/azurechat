@@ -1,21 +1,30 @@
+import { ServerActionResponse } from '@/features/common/server-action-response';
 "use server";
 import "server-only";
 import { getGraphClient } from "../../common/services/microsoft-graph-client";
 import { getCurrentUser } from "@/features/auth-page/helpers";
-import { DocumentMetadata, SharePointPickedFile } from "./models";
+import { DocumentMetadata, SharePointFile } from "./models";
 
 export async function DocumentDetails(
-  documents: SharePointPickedFile[]
-): Promise<DocumentMetadata[]> {
+  documents: SharePointFile[]
+): Promise<ServerActionResponse<DocumentMetadata[]>> {
   try {
     if (documents.length === 0) {
-      return [];
+      return {
+        status: "OK",
+        response: [],
+      };
     }
 
     if (documents.length > Number(process.env.MAX_PERSONA_DOCUMENT_LIMIT)) {
-      throw new Error(
-        `Document IDs limit exceeded. Maximum is ${process.env.MAX_PERSONA_DOCUMENT_LIMIT}.`
-      );
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `Document IDs limit exceeded. Maximum is ${process.env.MAX_PERSONA_DOCUMENT_LIMIT}.`,
+          },
+        ],
+      };
     }
 
     const { token } = await getCurrentUser();
@@ -28,35 +37,57 @@ export async function DocumentDetails(
       if (responseItem.status === 200) {
         const document = responseItem.body;
         documentDetails.push({
-          id: document.id,
+          documentId: document.id,
           name: document.name,
           createdBy: document.createdBy.user.displayName,
           createdDateTime: document.createdDateTime,
           parentReference: document.parentReference,
         });
       } else {
-        throw new Error(
-          `Failed to fetch document details. Status: ${responseItem.status}`
-        );
+        return {
+          status: "ERROR",
+          errors: [
+            {
+              message: `Failed to fetch document details. Status: ${responseItem.status}`,
+            },
+          ],
+        };
       }
     }
 
-    return documentDetails;
+    return {
+      status: "OK",
+      response: documentDetails,
+    };
   } catch (error: unknown) {
     if (error instanceof Error) {
-      throw new Error(`Failed to fetch document details: ${error.message}`);
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `Failed to fetch document details: ${error.message}`,
+          },
+        ],
+      };
     } else {
-      throw new Error("Failed to fetch document details: Unknown error");
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: "Failed to fetch document details: Unknown error",
+          },
+        ],
+      };
     }
   }
 }
 
-function createDocumentDetailBody(documents: SharePointPickedFile[]) {
+function createDocumentDetailBody(documents: SharePointFile[]) {
   return {
     requests: documents.map((document) => ({
-      id: document.id,
+      id: document.documentId,
       method: "GET",
-      url: `/drives/${document.parentReference.driveId}/items/${document.id}?$select=id,name,createdBy,createdDateTime, parentReference`,
+      url: `/drives/${document.parentReference.driveId}/items/${document.documentId}?$select=id,name,createdBy,createdDateTime,parentReference`,
     })),
   };
 }

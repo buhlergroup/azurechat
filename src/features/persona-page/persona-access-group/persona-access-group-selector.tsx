@@ -17,7 +17,7 @@ import { toast } from "@/features/ui/use-toast";
 import { Button } from "@/features/ui/button";
 
 interface Props {
-  onSelectGroup: (group: any) => void;
+  onSelectGroup: (group: AccessGroup) => void;
   selectedAccessGroupId: string;
 }
 
@@ -37,9 +37,21 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
   useEffect(() => {
     const fetchAccessGroups = async () => {
       try {
-        const groups = await UserAccessGroups();
+        const result = await UserAccessGroups();
 
-        const selectedGroups = groups.map((group) => ({
+        if (result.status !== "OK") {
+          const errorMessage =
+            result.errors?.map((error) => error.message).join(", ") ||
+            "Error fetching access groups. Please try again later.";
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const selectedGroups = result.response.map((group) => ({
           ...group,
           isSelected: false,
         }));
@@ -48,7 +60,7 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
       } catch (error) {
         toast({
           title: "Error",
-          description: "Error fetching access groups. Please try again later.",
+          description: "Unexpected error occurred. Please try again later.",
           variant: "destructive",
         });
       }
@@ -66,7 +78,13 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="p-1 cursor-pointer" variant={"ghost"} type="button" size={"icon"}>
+      <Button
+        onClick={() => setOpen(true)}
+        className="p-1 cursor-pointer"
+        variant={"ghost"}
+        type="button"
+        size={"icon"}
+      >
         <Edit size={15} />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

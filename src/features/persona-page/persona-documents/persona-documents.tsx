@@ -8,8 +8,9 @@ import { Button } from "@/features/ui/button";
 import { DocumentDetails } from "@/features/persona-page/persona-services/persona-documents-service";
 import {
   DocumentMetadata,
-  SharePointPickedFile,
+  SharePointFile,
 } from "../persona-services/models";
+import { toast } from "@/features/ui/use-toast";
 
 interface Props {
   initialPersonaDocumentIds: string[];
@@ -20,14 +21,25 @@ export const PersonaDocuments: FC<Props> = (props) => {
   const [pickedFiles, setPickedFiles] = useState<DocumentMetadata[]>([]);
 
   const handleNewFilesSelected = async (
-    pickedFiles: SharePointPickedFile[]
+    pickedFiles: SharePointFile[]
   ) => {
-    const files = await DocumentDetails(pickedFiles);
-    setPickedFiles(files);
+    const response = await DocumentDetails(pickedFiles);
+
+    if (response.status === "OK") {
+      setPickedFiles(response.response);
+    } else {
+      toast({
+        title: "Error",
+        description:
+          response.errors?.map((error) => error.message).join(", ") ||
+          "Error fetching document details. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const removeDocument = (file: SharePointPickedFile) => {
-    setPickedFiles((prevFiles) => prevFiles.filter((f) => f.id !== file.id));
+  const removeDocument = (file: SharePointFile) => {
+    setPickedFiles((prevFiles) => prevFiles.filter((f) => f.documentId !== file.documentId));
   };
 
   return (
@@ -54,7 +66,7 @@ export const PersonaDocuments: FC<Props> = (props) => {
         <input
           type="hidden"
           name="personaDocumentIds"
-          value={pickedFiles.map((file) => file.id)}
+          value={pickedFiles.map((file) => file.documentId)}
         />
 
         {pickedFiles.length === 0 ? (
@@ -65,8 +77,8 @@ export const PersonaDocuments: FC<Props> = (props) => {
           <div className="w-full">
             {pickedFiles.map((file) => (
               <div
-                key={file.id}
-                className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2"
+                key={file.documentId}
+                className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-input bg-background"
               >
                 <div>
                   <p>{file.name}</p>
@@ -82,7 +94,7 @@ export const PersonaDocuments: FC<Props> = (props) => {
                     </p>
                   </div>
                 </div>
-                <Button size={"icon"} variant="ghost">
+                <Button size={"icon"} variant="ghost" type="button">
                   <Trash
                     size={15}
                     className="text-red-500"
