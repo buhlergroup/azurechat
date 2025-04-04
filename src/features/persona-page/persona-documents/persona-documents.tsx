@@ -1,29 +1,64 @@
 import { Label } from "@/features/ui/label";
-import { FC, useState } from "react";
+import { FC, useEffect, useState } from "react";
 import { SharePointFilePicker } from "./sharepoint-file-picker";
 import { useSession } from "next-auth/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/features/ui/tooltip";
 import { Info, Trash } from "lucide-react";
 import { Button } from "@/features/ui/button";
-import { DocumentDetails } from "@/features/persona-page/persona-services/persona-documents-service";
 import {
+  DocumentDetails,
+  PersonaDocumentById,
+} from "@/features/persona-page/persona-services/persona-documents-service";
+import {
+  convertDocumentMetadataToSharePointFile,
+  convertPersonaDocumentToSharePointDocument,
   DocumentMetadata,
+  PersonaDocument,
   SharePointFile,
 } from "../persona-services/models";
 import { toast } from "@/features/ui/use-toast";
 
 interface Props {
-  initialPersonaDocumentIds: string[];
+  initialPersonaDocumentIds: readonly string[];
 }
 
 export const PersonaDocuments: FC<Props> = (props) => {
   const { data: session } = useSession();
   const [pickedFiles, setPickedFiles] = useState<DocumentMetadata[]>([]);
 
-  const handleNewFilesSelected = async (
-    pickedFiles: SharePointFile[]
-  ) => {
-    const response = await DocumentDetails(pickedFiles);
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!props.initialPersonaDocumentIds) return;
+      let personaDocuments: SharePointFile[] = [];
+
+      props.initialPersonaDocumentIds.forEach(async (id) => {
+        const response = await PersonaDocumentById(id);
+        if (response.status === "OK") {
+          const convertedDocument = convertPersonaDocumentToSharePointDocument(
+            response.response
+          );
+          personaDocuments.push(convertedDocument);
+        } else {
+          toast({
+            title: response.status,
+            description:
+              response.errors?.map((error) => error.message).join(", ") ||
+              "Error fetching document details. Please try again.",
+            variant: "destructive",
+          });
+        }
+      });
+
+      await fetchMetaData(personaDocuments);
+    };
+
+    fetchData();
+  }, [props.initialPersonaDocumentIds]);
+
+  const fetchMetaData = async (documents: SharePointFile[]) => {
+    if (!props.initialPersonaDocumentIds) return;
+    // TODO: loading indicator
+    const response = await DocumentDetails(documents);
 
     if (response.status === "OK") {
       setPickedFiles(response.response);
@@ -39,7 +74,9 @@ export const PersonaDocuments: FC<Props> = (props) => {
   };
 
   const removeDocument = (file: SharePointFile) => {
-    setPickedFiles((prevFiles) => prevFiles.filter((f) => f.documentId !== file.documentId));
+    setPickedFiles((prevFiles) =>
+      prevFiles.filter((f) => f.documentId !== file.documentId)
+    );
   };
 
   return (
@@ -59,14 +96,14 @@ export const PersonaDocuments: FC<Props> = (props) => {
         <SharePointFilePicker
           token={session?.user?.accessToken ?? ""}
           tenantUrl={process.env.NEXT_PUBLIC_SHAREPOINT_URL ?? ""}
-          onFilesSelected={async (files) => await handleNewFilesSelected(files)}
+          onFilesSelected={async (files) => await fetchMetaData(files)}
         />
       </div>
       <div className="flex items-center w-full">
         <input
           type="hidden"
-          name="personaDocumentIds"
-          value={pickedFiles.map((file) => file.documentId)}
+          name="selectedSharePointDocumentIds"
+          value={JSON.stringify(pickedFiles.map((file) => file))}
         />
 
         {pickedFiles.length === 0 ? (

@@ -14,7 +14,13 @@ import {
 import { HistoryContainer } from "@/features/common/services/cosmos";
 import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
-import { PERSONA_ATTRIBUTE, PersonaModel, PersonaModelSchema } from "./models";
+import {
+  PERSONA_ATTRIBUTE,
+  PersonaModel,
+  PersonaModelSchema,
+  SharePointFile,
+} from "./models";
+import { DeletePersonaDocumentsByPersonaId, UpdateOrAddPersonaDocuments } from "./persona-documents-service";
 
 interface PersonaInput {
   name: string;
@@ -22,12 +28,16 @@ interface PersonaInput {
   personaMessage: string;
   isPublished: boolean;
   extensionIds: string[];
+  accessGroup?: {
+    id: string;
+    source: "SHAREPOINT";
+  };
 }
 
 export const FindPersonaByID = async (
   id: string
 ): Promise<ServerActionResponse<PersonaModel>> => {
-  // ensure persona operation
+  // TODO: ensure persona operation
 
   try {
     const querySpec: SqlQuerySpec = {
@@ -76,7 +86,8 @@ export const FindPersonaByID = async (
 };
 
 export const CreatePersona = async (
-  props: PersonaInput
+  props: PersonaInput,
+  sharePointFiles: SharePointFile[]
 ): Promise<ServerActionResponse<PersonaModel>> => {
   try {
     const user = await getCurrentUser();
@@ -91,6 +102,8 @@ export const CreatePersona = async (
       createdAt: new Date(),
       extensionIds: props.extensionIds,
       type: "PERSONA",
+      personaDocumentIds: await UpdateOrAddPersonaDocuments(sharePointFiles),
+      accessGroup: props.accessGroup,
     };
 
     const valid = ValidateSchema(modelToSave);
@@ -130,8 +143,6 @@ export const CreatePersona = async (
   }
 };
 
-// Persona access check
-
 export const EnsurePersonaOperation = async (
   personaId: string
 ): Promise<ServerActionResponse<PersonaModel>> => {
@@ -162,6 +173,8 @@ export const DeletePersona = async (
   try {
     const personaResponse = await EnsurePersonaOperation(personaId);
 
+    await DeletePersonaDocumentsByPersonaId(personaId);
+
     if (personaResponse.status === "OK") {
       const { resource: deletedPersona } = await HistoryContainer()
         .item(personaId, personaResponse.response.userId)
@@ -187,10 +200,13 @@ export const DeletePersona = async (
 };
 
 export const UpsertPersona = async (
-  personaInput: PersonaModel
+  personaInput: PersonaModel,
+  sharePointFiles: SharePointFile[]
 ): Promise<ServerActionResponse<PersonaModel>> => {
   try {
     const personaResponse = await EnsurePersonaOperation(personaInput.id);
+
+    // TODO: check if the user is part of the access group
 
     if (personaResponse.status === "OK") {
       const { response: persona } = personaResponse;
@@ -206,6 +222,8 @@ export const UpsertPersona = async (
           : persona.isPublished,
         createdAt: new Date(),
         extensionIds: personaInput.extensionIds,
+        accessGroup: personaInput.accessGroup,
+        personaDocumentIds: await UpdateOrAddPersonaDocuments(sharePointFiles),
       };
 
       const validationResponse = ValidateSchema(modelToUpdate);
@@ -253,7 +271,7 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
   try {
     const querySpec: SqlQuerySpec = {
       query:
-      "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId) ORDER BY r.createdAt DESC",
+        "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId) ORDER BY r.createdAt DESC",
       parameters: [
         {
           name: "@type",
@@ -269,7 +287,7 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
         },
       ],
     };
-    // Adjust access with new persona sharing
+    // TODO: Adjust access with new persona sharing
 
     const { resources } = await HistoryContainer()
       .items.query<PersonaModel>(querySpec)
@@ -299,6 +317,8 @@ export const CreatePersonaChat = async (
 
   if (personaResponse.status === "OK") {
     const persona = personaResponse.response;
+
+    // TODO Add documents and access group to chat thread
 
     const response = await UpsertChatThread({
       name: persona.name,

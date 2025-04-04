@@ -50,3 +50,40 @@ export async function UserAccessGroups(): Promise<
     }
   }
 }
+
+export async function AccessGroupById(
+  accessGroupId: string
+): Promise<ServerActionResponse<AccessGroup>> {
+  try {
+    const user = await getCurrentUser();
+    const client = getGraphClient(user.token);
+
+    const response = await client
+      .api(`/me/memberOf/`)
+      .filter(`id eq '${accessGroupId}'`)
+      .select("id,displayName,description")
+      .get();
+
+    const group = response.value[0];
+
+    const accessGroup = {
+      id: group.id,
+      name: group.displayName,
+      description: group.description,
+    } as AccessGroup;
+
+    return {
+      status: "OK",
+      response: accessGroup,
+    };
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [
+        {
+          message: `Failed to fetch access group by ID: ${error}`,
+        },
+      ],
+    };
+  }
+}

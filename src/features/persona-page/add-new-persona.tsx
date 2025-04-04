@@ -134,8 +134,8 @@ export const AddNewPersona: FC<Props> = (props) => {
                     parent="persona"
                   />
                 </div>
-                <PersonaAccessGroup initialSelectedGroup={null}/>
-                <PersonaDocuments initialPersonaDocumentIds={[]}/>
+                <PersonaAccessGroup initialSelectedGroup={persona.accessGroup?.id || null}/>
+                <PersonaDocuments initialPersonaDocumentIds={persona.personaDocumentIds || []}/>
               </div>
             </ScrollArea>
             <SheetFooter className="py-2 flex sm:justify-between flex-row">

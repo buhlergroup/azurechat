@@ -1,20 +1,34 @@
 import { Label } from "@/features/ui/label";
-import { FC, useState } from "react";
+import { FC, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { PersonaAccessGroupSelector } from "./persona-access-group-selector";
 import { AccessGroup } from "../persona-services/models";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/features/ui/tooltip";
 import { Info, Trash } from "lucide-react";
 import { Button } from "@/features/ui/button";
+import { AccessGroupById } from "../persona-services/access-group-service";
 
 interface Props {
-  initialSelectedGroup: AccessGroup | null;
+  initialSelectedGroup: string | null;
 }
 
 export const PersonaAccessGroup: FC<Props> = (props) => {
-  const [selectedGroup, setSelectedGroup] = useState<AccessGroup | null>(
-    props.initialSelectedGroup
-  );
+  const [selectedGroup, setSelectedGroup] = useState<AccessGroup | null>();
+
+  useEffect(() => {
+    const fetchGroupDetails = async () => {
+      // TODO: loading indicator
+      if (!props.initialSelectedGroup) return;
+      const response = await AccessGroupById(props.initialSelectedGroup);
+      if (response.status === "OK") {
+        setSelectedGroup(response.response);
+      } else {
+        setSelectedGroup(null);
+      }
+    };
+
+    fetchGroupDetails();
+  }, [props.initialSelectedGroup]);
 
   return (
     <div className="grid gap-2">

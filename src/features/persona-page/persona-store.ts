@@ -1,6 +1,10 @@
 import { proxy, useSnapshot } from "valtio";
 import { RevalidateCache } from "../common/navigation-helpers";
-import { PERSONA_ATTRIBUTE, PersonaModel } from "./persona-services/models";
+import {
+  PERSONA_ATTRIBUTE,
+  PersonaModel,
+  SharePointFile,
+} from "./persona-services/models";
 import {
   CreatePersona,
   UpsertPersona,
@@ -61,14 +65,14 @@ class PersonaState {
     name: string;
     description: string;
     personaMessage: string;
-    extensionIds: string[]
+    extensionIds: string[];
   }) {
     this.persona = {
       ...this.defaultModel,
       name: persona.name,
       description: persona.description,
       personaMessage: persona.personaMessage,
-      extensionIds: persona.extensionIds
+      extensionIds: persona.extensionIds,
     };
     this.isOpened = true;
   }
@@ -85,6 +89,7 @@ export const usePersonaState = () => {
 };
 
 export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
+  const sharePointFiles = handleSharePointFiles(formData);
   const model = FormDataToPersonaModel(formData);
 
   if (personaStore.persona.extensionIds) {
@@ -93,8 +98,8 @@ export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
 
   const response =
     model.id && model.id !== ""
-      ? await UpsertPersona(model)
-      : await CreatePersona(model);
+      ? await UpsertPersona(model, sharePointFiles)
+      : await CreatePersona(model, sharePointFiles);
 
   if (response.status === "OK") {
     personaStore.updateOpened(false);
@@ -106,10 +111,18 @@ export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
   return response;
 };
 
-export const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
-  let accesGroupId = formData.get("accessGroupId") as string;
-  let personaDocumentIds = formData.getAll("personaDocumentIds") as string[];
+const handleSharePointFiles = (formData: FormData): SharePointFile[] => {
+  const filesObjStrings = formData.getAll(
+    "selectedSharePointDocumentIds"
+  ) as string[];
 
+  if (!filesObjStrings || filesObjStrings[0].length === 0) return [];
+  
+  const fileObj = JSON.parse(filesObjStrings[0]) as SharePointFile[];
+  return Array.isArray(fileObj) ? fileObj : [];
+};
+
+const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
   return {
     id: formData.get("id") as string,
     name: formData.get("name") as string,
@@ -120,5 +133,10 @@ export const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
     extensionIds: formData.getAll("extensionIds") as string[],
     createdAt: new Date(),
     type: PERSONA_ATTRIBUTE,
+    accessGroup: {
+      id: formData.get("accessGroupId") as string,
+      source: "SHAREPOINT",
+    },
+    personaDocumentIds: formData.getAll("personaDocumentIds") as string[],
   };
 };

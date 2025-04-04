@@ -130,7 +130,17 @@ export function SharePointFilePicker({
 
           case "pick":
             try {
-              onFilesSelected(command.items);
+              const files = command.items.map((item: any) => {
+                const file: SharePointFile = {
+                  documentId: item.id,
+                  parentReference: {
+                    driveId: item.parentReference.driveId,
+                  },
+                };
+                return file;
+              });
+
+              onFilesSelected(files);
 
               portRef.current?.postMessage({
                 type: "result",
@@ -205,8 +215,8 @@ export function SharePointFilePicker({
         selection: {
           mode: "multiple",
           enablePersistence: true,
-          maximumCount: process.env.MAX_PERSONA_DOCUMENT_LIMIT,
-        }
+          maximumCount: process.env.NEXT_PUBLIC_MAX_PERSONA_DOCUMENT_LIMIT || 20,
+        },
       };
 
       const queryString = new URLSearchParams({

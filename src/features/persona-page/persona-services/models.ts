@@ -5,9 +5,15 @@ export const EXTERNAL_SOURCE = "SHAREPOINT";
 
 export type PersonaDocument = z.infer<typeof PersonaDocumentSchema>;
 
-export type SharePointFile = z.infer<typeof SharePointFileSchema>;
+export type SharePointFile = {
+  id?: string; // PersonaDocument ID
+  documentId: string; // SharePoint document ID
+  parentReference: {
+    driveId: string;
+  };
+}
 export const SharePointFileSchema = z.object({
-  documentId: z.string(),
+  documentId: z.string(), // SharePoint document ID
   parentReference: z.object({
     driveId: z.string(),
   }),
@@ -68,3 +74,19 @@ export type DocumentMetadata = SharePointFile & {
   createdBy: string;
   createdDateTime: string;
 };
+
+export const convertDocumentMetadataToSharePointFile = (file: DocumentMetadata): SharePointFile => {
+  return {
+    id: file.id,
+    documentId: file.documentId,
+    parentReference: file.parentReference,
+  };
+}
+
+export const convertPersonaDocumentToSharePointDocument = (file: PersonaDocument): SharePointFile => {
+  return {
+    id: file.id,
+    documentId: file.externalFile.documentId,
+    parentReference: file.externalFile.parentReference,
+  };
+}
