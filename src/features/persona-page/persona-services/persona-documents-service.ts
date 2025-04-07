@@ -54,7 +54,7 @@ export async function DocumentDetails(
 
     const { token } = await getCurrentUser();
     const client = getGraphClient(token);
-    const body = createDocumentDetailBody(documents, [
+    const body = CreateDocumentDetailBody(documents, [
       "id",
       "name",
       "createdBy",
@@ -131,7 +131,7 @@ export const UpdateOrAddPersonaDocuments = async (
   }
 
   // create or update documents in the database
-  const addOrUpdateResponse = await addOrUpdatePersonaDocuments(
+  const addOrUpdateResponse = await AddOrUpdatePersonaDocuments(
     sharePointFiles
   );
 
@@ -183,7 +183,7 @@ export const UpdateOrAddPersonaDocuments = async (
     }
   }
 
-  const handleNewDocumentsResponse = await indexNewDocuments(newDocuments);
+  const handleNewDocumentsResponse = await IndexNewDocuments(newDocuments);
   if (handleNewDocumentsResponse.status !== "OK") {
     return {
       status: "ERROR",
@@ -271,6 +271,25 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
   };
 
   try {
+    // remove old documents from the vector database
+    const deleteResponses = await Promise.all(
+      personaDocuments.map(async (oldDocumentId) => {
+      return await DeleteDocumentByPersonaDocumentId(oldDocumentId);
+      })
+    );
+
+    const failedDeletions = deleteResponses.filter(
+      (response) => response.status !== "OK"
+    );
+
+    if (failedDeletions.length > 0) {
+      throw new Error(
+      `Failed to delete some persona documents: ${failedDeletions
+        .map((failure) => failure.errors?.map((e) => e.message).join(", "))
+        .join("; ")}`
+      );
+    }
+
     const { resources } = await HistoryContainer()
       .items.query<PersonaDocument>(querySpec)
       .fetchAll();
@@ -279,18 +298,12 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
       await HistoryContainer().item(document.id).delete();
     }
 
-    // remove old documents from the vector database
-    Promise.all(
-      personaDocuments.map(async (oldDocumentId) => {
-        await DeleteDocumentByPersonaDocumentId(oldDocumentId);
-      })
-    );
   } catch (error) {
     throw new Error("Failed to delete persona documents. Error: " + error);
   }
 };
 
-const createDocumentDetailBody = (
+const CreateDocumentDetailBody = (
   documents: SharePointFile[],
   filters: string[]
 ) => {
@@ -305,7 +318,7 @@ const createDocumentDetailBody = (
   };
 };
 
-const addOrUpdatePersonaDocuments = async (
+const AddOrUpdatePersonaDocuments = async (
   sharePointFiles: SharePointFile[]
 ): Promise<ServerActionResponse<string[]>> => {
   const personaDocuments: PersonaDocument[] = sharePointFiles.map((file) => ({
@@ -322,7 +335,7 @@ const addOrUpdatePersonaDocuments = async (
 
   const documentIds: string[] = [];
 
-  const validationResponse = validatePersonaDocumentSchema(personaDocuments);
+  const validationResponse = ValidatePersonaDocumentSchema(personaDocuments);
   if (validationResponse.status !== "OK") {
     return validationResponse;
   }
@@ -352,11 +365,11 @@ const addOrUpdatePersonaDocuments = async (
   };
 };
 
-const indexNewDocuments = async (
-  documents: SharePointFile[]
+const IndexNewDocuments = async (
+  documents: DocumentMetadata[]
 ): Promise<ServerActionResponse<void>> => {
   // download documents from sharepoint to the server and check access with that
-  const downloadFilesFromSharePointResponse = await sharePointFileToText(
+  const downloadFilesFromSharePointResponse = await SharePointFileToText(
     documents
   );
 
@@ -420,8 +433,8 @@ const indexNewDocuments = async (
   };
 };
 
-const sharePointFileToText = async (
-  documents: SharePointFile[]
+const SharePointFileToText = async (
+  documents: DocumentMetadata[]
 ): Promise<ServerActionResponse<SharePointFileContent[]>> => {
   const { token } = await getCurrentUser();
   const client = getGraphClient(token);
@@ -445,7 +458,16 @@ const sharePointFileToText = async (
         );
       }
 
-      // TODO: check if the document is a text file
+      const fileExtension = document.name.split(".").pop();
+      if (fileExtension && IsAlreadyText(fileExtension)) {
+        const decoder = new TextDecoder();
+        const textContent = decoder.decode(response);
+
+        return {
+          ...document,
+          paragraphs: [textContent],
+        };
+      }
 
       const diClient = DocumentIntelligenceInstance();
 
@@ -502,14 +524,14 @@ const sharePointFileToText = async (
   }
 };
 
-const isAlreadyText = (extension: string) => {
+const IsAlreadyText = (extension: string) => {
   if (!extension) return false;
   return Object.values(SupportedFileExtensionsTextFiles).includes(
     extension.toUpperCase() as SupportedFileExtensionsTextFiles
   );
 };
 
-const validatePersonaDocumentSchema = (
+const ValidatePersonaDocumentSchema = (
   models: PersonaDocument[]
 ): ServerActionResponse => {
   const errors = [];

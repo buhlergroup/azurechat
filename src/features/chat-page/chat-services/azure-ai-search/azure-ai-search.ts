@@ -362,40 +362,43 @@ export const DeleteDocumentByPersonaDocumentId = async (
     // Find the document using personaDocumentId
     const documentResponse = await SimpleSearch(
       undefined,
-      `personaDocumentId eq '${personaDocumentId} and userid eq '${await userHashedId()}'`
+      `personaDocumentId eq '${personaDocumentId}' and user eq '${await userHashedId()}'`
     );
 
-    if (documentResponse.status === "OK" && documentResponse.response.length > 0) {
-      const document = documentResponse.response[0].document;
+    if (
+      documentResponse.status === "OK" &&
+      documentResponse.response.length > 0
+    ) {
+      const documents = documentResponse.response.map((r) => r.document);
       const instance = AzureAISearchInstance();
-      
-      const deletedResponse = await instance.deleteDocuments([document]);
 
-      if (deletedResponse.results.length > 0 && deletedResponse.results[0].succeeded) {
+      const deletedResponse = await instance.deleteDocuments(documents);
+
+      if (deletedResponse.results.every((r) => r.succeeded)) {
         return {
           status: "OK",
-          response: deletedResponse.results[0].succeeded,
+          response: true,
         };
       } else {
         return {
           status: "ERROR",
-          errors: [
-            {
-              message: `Failed to delete document: ${deletedResponse.results[0]?.errorMessage || "Unknown error"}`,
-            },
-          ],
+          errors: deletedResponse.results
+            .filter((r) => !r.succeeded)
+            .map((r) => ({
+              message: r.errorMessage || "Unknown error",
+            })),
         };
       }
+    } else {
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `No document found with personaDocumentId: ${personaDocumentId}`,
+          },
+        ],
+      };
     }
-
-    return {
-      status: "ERROR",
-      errors: [
-        {
-          message: "Document not found",
-        },
-      ],
-    };
   } catch (e) {
     return {
       status: "ERROR",
@@ -407,7 +410,6 @@ export const DeleteDocumentByPersonaDocumentId = async (
     };
   }
 };
-
 
 export const EmbedDocuments = async (
   documents: Array<AzureSearchDocumentIndex>
