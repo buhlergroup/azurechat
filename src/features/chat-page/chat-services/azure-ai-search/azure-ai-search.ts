@@ -20,8 +20,9 @@ export interface AzureSearchDocumentIndex {
   pageContent: string;
   embedding?: number[];
   user: string;
-  chatThreadId: string;
-  metadata: string;
+  chatThreadId: string | null;
+  metadata: string | null;
+  personaDocumentId: string | null;
 }
 
 export type DocumentSearchResponse = {
@@ -114,6 +115,43 @@ export const SimilaritySearch = async (
   }
 };
 
+export const PersonaDocumentExistsInIndex = async (
+  personaDocumentId: string
+): Promise<ServerActionResponse<AzureSearchDocumentIndex>> => {
+  const result = await SimpleSearch(
+    personaDocumentId,
+    `personaDocumentId eq '${personaDocumentId}'`
+  );
+
+  if (result.status === "OK") {
+    const documents = result.response;
+    if (documents.length > 0) {
+      return {
+        status: "OK",
+        response: documents[0].document,
+      };
+    } else {
+      return {
+        status: "NOT_FOUND",
+        errors: [
+          {
+            message: `No document found with id ${personaDocumentId}`,
+          },
+        ],
+      };
+    }
+  }
+
+  return {
+    status: "ERROR",
+    errors: [
+      {
+        message: `Unexpected error occurred while checking persona document index.`,
+      },
+    ],
+  };
+};
+
 export const ExtensionSimilaritySearch = async (props: {
   searchText: string;
   vectors: string[];
@@ -198,9 +236,10 @@ export const ExtensionSimilaritySearch = async (props: {
 };
 
 export const IndexDocuments = async (
-  fileName: string,
   docs: string[],
-  chatThreadId: string
+  fileName?: string,
+  chatThreadId?: string,
+  personaDocumentId?: string
 ): Promise<Array<ServerActionResponse<boolean>>> => {
   try {
     const documentsToIndex: AzureSearchDocumentIndex[] = [];
@@ -208,11 +247,12 @@ export const IndexDocuments = async (
     for (const doc of docs) {
       const docToAdd: AzureSearchDocumentIndex = {
         id: uniqueId(),
-        chatThreadId,
+        chatThreadId: chatThreadId || null,
         user: await userHashedId(),
         pageContent: doc,
-        metadata: fileName,
+        metadata: fileName || null,
         embedding: [],
+        personaDocumentId: personaDocumentId || null,
       };
 
       documentsToIndex.push(docToAdd);
@@ -270,7 +310,7 @@ export const DeleteDocumentsOfChatThread = async (
     // find all documents for chat thread
     const documentsInChatResponse = await SimpleSearch(
       undefined,
-      `chatThreadId eq '${chatThreadId}'`
+      `chatThreadId eq '${chatThreadId} and userid eq '${await userHashedId()}'`
     );
 
     if (documentsInChatResponse.status === "OK") {
@@ -314,6 +354,60 @@ export const DeleteDocumentsOfChatThread = async (
     ];
   }
 };
+
+export const DeleteDocumentByPersonaDocumentId = async (
+  personaDocumentId: string
+): Promise<ServerActionResponse<boolean>> => {
+  try {
+    // Find the document using personaDocumentId
+    const documentResponse = await SimpleSearch(
+      undefined,
+      `personaDocumentId eq '${personaDocumentId} and userid eq '${await userHashedId()}'`
+    );
+
+    if (documentResponse.status === "OK" && documentResponse.response.length > 0) {
+      const document = documentResponse.response[0].document;
+      const instance = AzureAISearchInstance();
+      
+      const deletedResponse = await instance.deleteDocuments([document]);
+
+      if (deletedResponse.results.length > 0 && deletedResponse.results[0].succeeded) {
+        return {
+          status: "OK",
+          response: deletedResponse.results[0].succeeded,
+        };
+      } else {
+        return {
+          status: "ERROR",
+          errors: [
+            {
+              message: `Failed to delete document: ${deletedResponse.results[0]?.errorMessage || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    }
+
+    return {
+      status: "ERROR",
+      errors: [
+        {
+          message: "Document not found",
+        },
+      ],
+    };
+  } catch (e) {
+    return {
+      status: "ERROR",
+      errors: [
+        {
+          message: `${e}`,
+        },
+      ],
+    };
+  }
+};
+
 
 export const EmbedDocuments = async (
   documents: Array<AzureSearchDocumentIndex>
@@ -406,6 +500,12 @@ const CreateSearchIndex = async (): Promise<
         },
         {
           name: "chatThreadId",
+          type: "Edm.String",
+          searchable: true,
+          filterable: true,
+        },
+        {
+          name: "personaDocumentId",
           type: "Edm.String",
           searchable: true,
           filterable: true,

@@ -13,7 +13,6 @@ import {
 } from "../../chat-services/chat-document-service";
 import { chatStore } from "../../chat-store";
 
-const MAX_UPLOAD_DOCUMENT_SIZE: number = 3000000; // 3MB in bytes
 class FileStore {
   public uploadButtonLabel: string = "";
 
@@ -29,7 +28,7 @@ class FileStore {
       formData.append("id", chatThreadId);
       const file: File | null = formData.get("file") as unknown as File;
       
-      if(file.size > MAX_UPLOAD_DOCUMENT_SIZE){
+      if(file.size > Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_DOCUMENT_SIZE)){
         showError("File size is too large. Please upload a file less than 3MB.");
         return;
       }
@@ -48,8 +47,8 @@ class FileStore {
 
           // index one document at a time
           const indexResponses = await IndexDocuments(
-            file.name,
             [doc],
+            file.name,
             chatThreadId
           );
 

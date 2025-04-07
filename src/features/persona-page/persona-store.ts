@@ -1,6 +1,7 @@
 import { proxy, useSnapshot } from "valtio";
 import { RevalidateCache } from "../common/navigation-helpers";
 import {
+  DocumentMetadata,
   PERSONA_ATTRIBUTE,
   PersonaModel,
   SharePointFile,
@@ -111,18 +112,22 @@ export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
   return response;
 };
 
-const handleSharePointFiles = (formData: FormData): SharePointFile[] => {
+const handleSharePointFiles = (formData: FormData): DocumentMetadata[] => {
   const filesObjStrings = formData.getAll(
     "selectedSharePointDocumentIds"
   ) as string[];
 
   if (!filesObjStrings || filesObjStrings[0].length === 0) return [];
-  
-  const fileObj = JSON.parse(filesObjStrings[0]) as SharePointFile[];
+
+  const fileObj = JSON.parse(filesObjStrings[0]) as DocumentMetadata[];
   return Array.isArray(fileObj) ? fileObj : [];
 };
 
 const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
+  const ids = formData.getAll("personaDocumentIds") as string[];
+  const fileObj = JSON.parse(ids[0]) as string[];
+  const personaDocumentIds =  Array.isArray(fileObj) ? fileObj : [];
+
   return {
     id: formData.get("id") as string,
     name: formData.get("name") as string,
@@ -137,6 +142,6 @@ const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
       id: formData.get("accessGroupId") as string,
       source: "SHAREPOINT",
     },
-    personaDocumentIds: formData.getAll("personaDocumentIds") as string[],
+    personaDocumentIds: personaDocumentIds,
   };
 };

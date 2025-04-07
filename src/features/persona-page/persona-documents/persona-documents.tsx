@@ -10,7 +10,6 @@ import {
   PersonaDocumentById,
 } from "@/features/persona-page/persona-services/persona-documents-service";
 import {
-  convertDocumentMetadataToSharePointFile,
   convertPersonaDocumentToSharePointDocument,
   DocumentMetadata,
   PersonaDocument,
@@ -31,23 +30,33 @@ export const PersonaDocuments: FC<Props> = (props) => {
       if (!props.initialPersonaDocumentIds) return;
       let personaDocuments: SharePointFile[] = [];
 
-      props.initialPersonaDocumentIds.forEach(async (id) => {
-        const response = await PersonaDocumentById(id);
-        if (response.status === "OK") {
-          const convertedDocument = convertPersonaDocumentToSharePointDocument(
-            response.response
-          );
-          personaDocuments.push(convertedDocument);
-        } else {
-          toast({
-            title: response.status,
-            description:
-              response.errors?.map((error) => error.message).join(", ") ||
-              "Error fetching document details. Please try again.",
-            variant: "destructive",
-          });
-        }
-      });
+      try {
+        const responses = await Promise.all(
+          props.initialPersonaDocumentIds.map((id) => PersonaDocumentById(id))
+        );
+
+        responses.forEach((response, index) => {
+          if (response.status === "OK") {
+            const convertedDocument =
+              convertPersonaDocumentToSharePointDocument(response.response);
+            personaDocuments.push(convertedDocument);
+          } else {
+            toast({
+              title: response.status,
+              description:
+                response.errors?.map((error) => error.message).join(", ") ||
+                `Error fetching document details for ID: ${props.initialPersonaDocumentIds[index]}. Please try again.`,
+              variant: "destructive",
+            });
+          }
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred. Please try again.",
+          variant: "destructive",
+        });
+      }
 
       await fetchMetaData(personaDocuments);
     };
@@ -61,7 +70,19 @@ export const PersonaDocuments: FC<Props> = (props) => {
     const response = await DocumentDetails(documents);
 
     if (response.status === "OK") {
-      setPickedFiles(response.response);
+      const metaDataDocuments = [] as DocumentMetadata[];
+      documents.forEach((file) => {
+        const document = response.response.find(
+          (d) => d.documentId === file.documentId
+        );
+
+        if (document) {
+          document.id = file.id;
+          metaDataDocuments.push(document);
+        }
+      });
+
+      setPickedFiles(metaDataDocuments);
     } else {
       toast({
         title: "Error",
@@ -104,6 +125,14 @@ export const PersonaDocuments: FC<Props> = (props) => {
           type="hidden"
           name="selectedSharePointDocumentIds"
           value={JSON.stringify(pickedFiles.map((file) => file))}
+        />
+
+        <input
+          type="hidden"
+          name="personaDocumentIds"
+          value={JSON.stringify(
+            props.initialPersonaDocumentIds.map((file) => file)
+          )}
         />
 
         {pickedFiles.length === 0 ? (

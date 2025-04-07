@@ -15,12 +15,16 @@ import { HistoryContainer } from "@/features/common/services/cosmos";
 import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
 import {
+  DocumentMetadata,
   PERSONA_ATTRIBUTE,
   PersonaModel,
   PersonaModelSchema,
   SharePointFile,
 } from "./models";
-import { DeletePersonaDocumentsByPersonaId, UpdateOrAddPersonaDocuments } from "./persona-documents-service";
+import {
+  DeletePersonaDocumentsByPersonaId,
+  UpdateOrAddPersonaDocuments as AddOrUpdatePersonaDocuments,
+} from "./persona-documents-service";
 
 interface PersonaInput {
   name: string;
@@ -87,10 +91,21 @@ export const FindPersonaByID = async (
 
 export const CreatePersona = async (
   props: PersonaInput,
-  sharePointFiles: SharePointFile[]
+  sharePointFiles: DocumentMetadata[]
 ): Promise<ServerActionResponse<PersonaModel>> => {
   try {
     const user = await getCurrentUser();
+
+    const personaDocumentIds = await AddOrUpdatePersonaDocuments(
+      sharePointFiles,
+      []
+    );
+    if (personaDocumentIds.status !== "OK") {
+      return {
+        status: "ERROR",
+        errors: personaDocumentIds.errors,
+      };
+    }
 
     const modelToSave: PersonaModel = {
       id: uniqueId(),
@@ -102,7 +117,7 @@ export const CreatePersona = async (
       createdAt: new Date(),
       extensionIds: props.extensionIds,
       type: "PERSONA",
-      personaDocumentIds: await UpdateOrAddPersonaDocuments(sharePointFiles),
+      personaDocumentIds: personaDocumentIds.response,
       accessGroup: props.accessGroup,
     };
 
@@ -173,9 +188,9 @@ export const DeletePersona = async (
   try {
     const personaResponse = await EnsurePersonaOperation(personaId);
 
-    await DeletePersonaDocumentsByPersonaId(personaId);
-
     if (personaResponse.status === "OK") {
+      await DeletePersonaDocumentsByPersonaId(personaId);
+
       const { resource: deletedPersona } = await HistoryContainer()
         .item(personaId, personaResponse.response.userId)
         .delete();
@@ -201,7 +216,7 @@ export const DeletePersona = async (
 
 export const UpsertPersona = async (
   personaInput: PersonaModel,
-  sharePointFiles: SharePointFile[]
+  sharePointFiles: DocumentMetadata[]
 ): Promise<ServerActionResponse<PersonaModel>> => {
   try {
     const personaResponse = await EnsurePersonaOperation(personaInput.id);
@@ -211,6 +226,18 @@ export const UpsertPersona = async (
     if (personaResponse.status === "OK") {
       const { response: persona } = personaResponse;
       const user = await getCurrentUser();
+
+      const personaDocumentIds = await AddOrUpdatePersonaDocuments(
+        sharePointFiles,
+        personaInput.personaDocumentIds || []
+      );
+
+      if (personaDocumentIds.status !== "OK") {
+        return {
+          status: "ERROR",
+          errors: personaDocumentIds.errors,
+        };
+      }
 
       const modelToUpdate: PersonaModel = {
         ...persona,
@@ -223,7 +250,7 @@ export const UpsertPersona = async (
         createdAt: new Date(),
         extensionIds: personaInput.extensionIds,
         accessGroup: personaInput.accessGroup,
-        personaDocumentIds: await UpdateOrAddPersonaDocuments(sharePointFiles),
+        personaDocumentIds: personaDocumentIds.response,
       };
 
       const validationResponse = ValidateSchema(modelToUpdate);

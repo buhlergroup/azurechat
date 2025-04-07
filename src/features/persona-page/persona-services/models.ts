@@ -2,6 +2,7 @@ import { refineFromEmpty } from "@/features/common/schema-validation";
 import { z } from "zod";
 
 export const EXTERNAL_SOURCE = "SHAREPOINT";
+export const PERSONA_DOCUMENT_ATTRIBUTE = "PERSONA_DOCUMENT";
 
 export type PersonaDocument = z.infer<typeof PersonaDocumentSchema>;
 
@@ -12,6 +13,12 @@ export type SharePointFile = {
     driveId: string;
   };
 }
+
+export type SharePointFileContent = SharePointFile &{
+  paragraphs: string[];
+  chunks?: string[];
+}
+
 export const SharePointFileSchema = z.object({
   documentId: z.string(), // SharePoint document ID
   parentReference: z.object({
@@ -23,6 +30,7 @@ export const PersonaDocumentSchema = z.object({
   id: z.string(),
   externalFile: SharePointFileSchema,
   source: z.literal(EXTERNAL_SOURCE),
+  type: z.literal(PERSONA_DOCUMENT_ATTRIBUTE),
 });
 
 export const AccessGroupSchema = z.object({
