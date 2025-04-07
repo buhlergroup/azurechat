@@ -25,6 +25,7 @@ import {
   DeletePersonaDocumentsByPersonaId,
   UpdateOrAddPersonaDocuments as AddOrUpdatePersonaDocuments,
 } from "./persona-documents-service";
+import { AccessGroupById } from "./access-group-service";
 
 interface PersonaInput {
   name: string;
@@ -71,6 +72,20 @@ export const FindPersonaByID = async (
           },
         ],
       };
+    }
+
+    if (resources[0].accessGroup && resources[0].accessGroup.id != "") {
+      const access = await CheckPersonaAccess(resources[0].accessGroup.id);
+      if (!access) {
+        return {
+          status: "UNAUTHORIZED",
+          errors: [
+            {
+              message: `You don't have access to this persona`,
+            },
+          ],
+        };
+      }
     }
 
     return {
@@ -314,15 +329,28 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
         },
       ],
     };
-    // TODO: Adjust access with new persona sharing
 
     const { resources } = await HistoryContainer()
       .items.query<PersonaModel>(querySpec)
       .fetchAll();
 
+    const personasWithAccess = (
+      await Promise.all(
+        resources.map(async (e) => {
+          if (e.accessGroup && e.accessGroup.id != "") {
+            const access = await CheckPersonaAccess(e.accessGroup.id);
+            if (!access) {
+              return null;
+            }
+          }
+          return e;
+        })
+      )
+    ).filter((e) => e !== null);
+
     return {
       status: "OK",
-      response: resources,
+      response: personasWithAccess,
     };
   } catch (error) {
     return {
@@ -346,7 +374,19 @@ export const CreatePersonaChat = async (
     const persona = personaResponse.response;
 
     // check if user has access to the persona
-    // TODO Add documents to chat thread
+    if (persona.accessGroup && persona.accessGroup.id != "") {
+      const access = await CheckPersonaAccess(persona.accessGroup.id);
+      if (!access) {
+        return {
+          status: "UNAUTHORIZED",
+          errors: [
+            {
+              message: `You don't have access to this persona`,
+            },
+          ],
+        };
+      }
+    }
 
     const response = await UpsertChatThread({
       name: persona.name,
@@ -383,4 +423,14 @@ const ValidateSchema = (model: PersonaModel): ServerActionResponse => {
     status: "OK",
     response: model,
   };
+};
+
+const CheckPersonaAccess = async (groupId: string): Promise<boolean> => {
+  const accessGroupResponse = await AccessGroupById(groupId);
+
+  if (accessGroupResponse.status === "OK") {
+    return true;
+  }
+
+  return false;
 };

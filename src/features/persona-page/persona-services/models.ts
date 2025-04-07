@@ -14,7 +14,7 @@ export type SharePointFile = {
   };
 }
 
-export type SharePointFileContent = SharePointFile &{
+export type SharePointFileContent = DocumentMetadata &{
   paragraphs: string[];
   chunks?: string[];
 }

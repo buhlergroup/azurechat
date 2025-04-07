@@ -179,7 +179,9 @@ export const UpdateOrAddPersonaDocuments = async (
     }
   }
 
-  const handleNewDocumentsResponse = await IndexNewDocuments(newDocuments);
+  const handleNewDocumentsResponse = await IndexNewPersonaDocuments(
+    newDocuments
+  );
   if (handleNewDocumentsResponse.status !== "OK") {
     return {
       status: "ERROR",
@@ -298,6 +300,30 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
   }
 };
 
+export const AuthorizedDocuments = async (
+  documents: SharePointFile[]
+): Promise<string[]> => {
+  try {
+    const { token } = await getCurrentUser();
+    const client = getGraphClient(token);
+    const body = CreateDocumentDetailBody(documents, ["id"]);
+    const response = await client.api("/$batch").post(body);
+
+    let allowed: string[] = [];
+    response.responses.map((responseItem: any) => {
+      if (responseItem.status === 200) {
+        allowed.push(
+          documents.find((doc) => doc.documentId === responseItem.id)?.id || ""
+        );
+      }
+    });
+
+    return allowed;
+  } catch (error) {
+    return [];
+  }
+};
+
 const CreateDocumentDetailBody = (
   documents: SharePointFile[],
   filters: string[]
@@ -360,7 +386,7 @@ const AddOrUpdatePersonaDocuments = async (
   };
 };
 
-const IndexNewDocuments = async (
+const IndexNewPersonaDocuments = async (
   documents: DocumentMetadata[]
 ): Promise<ServerActionResponse<void>> => {
   // download documents from sharepoint to the server and check access with that
@@ -398,7 +424,7 @@ const IndexNewDocuments = async (
 
       const indexResponses = await IndexDocuments(
         doc.chunks,
-        undefined,
+        doc.name,
         undefined,
         doc.id
       );
