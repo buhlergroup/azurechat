@@ -30,14 +30,20 @@ import { ResponseType } from "@microsoft/microsoft-graph-client";
 import { ChunkDocumentWithOverlap } from "@/features/chat-page/chat-services/chat-document-service";
 import { SupportedFileExtensionsTextFiles } from "@/features/chat-page/chat-services/models";
 
-export async function DocumentDetails(
-  documents: SharePointFile[]
-): Promise<ServerActionResponse<DocumentMetadata[]>> {
+export async function DocumentDetails(documents: SharePointFile[]): Promise<
+  ServerActionResponse<{
+    successful: DocumentMetadata[];
+    unsuccessful: { documentId: string; error: boolean }[];
+  }>
+> {
   try {
     if (documents.length === 0) {
       return {
         status: "OK",
-        response: [],
+        response: {
+          successful: [],
+          unsuccessful: [],
+        },
       };
     }
 
@@ -63,11 +69,13 @@ export async function DocumentDetails(
     ]);
     const response = await client.api("/$batch").post(body);
 
-    let documentDetails: DocumentMetadata[] = [];
+    let successful: DocumentMetadata[] = [];
+    let unsuccessful: { documentId: string; error: boolean }[] = [];
+
     for (const responseItem of response.responses) {
       if (responseItem.status === 200) {
         const document = responseItem.body;
-        documentDetails.push({
+        successful.push({
           documentId: document.id,
           name: document.name,
           createdBy: document.createdBy.user.displayName,
@@ -77,41 +85,29 @@ export async function DocumentDetails(
           },
         } as DocumentMetadata);
       } else {
-        return {
-          status: "ERROR",
-          errors: [
-            {
-              message: `Failed to fetch document details. Status: ${responseItem.status}`,
-            },
-          ],
-        };
+        unsuccessful.push({
+          documentId: responseItem.id,
+          error: true,
+        });
       }
     }
 
     return {
       status: "OK",
-      response: documentDetails,
+      response: {
+        successful,
+        unsuccessful,
+      },
     };
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      return {
-        status: "ERROR",
-        errors: [
-          {
-            message: `Failed to fetch document details: ${error.message}`,
-          },
-        ],
-      };
-    } else {
-      return {
-        status: "ERROR",
-        errors: [
-          {
-            message: "Failed to fetch document details: Unknown error",
-          },
-        ],
-      };
-    }
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [
+        {
+          message: `Failed to fetch document details: ${error}`,
+        },
+      ],
+    };
   }
 }
 
@@ -274,7 +270,7 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
     // remove old documents from the vector database
     const deleteResponses = await Promise.all(
       personaDocuments.map(async (oldDocumentId) => {
-      return await DeleteDocumentByPersonaDocumentId(oldDocumentId);
+        return await DeleteDocumentByPersonaDocumentId(oldDocumentId);
       })
     );
 
@@ -284,9 +280,9 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
 
     if (failedDeletions.length > 0) {
       throw new Error(
-      `Failed to delete some persona documents: ${failedDeletions
-        .map((failure) => failure.errors?.map((e) => e.message).join(", "))
-        .join("; ")}`
+        `Failed to delete some persona documents: ${failedDeletions
+          .map((failure) => failure.errors?.map((e) => e.message).join(", "))
+          .join("; ")}`
       );
     }
 
@@ -297,7 +293,6 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
     for (const document of resources) {
       await HistoryContainer().item(document.id).delete();
     }
-
   } catch (error) {
     throw new Error("Failed to delete persona documents. Error: " + error);
   }

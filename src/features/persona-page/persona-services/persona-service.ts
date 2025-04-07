@@ -345,7 +345,8 @@ export const CreatePersonaChat = async (
   if (personaResponse.status === "OK") {
     const persona = personaResponse.response;
 
-    // TODO Add documents and access group to chat thread
+    // check if user has access to the persona
+    // TODO Add documents to chat thread
 
     const response = await UpsertChatThread({
       name: persona.name,
@@ -360,6 +361,7 @@ export const CreatePersonaChat = async (
       personaMessage: persona.personaMessage,
       personaMessageTitle: persona.name,
       extension: persona.extensionIds || [],
+      personaDocumentIds: persona.personaDocumentIds || [],
     });
 
     return response;

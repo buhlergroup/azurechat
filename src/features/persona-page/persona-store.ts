@@ -89,8 +89,8 @@ export const usePersonaState = () => {
   return useSnapshot(personaStore, { sync: true });
 };
 
-export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
-  const sharePointFiles = handleSharePointFiles(formData);
+export const AddOrUpdatePersona = async (previous: any, formData: FormData) => {
+  const sharePointFiles = HandleSharePointFiles(formData);
   const model = FormDataToPersonaModel(formData);
 
   if (personaStore.persona.extensionIds) {
@@ -112,7 +112,7 @@ export const addOrUpdatePersona = async (previous: any, formData: FormData) => {
   return response;
 };
 
-const handleSharePointFiles = (formData: FormData): DocumentMetadata[] => {
+const HandleSharePointFiles = (formData: FormData): DocumentMetadata[] => {
   const filesObjStrings = formData.getAll(
     "selectedSharePointDocumentIds"
   ) as string[];

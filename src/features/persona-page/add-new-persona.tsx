@@ -19,7 +19,7 @@ import {
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import {
-  addOrUpdatePersona,
+  AddOrUpdatePersona,
   personaStore,
   usePersonaState,
 } from "./persona-store";
@@ -39,7 +39,7 @@ export const AddNewPersona: FC<Props> = (props) => {
   const { isOpened, persona } = usePersonaState();
 
   const [formState, formAction] = useActionState(
-    addOrUpdatePersona,
+    AddOrUpdatePersona,
     initialState
   );
 
