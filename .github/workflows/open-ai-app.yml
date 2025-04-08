@@ -33,7 +33,12 @@ jobs:
         run: |
           cd ./src
           npm install
-          NEXT_PUBLIC_FEEDBACK_LINK=${{ secrets.NEXT_PUBLIC_FEEDBACK_LINK }} npm run build --if-present
+          NEXT_PUBLIC_FEEDBACK_LINK=${{ secrets.NEXT_PUBLIC_FEEDBACK_LINK }}
+          NEXT_PUBLIC_PERSONA_DOCUMENT_LIMIT=${{ secrets.NEXT_PUBLIC_PERSONA_DOCUMENT_LIMIT }}
+          NEXT_PUBLIC_FEEDBACK_LINK=${{ secrets.NEXT_PUBLIC_FEEDBACK_LINK }}
+          NEXT_PUBLIC_AI_RULES=${{ secrets.NEXT_PUBLIC_AI_RULES }}
+          NEXT_PUBLIC_SHAREPOINT_URL=${{ secrets.NEXT_PUBLIC_SHAREPOINT_URL }}
+          npm run build --if-present
           cd ..
 
       - name: 📂 Copy standalone into the root
