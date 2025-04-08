@@ -13,7 +13,7 @@ import {
 } from "../../chat-services/chat-document-service";
 import { chatStore } from "../../chat-store";
 
-const MAX_UPLOAD_DOCUMENT_SIZE: number = 3000000; // 3MB in bytes
+const MAX_UPLOAD_DOCUMENT_SIZE: number = 10000000; // 10MB in bytes
 class FileStore {
   public uploadButtonLabel: string = "";
 

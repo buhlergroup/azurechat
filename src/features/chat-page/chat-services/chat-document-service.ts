@@ -7,6 +7,7 @@ import { HistoryContainer } from "@/features/common/services/cosmos";
 import { RevalidateCache } from "@/features/common/navigation-helpers";
 import { ServerActionResponse } from "@/features/common/server-action-response";
 import { DocumentIntelligenceInstance } from "@/features/common/services/document-intelligence";
+import { isUnexpected, getLongRunningPoller, AnalyzeOperationOutput } from "@azure-rest/ai-document-intelligence";
 import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
 import { EnsureIndexIsCreated } from "./azure-ai-search/azure-ai-search";
@@ -17,7 +18,7 @@ import {
   SupportedFileExtensionsTextFiles,
 } from "./models";
 
-const MAX_UPLOAD_DOCUMENT_SIZE: number = 3000000; // 3MB in bytes
+const MAX_UPLOAD_DOCUMENT_SIZE: number = 10000000; // 10MB in bytes
 const CHUNK_SIZE = 2300;
 // 25% overlap
 const CHUNK_OVERLAP = CHUNK_SIZE * 0.25;
@@ -89,26 +90,37 @@ const LoadFile = async (
 
     if (file && file.size < fileSize) {
       const client = DocumentIntelligenceInstance();
+      const arrayBuffer = await file.arrayBuffer();
+      const base64Source = Buffer.from(arrayBuffer).toString('base64');
 
-      const blob = new Blob([file], { type: file.type });
+      const initialResponse = await client
+        .path("/documentModels/{modelId}:analyze", "prebuilt-layout")
+        .post({
+          contentType: "application/json",
+          body: { base64Source },
+          queryParameters: { outputContentFormat: "markdown" },
+          onUploadProgress: (progress) => {
+            console.log(`Upload progress: ${progress.loadedBytes} bytes`);
+          },
+          onDownloadProgress: (progress) => {
+            console.log(`Download progress: ${progress.loadedBytes} bytes`);
+          }
+        });
 
-      const poller = await client.beginAnalyzeDocument(
-        "prebuilt-read",
-        await blob.arrayBuffer()
-      );
-      const { paragraphs } = await poller.pollUntilDone();
+      if (isUnexpected(initialResponse)) {
+        throw initialResponse.body.error;
+      }
 
       const docs: Array<string> = [];
 
-      if (paragraphs) {
-        for (const paragraph of paragraphs) {
-          docs.push(paragraph.content);
-        }
-      }
+      const poller = getLongRunningPoller(client, initialResponse, {
+        intervalInMs: 1000,
+      });
+      const response =  await poller.pollUntilDone();
 
       return {
         status: "OK",
-        response: docs,
+        response: [(response.body as AnalyzeOperationOutput)?.analyzeResult?.content as string],
       };
     } else {
       return {
