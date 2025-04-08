@@ -6,7 +6,7 @@ import {
   zodErrorsToServerActionErrors,
 } from "@/features/common/server-action-response";
 import { getGraphClient } from "../../common/services/microsoft-graph-client";
-import { getCurrentUser } from "@/features/auth-page/helpers";
+import { getCurrentUser, userHashedId } from "@/features/auth-page/helpers";
 import {
   DocumentMetadata,
   EXTERNAL_SOURCE,
@@ -141,15 +141,22 @@ export const UpdateOrAddPersonaDocuments = async (
   sharePointFiles.forEach((file, index) => {
     file.id = addOrUpdateResponse.response[index];
   });
-
-  // remove documents that are not selected anymore
+  
   const removeDocuments = currentPersonaDocuments.filter((id) => {
     return !sharePointFiles.map((e) => e.id).includes(id);
   });
-
-  Promise.all(
+  
+  // remove documents that are not selected anymore
+  await Promise.all(
     removeDocuments.map(async (id) => {
       await HistoryContainer().item(id).delete();
+    })
+  );
+
+  // remove old documents from the vector database
+  await Promise.all(
+    removeDocuments.map(async (oldDocumentId) => {
+      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
     })
   );
 
@@ -189,12 +196,6 @@ export const UpdateOrAddPersonaDocuments = async (
     };
   }
 
-  // remove old documents from the vector database
-  Promise.all(
-    removeDocuments.map(async (oldDocumentId) => {
-      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
-    })
-  );
 
   return {
     status: "OK",
@@ -342,17 +343,20 @@ const CreateDocumentDetailBody = (
 const AddOrUpdatePersonaDocuments = async (
   sharePointFiles: SharePointFile[]
 ): Promise<ServerActionResponse<string[]>> => {
-  const personaDocuments: PersonaDocument[] = sharePointFiles.map((file) => ({
-    id: file.id || uniqueId(),
-    externalFile: {
-      documentId: file.documentId,
-      parentReference: {
-        driveId: file.parentReference.driveId,
+  const personaDocuments: PersonaDocument[] = await Promise.all(
+    sharePointFiles.map(async (file) => ({
+      id: file.id || uniqueId(),
+      userId: await userHashedId(),
+      externalFile: {
+        documentId: file.documentId,
+        parentReference: {
+          driveId: file.parentReference.driveId,
+        },
       },
-    },
-    source: EXTERNAL_SOURCE,
-    type: PERSONA_DOCUMENT_ATTRIBUTE,
-  }));
+      source: EXTERNAL_SOURCE,
+      type: PERSONA_DOCUMENT_ATTRIBUTE,
+    }))
+  );
 
   const documentIds: string[] = [];
 

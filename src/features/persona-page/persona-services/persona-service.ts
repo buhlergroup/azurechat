@@ -109,6 +109,8 @@ export const CreatePersona = async (
   try {
     const user = await getCurrentUser();
 
+    // TODO: check if the user is part of the access group
+
     const personaDocumentIds = await AddOrUpdatePersonaDocuments(
       sharePointFiles,
       []

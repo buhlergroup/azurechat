@@ -180,7 +180,7 @@ export const PersonaDetail: FC<Props> = (props) => {
               <Label htmlFor="personaMessage">Persona Documents</Label>
               <TooltipProvider>
                 {noAccessDocuments.length > 0 && (
-                  <div className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-input bg-background">
+                  <div className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-red-200 bg-background">
                     <div>
                       <p>
                         You don't have access to {noAccessDocuments.length}{" "}
@@ -194,7 +194,7 @@ export const PersonaDetail: FC<Props> = (props) => {
                     </div>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="p-1">
+                        <div className="p-1 text-red-500">
                           <Info size={15} />
                         </div>
                       </TooltipTrigger>
