@@ -212,6 +212,7 @@ export const EnsureChatThreadOperation = async (
   chatThreadID: string
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   const response = await FindChatThreadForCurrentUser(chatThreadID);
+  // check access to Persona documents
   const currentUser = await getCurrentUser();
   const hashedId = await userHashedId();
 
@@ -326,6 +327,7 @@ export const CreateChatThread = async (): Promise<
       personaMessage: "",
       personaMessageTitle: CHAT_DEFAULT_PERSONA,
       extension: [],
+      personaDocumentIds: []
     };
 
     const { resource } = await HistoryContainer().items.create<ChatThreadModel>(
