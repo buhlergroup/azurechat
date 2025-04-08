@@ -111,6 +111,7 @@ export const FormatCitations = (citation: DocumentSearchResponse[]) => {
         chatThreadId: d.document.chatThreadId,
         id: "",
         user: "",
+        personaDocumentId: d.document.personaDocumentId
       },
     });
   });
