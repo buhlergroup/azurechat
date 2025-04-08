@@ -42,8 +42,6 @@ interface PersonaInput {
 export const FindPersonaByID = async (
   id: string
 ): Promise<ServerActionResponse<PersonaModel>> => {
-  // TODO: ensure persona operation
-
   try {
     const querySpec: SqlQuerySpec = {
       query: "SELECT * FROM root r WHERE r.type=@type AND r.id=@id",

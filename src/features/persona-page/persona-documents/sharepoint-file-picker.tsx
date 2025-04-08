@@ -283,7 +283,7 @@ export function SharePointFilePicker({
             <DialogDescription className="inline-flex items-center gap-2">
               Do not upload documents with a classification higher than B2.
               <a
-                href={process.env.NEXT_PUBLIC_BUHLER_AI_RULES ?? ""}
+                href={process.env.NEXT_PUBLIC_AI_RULES ?? ""}
                 target="_blank"
               >
                 <Button
