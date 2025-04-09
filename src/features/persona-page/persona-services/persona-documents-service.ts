@@ -141,15 +141,15 @@ export const UpdateOrAddPersonaDocuments = async (
   sharePointFiles.forEach((file, index) => {
     file.id = addOrUpdateResponse.response[index];
   });
-  
+
   const removeDocuments = currentPersonaDocuments.filter((id) => {
     return !sharePointFiles.map((e) => e.id).includes(id);
   });
-  
+
   // remove documents that are not selected anymore
   await Promise.all(
     removeDocuments.map(async (id) => {
-      await HistoryContainer().item(id).delete();
+      await HistoryContainer().item(id, await userHashedId()).delete();
     })
   );
 
@@ -189,13 +189,13 @@ export const UpdateOrAddPersonaDocuments = async (
   const handleNewDocumentsResponse = await IndexNewPersonaDocuments(
     newDocuments
   );
+
   if (handleNewDocumentsResponse.status !== "OK") {
     return {
       status: "ERROR",
       errors: handleNewDocumentsResponse.errors,
     };
   }
-
 
   return {
     status: "OK",
@@ -294,10 +294,12 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
       .fetchAll();
 
     for (const document of resources) {
-      await HistoryContainer().item(document.id).delete();
+      await HistoryContainer()
+        .item(document.id, await userHashedId())
+        .delete();
     }
   } catch (error) {
-    throw new Error("Failed to delete persona documents. Error: " + error);
+    // throw new Error("Failed to delete persona documents. Error: " + error);
   }
 };
 
@@ -479,7 +481,12 @@ const SharePointFileToText = async (
 
       if (response.byteLength > Number(process.env.MAX_PERSONA_DOCUMENT_SIZE)) {
         throw new Error(
-          `Document size exceeded. Maximum is ${process.env.MAX_PERSONA_DOCUMENT_SIZE}.`
+          `Document ${document.name} is too big. Maximum is ${(
+            Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) /
+            (1024 * 1024)
+          ).toFixed(
+            2
+          )} MB. Choose a smaller document or split the document into two documents.`
         );
       }
 

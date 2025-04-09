@@ -28,19 +28,25 @@ export const ChatApiRAG = async (props: {
 }): Promise<ChatCompletionStreamingRunner> => {
   const { chatThread, userMessage, history, signal } = props;
 
-  const allowedPersonaDocumentIdsResponse =
-    await AllowedPersonaDocumentIdsResponse(chatThread.personaDocumentIds);
+  const allowedPersonaDocumentIdsResponse = await AllowedPersonaDocumentIds(
+    chatThread.personaDocumentIds
+  );
 
   const openAI = OpenAIInstance();
+
+  const personaFilter =
+    allowedPersonaDocumentIdsResponse.length > 0
+      ? `(${allowedPersonaDocumentIdsResponse
+          .map((id) => `personaDocumentId eq '${id}'`)
+          .join(" or ")})`
+      : "false";
 
   const documentResponse = await SimilaritySearch(
     userMessage,
     10,
     `(user eq '${await userHashedId()}' and chatThreadId eq '${
       chatThread.id
-    }') or (chatThreadId eq null and (${allowedPersonaDocumentIdsResponse
-      .map((id) => `personaDocumentId eq '${id}'`)
-      .join(" or ")}))`
+    }') or (chatThreadId eq null and ${personaFilter})`
   );
 
   const documents: ChatCitationModel[] = [];
@@ -109,9 +115,7 @@ ${userMessage}
   return openAI.beta.chat.completions.stream(stream, { signal });
 };
 
-const AllowedPersonaDocumentIdsResponse = async (
-  personaDocumentIds: string[]
-) => {
+const AllowedPersonaDocumentIds = async (personaDocumentIds: string[]) => {
   const personaDocumentsResponses = await Promise.all(
     personaDocumentIds.map(async (id) => {
       try {
@@ -126,9 +130,10 @@ const AllowedPersonaDocumentIdsResponse = async (
     (response) => response !== null && response.status === "OK"
   );
 
-
   const allowedPersonaDocuments = await AuthorizedDocuments(
-    personaDocuments.map((e) => convertPersonaDocumentToSharePointDocument(e.response))
+    personaDocuments.map((e) =>
+      convertPersonaDocumentToSharePointDocument(e.response)
+    )
   );
 
   return allowedPersonaDocuments;
