@@ -93,15 +93,17 @@ export const PersonaDetail: FC<Props> = (props) => {
 
     const response = await DocumentDetails(documents);
     if (response.status === "OK") {
-      const updatedFiles = documents.map((file) => {
-        const matchingDocument = response.response.successful.find(
-          (doc) => doc.documentId === file.documentId
-        );
-        return matchingDocument ? { ...matchingDocument, id: file.id } : null;
-      });
+      const updatedFiles = documents
+        .map((file) => {
+          const matchingDocument = response.response.successful.find(
+        (doc) => doc.documentId === file.documentId
+          );
+          return matchingDocument ? { ...matchingDocument, id: file.id } : null;
+        })
+        .filter((file) => file !== null);
 
       setNoAccessDocuments(response.response.unsuccessful.map((doc) => ({})));
-      setDocuments(updatedFiles as DocumentMetadata[]);
+      setDocuments((updatedFiles as DocumentMetadata[]) || []);
 
       if (response.response.unsuccessful.length > 0) {
         toast({
@@ -184,11 +186,11 @@ export const PersonaDetail: FC<Props> = (props) => {
                     <div>
                       <p>
                         You don't have access to {noAccessDocuments.length}{" "}
-                        persona documents
+                        persona document(s)
                       </p>
                       <div className="flex items-center space-x-2 mt-1">
                         <p className="text-sm text-muted-foreground">
-                          Ask the persona owner to share the documents with you
+                          Ask the persona owner to share the document(s) with you
                         </p>
                       </div>
                     </div>

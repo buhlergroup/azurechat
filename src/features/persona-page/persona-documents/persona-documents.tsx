@@ -23,6 +23,7 @@ interface Props {
 export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
   const { data: session } = useSession();
   const [pickedFiles, setPickedFiles] = useState<DocumentMetadata[]>([]);
+  const [noAccessDocuments, setNoAccessDocuments] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchAllDocuments = async () => {
@@ -70,37 +71,24 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
     if (!initialPersonaDocumentIds) return;
 
     const response = await DocumentDetails(documents);
-    if (
-      response.status === "OK" &&
-      response.response.unsuccessful.length === 0
-    ) {
-      const updatedFiles = documents.map((file) => {
-        const matchingDocument = response.response.successful.find(
-          (doc) => doc.documentId === file.documentId
-        );
-        return matchingDocument ? { ...matchingDocument, id: file.id } : null;
-      });
-
-      setPickedFiles(updatedFiles.filter(Boolean) as DocumentMetadata[]);
-    }
-
-    if (response.status === "OK" && response.response.unsuccessful.length > 0) {
+    if (response.status === "OK") {
       const unsuccessfulFiles = response.response.unsuccessful.map(
         (file) => file.documentId
       );
-      handleErrors(
-        [
-          {
-            message: `Error fetching metadata for documents: ${unsuccessfulFiles.join(
-              ", "
-            )}`,
-          },
-        ],
-        "Error fetching document details. Please try again."
-      );
-    }
 
-    if (response.status !== "OK") {
+      setNoAccessDocuments(unsuccessfulFiles);
+
+      const updatedFiles = documents
+        .map((file) => {
+          const matchingDocument = response.response.successful.find(
+            (doc) => doc.documentId === file.documentId
+          );
+          return matchingDocument ? { ...matchingDocument, id: file.id } : null;
+        })
+        .filter(Boolean);
+
+      setPickedFiles(updatedFiles as DocumentMetadata[]);
+    } else {
       handleErrors(
         response.errors,
         "Error fetching document details. Please try again."
@@ -145,7 +133,7 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
           onFilesSelected={fetchMetadataForDocuments}
         />
       </div>
-      <div className="flex items-center w-full">
+      <div className="w-full">
         <input
           type="hidden"
           name="selectedSharePointDocumentIds"
@@ -156,6 +144,36 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
           name="personaDocumentIds"
           value={JSON.stringify(initialPersonaDocumentIds)}
         />
+
+        {noAccessDocuments.length > 0 && (
+          <div className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-red-200 bg-background">
+            <div>
+              <p>
+                You don't have access to {noAccessDocuments.length} persona
+                document(s)
+              </p>
+              <div className="flex items-center space-x-2 mt-1">
+                <p className="text-sm text-muted-foreground">
+                  The document(s) may have been deleted or you don't have access
+                  to them anymore.
+                </p>
+              </div>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="p-1 text-red-500">
+                  <Info size={15} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Your persona chat experience may suffer from the lack of
+                  documents
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
 
         {pickedFiles.length === 0 ? (
           <div className="p-2 flex items-center justify-center w-full text-muted-foreground">
