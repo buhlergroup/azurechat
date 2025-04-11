@@ -6,7 +6,7 @@ import {
   zodErrorsToServerActionErrors,
 } from "@/features/common/server-action-response";
 import { getGraphClient } from "../../common/services/microsoft-graph-client";
-import { getCurrentUser } from "@/features/auth-page/helpers";
+import { getCurrentUser, userHashedId } from "@/features/auth-page/helpers";
 import {
   DocumentMetadata,
   EXTERNAL_SOURCE,
@@ -142,14 +142,21 @@ export const UpdateOrAddPersonaDocuments = async (
     file.id = addOrUpdateResponse.response[index];
   });
 
-  // remove documents that are not selected anymore
   const removeDocuments = currentPersonaDocuments.filter((id) => {
     return !sharePointFiles.map((e) => e.id).includes(id);
   });
 
-  Promise.all(
+  // remove documents that are not selected anymore
+  await Promise.all(
     removeDocuments.map(async (id) => {
-      await HistoryContainer().item(id).delete();
+      await HistoryContainer().item(id, await userHashedId()).delete();
+    })
+  );
+
+  // remove old documents from the vector database
+  await Promise.all(
+    removeDocuments.map(async (oldDocumentId) => {
+      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
     })
   );
 
@@ -182,19 +189,13 @@ export const UpdateOrAddPersonaDocuments = async (
   const handleNewDocumentsResponse = await IndexNewPersonaDocuments(
     newDocuments
   );
+
   if (handleNewDocumentsResponse.status !== "OK") {
     return {
       status: "ERROR",
       errors: handleNewDocumentsResponse.errors,
     };
   }
-
-  // remove old documents from the vector database
-  Promise.all(
-    removeDocuments.map(async (oldDocumentId) => {
-      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
-    })
-  );
 
   return {
     status: "OK",
@@ -293,10 +294,12 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
       .fetchAll();
 
     for (const document of resources) {
-      await HistoryContainer().item(document.id).delete();
+      await HistoryContainer()
+        .item(document.id, await userHashedId())
+        .delete();
     }
   } catch (error) {
-    throw new Error("Failed to delete persona documents. Error: " + error);
+    // throw new Error("Failed to delete persona documents. Error: " + error);
   }
 };
 
@@ -342,17 +345,20 @@ const CreateDocumentDetailBody = (
 const AddOrUpdatePersonaDocuments = async (
   sharePointFiles: SharePointFile[]
 ): Promise<ServerActionResponse<string[]>> => {
-  const personaDocuments: PersonaDocument[] = sharePointFiles.map((file) => ({
-    id: file.id || uniqueId(),
-    externalFile: {
-      documentId: file.documentId,
-      parentReference: {
-        driveId: file.parentReference.driveId,
+  const personaDocuments: PersonaDocument[] = await Promise.all(
+    sharePointFiles.map(async (file) => ({
+      id: file.id || uniqueId(),
+      userId: await userHashedId(),
+      externalFile: {
+        documentId: file.documentId,
+        parentReference: {
+          driveId: file.parentReference.driveId,
+        },
       },
-    },
-    source: EXTERNAL_SOURCE,
-    type: PERSONA_DOCUMENT_ATTRIBUTE,
-  }));
+      source: EXTERNAL_SOURCE,
+      type: PERSONA_DOCUMENT_ATTRIBUTE,
+    }))
+  );
 
   const documentIds: string[] = [];
 
@@ -475,7 +481,12 @@ const SharePointFileToText = async (
 
       if (response.byteLength > Number(process.env.MAX_PERSONA_DOCUMENT_SIZE)) {
         throw new Error(
-          `Document size exceeded. Maximum is ${process.env.MAX_PERSONA_DOCUMENT_SIZE}.`
+          `Document ${document.name} is too big. Maximum is ${(
+            Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) /
+            (1024 * 1024)
+          ).toFixed(
+            2
+          )} MB. Choose a smaller document or split the document into two documents.`
         );
       }
 

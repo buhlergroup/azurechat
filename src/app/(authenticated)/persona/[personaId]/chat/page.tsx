@@ -10,13 +10,11 @@ import { DisplayError } from "@/features/ui/error/display-error";
 import { LoadingIndicator } from "@/features/ui/loading";
 import { PersonaModel } from "@/features/persona-page/persona-services/models";
 import React, { useEffect, useState } from "react";
-import { PersonaAuthError } from "@/features/ui/error/persona-auth-error";
 
 const CreatePersonaChatPage = () => {
   const { personaId } = useParams();
   const [persona, setPersona] = useState<PersonaModel | null>(null);
   const [errors, setErrors] = useState<string[] | null>(null);
-  const [authError, setAuthError] = useState<boolean>(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -31,7 +29,7 @@ const CreatePersonaChatPage = () => {
         personasResponse.status !== "OK" &&
         personasResponse.status === "UNAUTHORIZED"
       ) {
-        setAuthError(true);
+        router.push("/persona/access-denied");
         return;
       } else if (personasResponse.status !== "OK") {
         setErrors(personasResponse.errors.map((e) => e.message));
@@ -52,7 +50,7 @@ const CreatePersonaChatPage = () => {
       if (response.status === "OK") {
         router.push(`/chat/${response.response.id}`);
       } else if (response.status === "UNAUTHORIZED") {
-        setAuthError(true);
+        router.push("/persona/access-denied");
       } else {
         showError(response.errors.map((e) => e.message).join(", "));
       }
@@ -60,10 +58,6 @@ const CreatePersonaChatPage = () => {
 
     startChat();
   }, [persona, router]);
-
-  if (authError) {
-    return <PersonaAuthError/>;
-  }
 
   if (errors) {
     return <DisplayError errors={[{ message: errors + "" }]} />;

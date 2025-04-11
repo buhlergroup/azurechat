@@ -34,7 +34,7 @@ export async function UserAccessGroups(): Promise<
         status: "ERROR",
         errors: [
           {
-            message: `Failed to fetch access groups: ${error.message}`,
+            message: `Failed to fetch access groups: ${error.message} Try logging in again.`,
           },
         ],
       };
@@ -81,7 +81,7 @@ export async function AccessGroupById(
       status: "ERROR",
       errors: [
         {
-          message: `Failed to fetch access group by ID: ${error}`,
+          message: `Failed to fetch access group by ID: ${error} Try logging in again.`,
         },
       ],
     };

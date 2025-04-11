@@ -14,6 +14,12 @@ export type SharePointFile = {
   };
 }
 
+export type DocumentMetadata = SharePointFile & {
+  name: string;
+  createdBy: string;
+  createdDateTime: string;
+};
+
 export type SharePointFileContent = DocumentMetadata &{
   paragraphs: string[];
   chunks?: string[];
@@ -29,6 +35,7 @@ export const SharePointFileSchema = z.object({
 export const PersonaDocumentSchema = z.object({
   id: z.string(),
   externalFile: SharePointFileSchema,
+  userId: z.string(),
   source: z.literal(EXTERNAL_SOURCE),
   type: z.literal(PERSONA_DOCUMENT_ATTRIBUTE),
 });
@@ -77,11 +84,6 @@ export type AccessGroup = {
   description: string;
 };
 
-export type DocumentMetadata = SharePointFile & {
-  name: string;
-  createdBy: string;
-  createdDateTime: string;
-};
 
 export const convertDocumentMetadataToSharePointFile = (file: DocumentMetadata): SharePointFile => {
   return {

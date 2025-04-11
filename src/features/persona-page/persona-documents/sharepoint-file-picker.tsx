@@ -29,7 +29,6 @@ export function SharePointFilePicker({
   token,
   onFilesSelected,
 }: SharePointFilePickerSelectorProps) {
-  const [isLoading, setIsLoading] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const portRef = useRef<MessagePort | null>(null);
@@ -186,10 +185,10 @@ export function SharePointFilePicker({
   };
 
   const openFilePicker = async () => {
-    setIsLoading(true);
-
     try {
       setShowPicker(true);
+
+      const documentLimit = Number(process.env.NEXT_PUBLIC_MAX_PERSONA_DOCUMENT_LIMIT);
 
       // Schema for the file picker options
       // https://learn.microsoft.com/en-us/onedrive/developer/controls/file-pickers/v8-schema?view=odsp-graph-online
@@ -215,7 +214,7 @@ export function SharePointFilePicker({
         selection: {
           mode: "multiple",
           enablePersistence: true,
-          maximumCount: process.env.NEXT_PUBLIC_MAX_PERSONA_DOCUMENT_LIMIT || 20,
+          maximumCount: documentLimit || 10,
         },
       };
 
@@ -257,8 +256,6 @@ export function SharePointFilePicker({
         variant: "destructive",
       });
       setShowPicker(false);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -280,25 +277,27 @@ export function SharePointFilePicker({
             <DialogTitle className="text-xl font-semibold">
               Select Files
             </DialogTitle>
-            <DialogDescription className="inline-flex items-center gap-2">
-              Do not upload documents with a classification higher than B2.
-              <a
-                href={process.env.NEXT_PUBLIC_AI_RULES ?? ""}
-                target="_blank"
-              >
-                <Button
-                  variant={"link"}
-                  className="gap-1 p-0 h-auto"
-                  type="button"
+            <DialogDescription className="">
+              <span className="gap-2 flex">
+                <span>
+                  Do not upload documents with a classification higher than B2.
+                </span>
+                <a
+                  href={process.env.NEXT_PUBLIC_AI_RULES ?? ""}
+                  target="_blank"
                 >
-                  Bühler AI Policy <ExternalLink size={14} />
-                </Button>
-              </a>
-              {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background opacity-80 text-red-950">
-                  <div className="loader">Loading...</div>
-                </div>
-              )}
+                  <Button
+                    variant={"link"}
+                    className="gap-1 p-0 h-auto"
+                    type="button"
+                  >
+                    Bühler AI Policy <ExternalLink size={14} />
+                  </Button>
+                </a>
+              </span>
+              <span>
+                Files can not be larger than <b>10mb</b> each.
+              </span>
             </DialogDescription>
           </DialogHeader>
           <div className="h-[50vh] max-h-[1000px]">
@@ -306,8 +305,6 @@ export function SharePointFilePicker({
               ref={iframeRef}
               className="inset-0 w-full h-full border-0 rounded-lg"
               title="OneDrive File Picker"
-              onLoad={() => setIsLoading(false)}
-              onLoadStart={() => setIsLoading(true)}
             />
           </div>
         </DialogContent>

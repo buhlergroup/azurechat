@@ -91,16 +91,16 @@ export const usePersonaState = () => {
 
 export const AddOrUpdatePersona = async (previous: any, formData: FormData) => {
   const sharePointFiles = HandleSharePointFiles(formData);
-  const model = FormDataToPersonaModel(formData);
+  const persona = FormDataToPersonaModel(formData);
 
   if (personaStore.persona.extensionIds) {
-    model.extensionIds = personaStore.persona.extensionIds.map((e) => e);
+    persona.extensionIds = personaStore.persona.extensionIds.map((e) => e);
   }
 
   const response =
-    model.id && model.id !== ""
-      ? await UpsertPersona(model, sharePointFiles)
-      : await CreatePersona(model, sharePointFiles);
+    persona.id && persona.id !== ""
+      ? await UpsertPersona(persona, sharePointFiles)
+      : await CreatePersona(persona, sharePointFiles);
 
   if (response.status === "OK") {
     personaStore.updateOpened(false);
