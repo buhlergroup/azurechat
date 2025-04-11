@@ -4,6 +4,9 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GitHubProvider from "next-auth/providers/github";
 import { Provider } from "next-auth/providers/index";
 import { hashValue } from "./helpers";
+import { getGraphClient } from "../common/services/microsoft-graph-client";
+import { ResponseType } from "@microsoft/microsoft-graph-client";
+import { JWT } from "next-auth/jwt";
 
 const configureIdentityProvider = () => {
   const providers: Array<Provider> = [];
@@ -44,14 +47,14 @@ const configureIdentityProvider = () => {
         clientId: process.env.AZURE_AD_CLIENT_ID,
         clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
         tenantId: process.env.AZURE_AD_TENANT_ID,
-        authorization: { params: { scope: "openid profile User.Read email Files.Read.All Sites.Read.All AllSites.Read MyFiles.Read Group.Read.All" } },
+        authorization: {
+          params: {
+            scope:
+              "offline_access openid profile User.Read email Files.Read.All Sites.Read.All AllSites.Read MyFiles.Read Group.Read.All",
+          },
+        },
         async profile(profile, tokens) {
-          const profilePictureUrl = `https://graph.microsoft.com/v1.0/me/photos/48x48/$value`;
-          const profilePicture = await fetch(profilePictureUrl, {
-            headers: { Authorization: `Bearer ${tokens.access_token}` },
-          });
-
-          const baseProfile = {
+          return {
             ...profile,
             id: profile.sub,
             email: profile.email,
@@ -60,17 +63,6 @@ const configureIdentityProvider = () => {
               adminEmails?.includes(profile.email.toLowerCase()) ||
               adminEmails?.includes(profile.preferred_username.toLowerCase()),
           };
-
-          if (profilePicture.ok) {
-            const pictureBuffer = await profilePicture.arrayBuffer();
-            const pictureBase64 = Buffer.from(pictureBuffer).toString("base64");
-            return {
-              ...baseProfile,
-              image: `data:image/jpeg;base64, ${pictureBase64}`,
-            };
-          } else {
-            return baseProfile;
-          }
         },
       })
     );
@@ -93,7 +85,7 @@ const configureIdentityProvider = () => {
             email: email,
             isAdmin: false,
             accessToken: "fake_token",
-            image: "", // Set an image if available for local dev
+            image: "",
           };
           return user;
         },
@@ -109,15 +101,20 @@ export const options: NextAuthOptions = {
   providers: [...configureIdentityProvider()],
   callbacks: {
     async jwt({ token, user, account }) {
-      if (user?.isAdmin) {
-        token.isAdmin = user.isAdmin;
-      }
-
-      if (account?.access_token) {
+      if (account && user) {
         token.accessToken = account.access_token;
+        token.accessTokenExpires = account.expires_at;
+        token.refreshToken = account.refresh_token;
+        token.isAdmin = user.isAdmin;
+
+        return token;
       }
 
-      return token;
+      if (Date.now() < (token.accessTokenExpires as number) * 1000) {
+        return token;
+      }
+
+      return refreshAccessToken(token);
     },
     async session({ session, token }) {
       session.user.isAdmin = token.isAdmin as boolean;
@@ -129,5 +126,45 @@ export const options: NextAuthOptions = {
     strategy: "jwt",
   },
 };
+
+async function refreshAccessToken(token: JWT) {
+  try {
+    const url = `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id: process.env.AZURE_AD_CLIENT_ID!,
+        client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
+        grant_type: "refresh_token",
+        refresh_token: token.refreshToken as string,
+        scope:
+          "offline_access openid profile User.Read email Files.Read.All Sites.Read.All AllSites.Read MyFiles.Read Group.Read.All",
+      }),
+    });
+
+    const refreshedTokens = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to refresh access token: ${refreshedTokens.error}`
+      );
+    }
+
+    return {
+      ...token,
+      accessToken: refreshedTokens.access_token,
+      accessTokenExpires: refreshedTokens.expiresAt,
+      refreshToken: refreshedTokens.refresh_token || token.refreshToken,
+    };
+  } catch (error) {
+    return {
+      ...token,
+      error: "RefreshAccessTokenError",
+    };
+  }
+}
 
 export const handlers = NextAuth(options);

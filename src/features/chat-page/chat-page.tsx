@@ -9,7 +9,7 @@ import ChatMessageContainer from "@/features/ui/chat/chat-message-area/chat-mess
 import ChatMessageContentArea from "@/features/ui/chat/chat-message-area/chat-message-content";
 import { useChatScrollAnchor } from "@/features/ui/chat/chat-message-area/use-chat-scroll-anchor";
 import { useSession } from "next-auth/react";
-import { FC, useEffect, useRef } from "react";
+import { FC, useEffect, useRef, useState } from "react";
 import { ExtensionModel } from "../extensions-page/extension-services/models";
 import { ChatHeader } from "./chat-header/chat-header";
 import {
@@ -18,6 +18,7 @@ import {
   ChatThreadModel,
 } from "./chat-services/models";
 import MessageContent from "./message-content";
+import { useProfilePicture } from "../common/hooks/profile-image-hook";
 
 interface ChatPageProps {
   messages: Array<ChatMessageModel>;
@@ -28,6 +29,7 @@ interface ChatPageProps {
 
 export const ChatPage: FC<ChatPageProps> = (props) => {
   const { data: session } = useSession();
+  const profilePicture = useProfilePicture(session?.user?.accessToken);
 
   useEffect(() => {
     chatStore.initChatSession({
@@ -76,7 +78,7 @@ export const ChatPage: FC<ChatPageProps> = (props) => {
                 onCopy={() => {
                   navigator.clipboard.writeText(message.content);
                 }}
-                profilePicture={session?.user?.image}
+                profilePicture={profilePicture}
               >
                 <MessageContent message={message} />
               </ChatMessageArea>
