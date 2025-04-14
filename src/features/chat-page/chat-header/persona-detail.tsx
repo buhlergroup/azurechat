@@ -32,28 +32,30 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/features/ui/tooltip";
+import { NoAccessDocuments } from "@/features/ui/persona-documents/no-access-documents";
+import { DocumentItem } from "@/features/ui/persona-documents/document-item";
 
 interface Props {
   chatThread: ChatThreadModel;
 }
 
-export const PersonaDetail: FC<Props> = (props) => {
+export const PersonaDetail: FC<Props> = ({ chatThread }) => {
   const [documents, setDocuments] = useState<DocumentMetadata[]>([]);
-  const [noAccessDocuments, setNoAccessDocuments] = useState<any>([]);
+  const [noAccessDocuments, setNoAccessDocuments] = useState<
+    { documentId: string; error: boolean }[]
+  >([]);
 
-  const persona = props.chatThread.personaMessageTitle;
-  const personaMessage = props.chatThread.personaMessage;
+  const { personaMessageTitle, personaMessage, personaDocumentIds, id } =
+    chatThread;
   const router = useRouter();
 
   useEffect(() => {
-    const fetchAllDocuments = async () => {
-      const personaDocuments = await fetchPersonaDocuments(
-        props.chatThread.personaDocumentIds
-      );
-      await fetchMetadataForDocuments(personaDocuments);
+    const initializeDocuments = async () => {
+      const personaDocuments = await fetchPersonaDocuments(personaDocumentIds);
+      fetchDocumentMetadata(personaDocuments);
     };
-    fetchAllDocuments();
-  }, [props.chatThread.personaDocumentIds]);
+    initializeDocuments();
+  }, [personaDocumentIds]);
 
   const fetchPersonaDocuments = async (
     documentIds: string[]
@@ -69,7 +71,7 @@ export const PersonaDetail: FC<Props> = (props) => {
         if (response.status === "OK") {
           return convertPersonaDocumentToSharePointDocument(response.response);
         } else {
-          handleErrors(
+          displayError(
             response.errors,
             `Error fetching document details for ID: ${documentIds[index]}. Please try again.`
           );
@@ -77,86 +79,116 @@ export const PersonaDetail: FC<Props> = (props) => {
         }
       }) as SharePointFile[];
     } catch {
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred. Please try again.",
-        variant: "destructive",
-      });
+      displayToastError("An unexpected error occurred. Please try again.");
       return [];
     }
   };
 
-  const fetchMetadataForDocuments = async (
-    documents: SharePointFile[]
+  const fetchDocumentMetadata = async (
+    files: SharePointFile[]
   ): Promise<void> => {
-    if (!documents || documents.length === 0) return;
+    if (!files || files.length === 0) return;
 
-    const response = await DocumentDetails(documents);
-    if (response.status === "OK") {
-      const updatedFiles = documents
-        .map((file) => {
-          const matchingDocument = response.response.successful.find(
-        (doc) => doc.documentId === file.documentId
-          );
-          return matchingDocument ? { ...matchingDocument, id: file.id } : null;
-        })
-        .filter((file) => file !== null);
+    try {
+      const response = await DocumentDetails(files);
 
-      setNoAccessDocuments(response.response.unsuccessful.map((doc) => ({})));
-      setDocuments((updatedFiles as DocumentMetadata[]) || []);
-
-      if (response.response.unsuccessful.length > 0) {
-        toast({
-          title: "Some documents are not accessible",
-          description:
-            "Your persona chat experience may suffer from the lack of documents.",
-          variant: "default",
-        });
+      if (response.status === "OK") {
+        processDocumentMetadata(
+          {
+            successful: response.response.successful,
+            unsuccessful: response.response.unsuccessful,
+          },
+          files
+        );
+      } else {
+        displayError(
+          response.errors,
+          "Error fetching document details. Please try again."
+        );
       }
-    } else {
-      handleErrors(
-        response.errors,
-        "Error fetching document details. Please try again."
+    } catch {
+      displayToastError("An unexpected error occurred. Please try again.");
+    }
+  };
+
+  const processDocumentMetadata = (
+    response: {
+      successful: DocumentMetadata[];
+      unsuccessful: { documentId: string; error: boolean }[];
+    },
+    files: SharePointFile[]
+  ) => {
+    const updatedFiles = files
+      .map((file) => {
+        const match = response.successful.find(
+          (doc) => doc.documentId === file.documentId
+        );
+        return match ? { ...match, id: file.id } : null;
+      })
+      .filter(Boolean) as DocumentMetadata[];
+
+    setDocuments(updatedFiles);
+    setNoAccessDocuments(response.unsuccessful || []);
+
+    if (response.unsuccessful.length > 0) {
+      displayToastWarning(
+        "Some documents are not accessible",
+        "Your persona chat experience may suffer from the lack of documents."
       );
     }
   };
 
-  const handleErrors = (
-    errors: { message: string }[] | undefined,
-    fallback: string
-  ) => {
+  const handleDuplicateAndCustomize = async () => {
+    try {
+      const chatThread = await FindChatThreadForCurrentUser(id);
+
+      if (chatThread.status !== "OK") {
+        return showError("An error occurred while duplicating the persona.");
+      }
+
+      const duplicatePersona = {
+        name: `${personaMessageTitle} Copy`,
+        description: `Copy of ${personaMessageTitle}`,
+        personaMessage,
+        extensionIds: chatThread.response.extension,
+      };
+
+      // TODO: Implement file copying
+      personaStore.newPersonaAndOpen(duplicatePersona);
+      router.push("/persona");
+    } catch {
+      showError("An unexpected error occurred while duplicating the persona.");
+    }
+  };
+
+  const displayError = (errors: any, fallbackMessage: string) => {
+    const description =
+      errors?.map((err: any) => err.message).join(", ") || fallbackMessage;
+    displayToastError(description);
+  };
+
+  const displayToastError = (description: string) => {
     toast({
       title: "Error",
-      description: errors?.map((err) => err.message).join(", ") || fallback,
+      description,
       variant: "destructive",
     });
   };
 
-  const handleDublicateCustomize = async () => {
-    const chatThread = await FindChatThreadForCurrentUser(props.chatThread.id);
-    if (chatThread.status !== "OK") {
-      return showError("An error occurred while duplicating the persona.");
-    }
-
-    const dublicatePersona = {
-      name: persona + " Copy",
-      description: "Copy of " + persona,
-      personaMessage: personaMessage,
-      extensionIds: chatThread.response.extension,
-    };
-
-    // TODO: Copy also files
-    personaStore.newPersonaAndOpen(dublicatePersona);
-
-    router.push("/persona");
+  const displayToastWarning = (title: string, description: string) => {
+    toast({
+      title,
+      description,
+      variant: "default",
+    });
   };
 
   return (
     <Sheet>
       <SheetTrigger asChild>
         <Button
-          variant={"outline"}
-          size={"icon"}
+          variant="outline"
+          size="icon"
           aria-label="Current Chat Persona Menu"
         >
           <VenetianMask size={16} />
@@ -167,93 +199,29 @@ export const PersonaDetail: FC<Props> = (props) => {
           <SheetTitle>Persona</SheetTitle>
         </SheetHeader>
         <ScrollArea className="flex-1 -mx-6 flex" type="always">
-          <div className="pb-6 px-6 flex gap-8 flex-col  flex-1">
+          <div className="pb-6 px-6 flex gap-8 flex-col flex-1">
             <div className="grid gap-2">
               <Label>Name</Label>
-              <div>{persona}</div>
+              <div>{personaMessageTitle}</div>
             </div>
-
-            <div className="grid gap-2 flex-1 ">
-              <Label htmlFor="personaMessage">Personality</Label>
-              <div className="whitespace-pre-wrap">{`${CHAT_DEFAULT_SYSTEM_PROMPT}`}</div>
-              <div className="whitespace-pre-wrap">{`${personaMessage}`}</div>
+            <div className="grid gap-2 flex-1">
+              <Label>Personality</Label>
+              <div className="whitespace-pre-wrap">
+                {CHAT_DEFAULT_SYSTEM_PROMPT}
+              </div>
+              <div className="whitespace-pre-wrap">{personaMessage}</div>
             </div>
-            <div className="grid gap-2 flex-1 ">
-              <Label htmlFor="personaMessage">Persona Documents</Label>
-              <TooltipProvider>
-                {noAccessDocuments.length > 0 && (
-                  <div className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-red-200 bg-background">
-                    <div>
-                      <p>
-                        You don't have access to {noAccessDocuments.length}{" "}
-                        persona document(s)
-                      </p>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <p className="text-sm text-muted-foreground">
-                          Ask the persona owner to share the document(s) with you
-                        </p>
-                      </div>
-                    </div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="p-1 text-red-500">
-                          <Info size={15} />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>
-                          Your persona chat experience may suffer from the lack
-                          of documents
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                )}
-                {documents.length === 0 && (
-                  <div className="p-2 flex items-center justify-center w-full text-muted-foreground">
-                    No files selected
-                  </div>
-                )}
-                {documents.map((document) => (
-                  <div
-                    key={document.documentId}
-                    className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-input bg-background"
-                  >
-                    <div>
-                      <p>{document.name}</p>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(
-                            document.createdDateTime
-                          ).toLocaleDateString("de-CH")}
-                        </p>
-                        <p className="px-1 text-sm text-muted-foreground">|</p>
-                        <p className="text-sm text-muted-foreground">
-                          {document.createdBy}
-                        </p>
-                      </div>
-                    </div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="p-1">
-                          <Info size={15} />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>The content of this document is used in your chat</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                ))}
-              </TooltipProvider>
-            </div>
+            <PersonaDocumentsSection
+              documents={documents}
+              noAccessDocumentsCount={noAccessDocuments.length}
+            />
           </div>
         </ScrollArea>
         <div className="mt-auto pt-4 border-t">
           <Button
             variant="default"
             size="sm"
-            onClick={() => handleDublicateCustomize()}
+            onClick={handleDuplicateAndCustomize}
             className="gap-2 w-full"
           >
             <Copy size={16} />
@@ -262,5 +230,43 @@ export const PersonaDetail: FC<Props> = (props) => {
         </div>
       </SheetContent>
     </Sheet>
+  );
+};
+
+const PersonaDocumentsSection: FC<{
+  documents: DocumentMetadata[];
+  noAccessDocumentsCount: number;
+}> = ({ documents, noAccessDocumentsCount }) => {
+  return (
+    <div className="grid gap-2 flex-1">
+      <Label>Persona Documents</Label>
+      <TooltipProvider>
+        {noAccessDocumentsCount > 0 && (
+          <NoAccessDocuments
+            count={noAccessDocumentsCount}
+            description="Ask the persona owner to share the document(s) with you"
+          />
+        )}
+        {documents.length === 0 && (
+          <div className="p-2 flex items-center justify-center w-full text-muted-foreground">
+            No files selected
+          </div>
+        )}
+        {documents.map((doc) => (
+          <DocumentItem key={doc.documentId} document={doc}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="p-1">
+                  <Info size={15} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>The content of this document is used in your chat</p>
+              </TooltipContent>
+            </Tooltip>
+          </DocumentItem>
+        ))}
+      </TooltipProvider>
+    </div>
   );
 };

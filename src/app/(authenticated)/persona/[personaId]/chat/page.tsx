@@ -18,41 +18,50 @@ const CreatePersonaChatPage = () => {
   const router = useRouter();
 
   useEffect(() => {
-    const fetchPersona = async () => {
+    const fetchPersona = async (): Promise<void> => {
       if (!personaId) {
         setErrors(["Persona ID is missing"]);
         return;
       }
 
-      const personasResponse = await FindPersonaByID(personaId + "");
-      if (
-        personasResponse.status !== "OK" &&
-        personasResponse.status === "UNAUTHORIZED"
-      ) {
-        router.push("/persona/access-denied");
-        return;
-      } else if (personasResponse.status !== "OK") {
-        setErrors(personasResponse.errors.map((e) => e.message));
-        return;
-      }
+      try {
+        const personasResponse = await FindPersonaByID(personaId as string);
 
-      setPersona(personasResponse.response);
+        if (personasResponse.status === "UNAUTHORIZED") {
+          router.push("/persona/access-denied");
+          return;
+        }
+
+        if (personasResponse.status !== "OK") {
+          setErrors(personasResponse.errors.map((error) => error.message));
+          return;
+        }
+
+        setPersona(personasResponse.response);
+      } catch (error) {
+        setErrors(["An unexpected error occurred while fetching the persona"]);
+      }
     };
 
     fetchPersona();
-  }, [personaId]);
+  }, [personaId, router]);
 
   useEffect(() => {
-    const startChat = async () => {
+    const startChat = async (): Promise<void> => {
       if (!persona) return;
 
-      const response = await CreatePersonaChat(persona.id);
-      if (response.status === "OK") {
-        router.push(`/chat/${response.response.id}`);
-      } else if (response.status === "UNAUTHORIZED") {
-        router.push("/persona/access-denied");
-      } else {
-        showError(response.errors.map((e) => e.message).join(", "));
+      try {
+        const response = await CreatePersonaChat(persona.id as string);
+
+        if (response.status === "OK") {
+          router.push(`/chat/${response.response.id}`);
+        } else if (response.status === "UNAUTHORIZED") {
+          router.push("/persona/access-denied");
+        } else {
+          showError(response.errors.map((error) => error.message).join(", "));
+        }
+      } catch (error) {
+        showError("An unexpected error occurred while starting the chat.");
       }
     };
 
@@ -60,7 +69,7 @@ const CreatePersonaChatPage = () => {
   }, [persona, router]);
 
   if (errors) {
-    return <DisplayError errors={[{ message: errors + "" }]} />;
+    return <DisplayError errors={errors.map((error) => ({ message: error }))} />;
   }
 
   if (!persona) {

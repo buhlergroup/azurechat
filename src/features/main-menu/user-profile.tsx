@@ -13,7 +13,7 @@ import { CircleUserRound, LogOut } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { Avatar, AvatarImage } from "../ui/avatar";
 import { ThemeToggle } from "./theme-toggle";
-import { useProfilePicture } from "@/features/common/hooks/profile-image-hook";
+import { useProfilePicture } from "@/features/common/hooks/useProfilePicture";
 
 export const UserProfile = () => {
   const { data: session } = useSession();

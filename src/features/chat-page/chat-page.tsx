@@ -18,7 +18,7 @@ import {
   ChatThreadModel,
 } from "./chat-services/models";
 import MessageContent from "./message-content";
-import { useProfilePicture } from "../common/hooks/profile-image-hook";
+import { useProfilePicture } from "../common/hooks/useProfilePicture";
 
 interface ChatPageProps {
   messages: Array<ChatMessageModel>;

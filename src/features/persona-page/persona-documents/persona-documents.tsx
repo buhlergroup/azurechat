@@ -15,6 +15,8 @@ import {
   DocumentDetails,
   PersonaDocumentById,
 } from "@/features/persona-page/persona-services/persona-documents-service";
+import { NoAccessDocuments } from "@/features/ui/persona-documents/no-access-documents";
+import { DocumentItem } from "@/features/ui/persona-documents/document-item";
 
 interface Props {
   initialPersonaDocumentIds: readonly string[];
@@ -146,33 +148,12 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
         />
 
         {noAccessDocuments.length > 0 && (
-          <div className="flex items-center space-x-2 justify-between border rounded-md p-2 mb-2 border-red-200 bg-background">
-            <div>
-              <p>
-                You don't have access to {noAccessDocuments.length} persona
-                document(s)
-              </p>
-              <div className="flex items-center space-x-2 mt-1">
-                <p className="text-sm text-muted-foreground">
-                  The document(s) may have been deleted or you don't have access
-                  to them anymore.
-                </p>
-              </div>
-            </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="p-1 text-red-500">
-                  <Info size={15} />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  Your persona chat experience may suffer from the lack of
-                  documents
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+          <NoAccessDocuments
+            count={noAccessDocuments.length}
+            description={
+              "The document(s) may have been deleted or you don't have access to them anymore."
+            }
+          />
         )}
 
         {pickedFiles.length === 0 ? (
@@ -181,32 +162,17 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
           </div>
         ) : (
           <div className="w-full">
-            {pickedFiles.map((file) => (
-              <div
-                key={file.documentId}
-                className="flex items-center justify-between space-x-2 border rounded-md p-2 mb-2 border-input bg-background"
-              >
-                <div>
-                  <p>{file.name}</p>
-                  <div className="flex items-center space-x-2 mt-1 text-sm text-muted-foreground">
-                    <p>
-                      {new Date(file.createdDateTime).toLocaleDateString(
-                        "de-CH"
-                      )}
-                    </p>
-                    <span>|</span>
-                    <p>{file.createdBy}</p>
-                  </div>
-                </div>
+            {pickedFiles.map((doc) => (
+              <DocumentItem key={doc.documentId} document={doc}>
                 <Button
                   size="icon"
                   variant="ghost"
                   type="button"
-                  onClick={() => removeDocument(file)}
+                  onClick={() => removeDocument(doc)}
                 >
                   <Trash size={15} className="text-red-500" />
                 </Button>
-              </div>
+              </DocumentItem>
             ))}
           </div>
         )}
