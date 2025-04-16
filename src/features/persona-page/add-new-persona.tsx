@@ -29,6 +29,7 @@ import { PersonaDocuments } from "./persona-documents/persona-documents";
 import { PersonaAccessGroup } from "./persona-access-group/persona-access-group";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { useResetableActionState } from "../common/hooks/useResetableActionState";
+import { AdvancedLoadingIndicator } from "../ui/advanced-loading-indicator";
 
 interface Props {
   extensions: Array<ExtensionModel>;
@@ -63,14 +64,13 @@ export const AddNewPersona: FC<Props> = (props) => {
     <Sheet
       open={isOpened}
       onOpenChange={(value) => {
-        if(!isLoading){
+        if (!isLoading) {
           personaStore.updateOpened(value);
           startTransition(() => {
             reset();
           });
         }
       }}
-      
     >
       <SheetContent className="min-w-[480px] sm:w-[540px] flex flex-col">
         <SheetHeader>
@@ -150,7 +150,7 @@ export const AddNewPersona: FC<Props> = (props) => {
               </div>
             </ScrollArea>
             <SheetFooter className="py-2 flex sm:justify-between flex-row">
-              <PublicSwitch /> <Submit />
+              <PublicSwitch /> <Submit isLoading={isLoading} />
             </SheetFooter>
           </form>
         </TooltipProvider>
@@ -159,12 +159,28 @@ export const AddNewPersona: FC<Props> = (props) => {
   );
 };
 
-function Submit() {
-  const status = useFormStatus();
+function Submit({ isLoading }: { isLoading: boolean }) {
   return (
-    <Button disabled={status.pending} className="gap-2">
-      <LoadingIndicator isLoading={status.pending} />
-      Save
-    </Button>
+    <div className="flex items-center space-x-4">
+      <Button disabled={isLoading} className="gap-2">
+        <LoadingIndicator isLoading={isLoading} />
+        Save
+      </Button>
+      <AdvancedLoadingIndicator
+        isLoading={isLoading}
+        interval={2000}
+        loadingMessages={[
+          "Checking Documents...",
+          "Searching for Documents...",
+          "Translating Documents...",
+          "Indexing Documents...",
+          "Almost there...",
+          "Big documents take time...",
+          "Just a moment...",
+          "Hang tight...",
+          "Taking longer than expected...",
+        ]}
+        />
+    </div>
   );
 }
