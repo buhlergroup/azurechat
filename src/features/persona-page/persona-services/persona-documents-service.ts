@@ -80,7 +80,7 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
       if (responseItem.status === 200) {
         const document = responseItem.body;
 
-        if (document.size > Number(process.env.MAX_PERSONA_DOCUMENT_SIZE)) {
+        if (document.size > Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 1024 * 1024) {
           sizeToBig.push({
             documentId: document.id,
             name: document.name,
