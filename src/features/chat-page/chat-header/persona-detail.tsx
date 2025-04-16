@@ -67,17 +67,23 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
         documentIds.map((id) => PersonaDocumentById(id))
       );
 
-      return responses.map((response, index) => {
-        if (response.status === "OK") {
-          return convertPersonaDocumentToSharePointDocument(response.response);
-        } else {
-          displayError(
-            response.errors,
-            `Error fetching document details for ID: ${documentIds[index]}. Please try again.`
-          );
-          return null;
-        }
-      }) as SharePointFile[];
+      const notAvailableDocuments = responses.filter(
+        (response) => response.status === "NOT_FOUND"
+      );
+
+      setNoAccessDocuments(
+        notAvailableDocuments.map((response) => ({
+          documentId: "notAvailable",
+        }))
+      );
+
+      const availableDocuments = responses.filter(
+        (response) => response.status === "OK"
+      );
+
+      return availableDocuments.map((response, index) => {
+        return convertPersonaDocumentToSharePointDocument(response.response);
+      });
     } catch {
       displayToastError("An unexpected error occurred. Please try again.");
       return [];
