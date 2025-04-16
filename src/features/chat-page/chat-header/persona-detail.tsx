@@ -32,7 +32,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/features/ui/tooltip";
-import { NoAccessDocuments } from "@/features/ui/persona-documents/no-access-documents";
+import { ErrorDocumentItem } from "@/features/ui/persona-documents/error-document-item";
 import { DocumentItem } from "@/features/ui/persona-documents/document-item";
 
 interface Props {
@@ -42,7 +42,7 @@ interface Props {
 export const PersonaDetail: FC<Props> = ({ chatThread }) => {
   const [documents, setDocuments] = useState<DocumentMetadata[]>([]);
   const [noAccessDocuments, setNoAccessDocuments] = useState<
-    { documentId: string; error: boolean }[]
+    { documentId: string }[]
   >([]);
 
   const { personaMessageTitle, personaMessage, personaDocumentIds, id } =
@@ -114,7 +114,7 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
   const processDocumentMetadata = (
     response: {
       successful: DocumentMetadata[];
-      unsuccessful: { documentId: string; error: boolean }[];
+      unsuccessful: { documentId: string }[];
     },
     files: SharePointFile[]
   ) => {
@@ -242,9 +242,10 @@ const PersonaDocumentsSection: FC<{
       <Label>Persona Documents</Label>
       <TooltipProvider>
         {noAccessDocumentsCount > 0 && (
-          <NoAccessDocuments
-            count={noAccessDocumentsCount}
+          <ErrorDocumentItem
+            title={`You don't have access to ${noAccessDocumentsCount} persona document(s)`}
             description="Ask the persona owner to share the document(s) with you"
+            tooltipContent="Your persona chat experience may suffer from the lack of documents."
           />
         )}
         {documents.length === 0 && (

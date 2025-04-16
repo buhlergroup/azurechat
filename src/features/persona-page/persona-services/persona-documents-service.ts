@@ -33,7 +33,8 @@ import { SupportedFileExtensionsTextFiles } from "@/features/chat-page/chat-serv
 export async function DocumentDetails(documents: SharePointFile[]): Promise<
   ServerActionResponse<{
     successful: DocumentMetadata[];
-    unsuccessful: { documentId: string; error: boolean }[];
+    sizeToBig: DocumentMetadata[];
+    unsuccessful: { documentId: string }[];
   }>
 > {
   try {
@@ -43,6 +44,7 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
         response: {
           successful: [],
           unsuccessful: [],
+          sizeToBig: [],
         },
       };
     }
@@ -66,15 +68,31 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
       "createdBy",
       "createdDateTime",
       "parentReference",
+      "size",
     ]);
     const response = await client.api("/$batch").post(body);
 
     let successful: DocumentMetadata[] = [];
-    let unsuccessful: { documentId: string; error: boolean }[] = [];
+    let unsuccessful: { documentId: string }[] = [];
+    let sizeToBig: DocumentMetadata[] = [];
 
     for (const responseItem of response.responses) {
       if (responseItem.status === 200) {
         const document = responseItem.body;
+
+        if (document.size > Number(process.env.MAX_PERSONA_DOCUMENT_SIZE)) {
+          sizeToBig.push({
+            documentId: document.id,
+            name: document.name,
+            createdBy: document.createdBy.user.displayName,
+            createdDateTime: document.createdDateTime,
+            parentReference: {
+              driveId: document.parentReference?.driveId,
+            },
+          } as DocumentMetadata);
+          continue;
+        }
+
         successful.push({
           documentId: document.id,
           name: document.name,
@@ -87,7 +105,6 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
       } else {
         unsuccessful.push({
           documentId: responseItem.id,
-          error: true,
         });
       }
     }
@@ -97,6 +114,7 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
       response: {
         successful,
         unsuccessful,
+        sizeToBig,
       },
     };
   } catch (error) {
@@ -149,7 +167,9 @@ export const UpdateOrAddPersonaDocuments = async (
   // remove documents that are not selected anymore
   await Promise.all(
     removeDocuments.map(async (id) => {
-      await HistoryContainer().item(id, await userHashedId()).delete();
+      await HistoryContainer()
+        .item(id, await userHashedId())
+        .delete();
     })
   );
 

@@ -15,7 +15,7 @@ import {
   DocumentDetails,
   PersonaDocumentById,
 } from "@/features/persona-page/persona-services/persona-documents-service";
-import { NoAccessDocuments } from "@/features/ui/persona-documents/no-access-documents";
+import { ErrorDocumentItem } from "@/features/ui/persona-documents/error-document-item";
 import { DocumentItem } from "@/features/ui/persona-documents/document-item";
 
 interface Props {
@@ -26,6 +26,7 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
   const { data: session } = useSession();
   const [pickedFiles, setPickedFiles] = useState<DocumentMetadata[]>([]);
   const [noAccessDocuments, setNoAccessDocuments] = useState<string[]>([]);
+  const [documentsToBig, setDocumentsToBig] = useState<DocumentMetadata[]>([]);
 
   useEffect(() => {
     const fetchAllDocuments = async () => {
@@ -79,6 +80,17 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
       );
 
       setNoAccessDocuments(unsuccessfulFiles);
+
+      const documentSizeExceeded = documents
+        .map((file) => {
+          const matchingDocument = response.response.sizeToBig.find(
+            (doc) => doc.documentId === file.documentId
+          );
+          return matchingDocument ? { ...matchingDocument, id: file.id } : null;
+        })
+        .filter(Boolean) as DocumentMetadata[];
+
+      setDocumentsToBig(documentSizeExceeded as DocumentMetadata[]);
 
       const updatedFiles = documents
         .map((file) => {
@@ -148,13 +160,23 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
         />
 
         {noAccessDocuments.length > 0 && (
-          <NoAccessDocuments
-            count={noAccessDocuments.length}
+          <ErrorDocumentItem
+            title={`You don't have access to ${noAccessDocuments.length} persona document(s)`}
             description={
               "The document(s) may have been deleted or you don't have access to them anymore."
             }
+            tooltipContent="Your persona chat experience may suffer from the lack of documents."
           />
         )}
+
+        {documentsToBig.map((document) => (
+          <ErrorDocumentItem
+            key={document.documentId}
+            title={`The document "${document.name}" exceeds limit of ${process.env.NEXT_PUBLIC_MAX_PERSONA_DOCUMENT_LIMIT} MB`}
+            description="This document is too large to be processed."
+            tooltipContent="Consider reducing the document size or splitting it into smaller parts."
+          />
+        ))}
 
         {pickedFiles.length === 0 ? (
           <div className="p-2 flex items-center justify-center w-full text-muted-foreground">
