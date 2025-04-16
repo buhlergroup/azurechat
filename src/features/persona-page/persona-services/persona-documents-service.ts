@@ -80,7 +80,10 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
       if (responseItem.status === 200) {
         const document = responseItem.body;
 
-        if (document.size > (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)) {
+        if (
+          document.size >
+          (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)
+        ) {
           sizeToBig.push({
             documentId: document.id,
             name: document.name,
@@ -499,7 +502,10 @@ const SharePointFileToText = async (
         throw new Error(`Document is empty.`);
       }
 
-      if (response.byteLength > Number(process.env.MAX_PERSONA_DOCUMENT_SIZE)) {
+      if (
+        response.byteLength >
+        (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)
+      ) {
         throw new Error(
           `Document ${document.name} is too big. Maximum is ${(
             Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) /
