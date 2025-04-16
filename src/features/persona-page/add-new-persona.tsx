@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { FC, useActionState } from "react";
+import { FC, startTransition, useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { ServerActionResponse } from "../common/server-action-response";
 import { Button } from "../ui/button";
@@ -28,6 +28,7 @@ import { ExtensionModel } from "../extensions-page/extension-services/models";
 import { PersonaDocuments } from "./persona-documents/persona-documents";
 import { PersonaAccessGroup } from "./persona-access-group/persona-access-group";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { useResetableActionState } from "../common/hooks/useResetableActionState";
 
 interface Props {
   extensions: Array<ExtensionModel>;
@@ -38,7 +39,7 @@ export const AddNewPersona: FC<Props> = (props) => {
 
   const { isOpened, persona } = usePersonaState();
 
-  const [formState, formAction] = useActionState(
+  const [state, submit, reset] = useResetableActionState(
     AddOrUpdatePersona,
     initialState
   );
@@ -63,30 +64,33 @@ export const AddNewPersona: FC<Props> = (props) => {
       open={isOpened}
       onOpenChange={(value) => {
         personaStore.updateOpened(value);
+        startTransition(() => {
+          reset();
+        });
       }}
     >
       <SheetContent className="min-w-[480px] sm:w-[540px] flex flex-col">
         <SheetHeader>
           <SheetTitle>Persona</SheetTitle>
+          {state && state.status === "OK" ? null : (
+            <>
+              {state &&
+                state.errors.map((error, index) => (
+                  <div key={index} className="text-red-500">
+                    {error.message}
+                  </div>
+                ))}
+            </>
+          )}
         </SheetHeader>
         <TooltipProvider>
-          <form action={formAction} className="flex-1 flex flex-col">
+          <form action={submit} className="flex-1 flex flex-col">
             <ScrollArea
               className="flex-1 -mx-6 flex max-h-[calc(100vh-140px)]"
               type="always"
             >
               <div className="pb-6 px-6 flex gap-8 flex-col  flex-1">
                 <input type="hidden" name="id" defaultValue={persona.id} />
-                {formState && formState.status === "OK" ? null : (
-                  <>
-                    {formState &&
-                      formState.errors.map((error, index) => (
-                        <div key={index} className="text-red-500">
-                          {error.message}
-                        </div>
-                      ))}
-                  </>
-                )}
                 <div className="grid gap-2">
                   <Label>Name</Label>
                   <Input
@@ -134,8 +138,12 @@ export const AddNewPersona: FC<Props> = (props) => {
                     parent="persona"
                   />
                 </div>
-                <PersonaAccessGroup initialSelectedGroup={persona.accessGroup?.id || null}/>
-                <PersonaDocuments initialPersonaDocumentIds={persona.personaDocumentIds || []}/>
+                <PersonaAccessGroup
+                  initialSelectedGroup={persona.accessGroup?.id || null}
+                />
+                <PersonaDocuments
+                  initialPersonaDocumentIds={persona.personaDocumentIds || []}
+                />
               </div>
             </ScrollArea>
             <SheetFooter className="py-2 flex sm:justify-between flex-row">

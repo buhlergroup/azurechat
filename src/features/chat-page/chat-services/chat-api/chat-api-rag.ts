@@ -17,7 +17,6 @@ import {
   AuthorizedDocuments,
   PersonaDocumentById,
 } from "@/features/persona-page/persona-services/persona-documents-service";
-import { ServerActionResponse } from "@/features/common/server-action-response";
 import { convertPersonaDocumentToSharePointDocument } from "@/features/persona-page/persona-services/models";
 
 export const ChatApiRAG = async (props: {
