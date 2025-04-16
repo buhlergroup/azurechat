@@ -39,7 +39,7 @@ export const AddNewPersona: FC<Props> = (props) => {
 
   const { isOpened, persona } = usePersonaState();
 
-  const [state, submit, reset] = useResetableActionState(
+  const [state, submit, reset, isLoading] = useResetableActionState(
     AddOrUpdatePersona,
     initialState
   );
@@ -63,11 +63,14 @@ export const AddNewPersona: FC<Props> = (props) => {
     <Sheet
       open={isOpened}
       onOpenChange={(value) => {
-        personaStore.updateOpened(value);
-        startTransition(() => {
-          reset();
-        });
+        if(!isLoading){
+          personaStore.updateOpened(value);
+          startTransition(() => {
+            reset();
+          });
+        }
       }}
+      
     >
       <SheetContent className="min-w-[480px] sm:w-[540px] flex flex-col">
         <SheetHeader>
