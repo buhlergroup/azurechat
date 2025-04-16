@@ -14,17 +14,19 @@ interface Props {
 
 export const PersonaAccessGroup: FC<Props> = (props) => {
   const [selectedGroup, setSelectedGroup] = useState<AccessGroup | null>();
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchGroupDetails = async () => {
-      // TODO: loading indicator
       if (!props.initialSelectedGroup) return;
+      setIsLoading(true);
       const response = await AccessGroupById(props.initialSelectedGroup);
       if (response.status === "OK") {
         setSelectedGroup(response.response);
       } else {
         setSelectedGroup(null);
       }
+      setIsLoading(false);
     };
 
     fetchGroupDetails();
@@ -62,7 +64,9 @@ export const PersonaAccessGroup: FC<Props> = (props) => {
       </div>
       <div className="flex items-center space-x-2">
         <div className="border border-input bg-background rounded-md p-2 flex items-center w-full">
-          {selectedGroup ? (
+          {isLoading ? (
+            <div className="animate-pulse w-full h-4 bg-muted rounded-md" />
+          ) : selectedGroup ? (
             <input
               value={selectedGroup.name}
               readOnly
@@ -71,9 +75,9 @@ export const PersonaAccessGroup: FC<Props> = (props) => {
             />
           ) : (
             <input
-              value={"Everyone can view this persona"}
+              value="Everyone can view this persona"
               readOnly
-              className="w-full text-muted-foreground bg-transparent"
+              className="w-full bg-transparent text-muted-foreground"
               disabled
             />
           )}

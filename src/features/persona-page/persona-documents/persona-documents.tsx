@@ -27,17 +27,20 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
   const [pickedFiles, setPickedFiles] = useState<DocumentMetadata[]>([]);
   const [noAccessDocuments, setNoAccessDocuments] = useState<string[]>([]);
   const [documentsToBig, setDocumentsToBig] = useState<DocumentMetadata[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchAllDocuments = async () => {
+      if (!initialPersonaDocumentIds || initialPersonaDocumentIds.length === 0) return;
+      setIsLoading(true);
       const personaDocuments = await fetchPersonaDocuments();
       await fetchMetadataForDocuments(personaDocuments);
+      setIsLoading(false);
     };
     fetchAllDocuments();
   }, [initialPersonaDocumentIds]);
 
   const fetchPersonaDocuments = async (): Promise<SharePointFile[]> => {
-    if (!initialPersonaDocumentIds) return [];
     try {
       const responses = await Promise.all(
         initialPersonaDocumentIds.map((id) => PersonaDocumentById(id))
@@ -178,7 +181,11 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
           />
         ))}
 
-        {pickedFiles.length === 0 ? (
+        {isLoading ? (
+          <div className="p-2 flex items-center justify-center w-full text-muted-foreground">
+            Loading documents...
+          </div>
+        ) : pickedFiles.length === 0 ? (
           <div className="p-2 flex items-center justify-center w-full text-muted-foreground">
             No files selected
           </div>
