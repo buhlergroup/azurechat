@@ -1,7 +1,9 @@
-import {
-  AzureKeyCredential,
-  DocumentAnalysisClient,
-} from "@azure/ai-form-recognizer";
+import DocumentIntelligence, {
+  isUnexpected,
+  getLongRunningPoller,
+  AnalyzeOperationOutput,  
+} from "@azure-rest/ai-document-intelligence";
+import { AzureKeyCredential } from "@azure/core-auth";
 
 export const DocumentIntelligenceInstance = () => {
   const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT;
@@ -13,7 +15,7 @@ export const DocumentIntelligenceInstance = () => {
     );
   }
 
-  const client = new DocumentAnalysisClient(
+  const client = DocumentIntelligence(
     endpoint,
     new AzureKeyCredential(key)
   );
