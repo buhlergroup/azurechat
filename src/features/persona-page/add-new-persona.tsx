@@ -168,7 +168,7 @@ function Submit({ isLoading }: { isLoading: boolean }) {
       </Button>
       <AdvancedLoadingIndicator
         isLoading={isLoading}
-        interval={2000}
+        interval={2500}
         loadingMessages={[
           "Checking Documents...",
           "Searching for Documents...",
@@ -178,8 +178,24 @@ function Submit({ isLoading }: { isLoading: boolean }) {
           "Big documents take time...",
           "Just a moment...",
           "Hang tight...",
+          "Processing your request...",
+          "Analyzing content...",
+          "Finalizing setup...",
+          "Loading resources...",
+          "Wrapping things up...",
+          "Preparing your results...",
+          "Tidying up the details...",
+          "Double-checking info...",
+          "Synchronizing...",
+          "Fetching additional data...",
+          "Reviewing documents...",
+          "Securing data...",
+          "Hold on, almost finished...",
+          "Making progress...",
+          "One last check...",
           "Taking longer than expected...",
-        ]}
+        ]
+        }
         />
     </div>
   );
