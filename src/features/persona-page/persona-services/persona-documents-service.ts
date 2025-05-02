@@ -132,11 +132,44 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
   }
 }
 
+function IsDocumentLimitExceeded(sharePointFiles: DocumentMetadata[]): boolean {
+  return sharePointFiles.length > Number(process.env.MAX_PERSONA_DOCUMENT_LIMIT);
+}
+
+async function RemoveUnselectedPersonaDocuments(removeDocuments: string[]) {
+  await Promise.all(
+    removeDocuments.map(async (id) => {
+      await HistoryContainer().item(id, await userHashedId()).delete();
+    })
+  );
+  await Promise.all(
+    removeDocuments.map(async (oldDocumentId) => {
+      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
+    })
+  );
+}
+
+async function GetNewPersonaDocuments(sharePointFiles: DocumentMetadata[]) {
+  const newDocuments = [];
+  for (const file of sharePointFiles) {
+    if (!file.id) {
+      return { error: { message: `Document ID is missing.` } };
+    }
+    const documentResponse = await PersonaDocumentExistsInIndex(file.id);
+    if (documentResponse.status === "NOT_FOUND") {
+      newDocuments.push(file);
+    } else if (documentResponse.status === "ERROR") {
+      return { error: documentResponse.errors };
+    }
+  }
+  return { newDocuments };
+}
+
 export const UpdateOrAddPersonaDocuments = async (
   sharePointFiles: DocumentMetadata[],
   currentPersonaDocuments: string[]
 ): Promise<ServerActionResponse<string[]>> => {
-  if (sharePointFiles.length > Number(process.env.MAX_PERSONA_DOCUMENT_LIMIT)) {
+  if (IsDocumentLimitExceeded(sharePointFiles)) {
     return {
       status: "ERROR",
       errors: [
@@ -167,46 +200,14 @@ export const UpdateOrAddPersonaDocuments = async (
     return !sharePointFiles.map((e) => e.id).includes(id);
   });
 
-  // remove documents that are not selected anymore
-  await Promise.all(
-    removeDocuments.map(async (id) => {
-      await HistoryContainer()
-        .item(id, await userHashedId())
-        .delete();
-    })
-  );
+  await RemoveUnselectedPersonaDocuments(removeDocuments);
 
-  // remove old documents from the vector database
-  await Promise.all(
-    removeDocuments.map(async (oldDocumentId) => {
-      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
-    })
-  );
-
-  // check if documents are already indexed in vector database
-  const newDocuments = [];
-
-  for (const file of sharePointFiles) {
-    if (!file.id) {
-      return {
-        status: "ERROR",
-        errors: [
-          {
-            message: `Document ID is missing.`,
-          },
-        ],
-      };
-    }
-
-    const documentResponse = await PersonaDocumentExistsInIndex(file.id);
-    if (documentResponse.status === "NOT_FOUND") {
-      newDocuments.push(file);
-    } else if (documentResponse.status === "ERROR") {
-      return {
-        status: "ERROR",
-        errors: documentResponse.errors,
-      };
-    }
+  const { newDocuments, error } = await GetNewPersonaDocuments(sharePointFiles);
+  if (error) {
+    return {
+      status: "ERROR",
+      errors: Array.isArray(error) ? error : [error],
+    };
   }
 
   const handleNewDocumentsResponse = await IndexNewPersonaDocuments(
@@ -466,6 +467,8 @@ const IndexNewPersonaDocuments = async (
     .flat()
     .every((r) => r.status === "OK");
 
+  // TODO: if there is an error in indexing, delete the documents from the database
+
   if (!allDocumentsIndexed) {
     return {
       status: "ERROR",
@@ -491,63 +494,12 @@ const SharePointFileToText = async (
 
   try {
     const documentPromises = documents.map(async (document) => {
-      const response = (await client
-        .api(
-          `/drives/${document.parentReference.driveId}/items/${document.documentId}/content`
-        )
-        .responseType(ResponseType.ARRAYBUFFER)
-        .get()) as ArrayBuffer;
-
-      if (response.byteLength === 0) {
-        throw new Error(`Document is empty.`);
+      const response = await DownloadSharePointFile(client, document);
+      ValidateSharePointFileSize(response, document);
+      if (IsTextFile(document.name)) {
+        return ExtractTextFromArrayBuffer(response, document);
       }
-
-      if (
-        response.byteLength >
-        (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)
-      ) {
-        throw new Error(
-          `Document ${document.name} is too big. Maximum is ${(
-            Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) /
-            (1024 * 1024)
-          ).toFixed(
-            2
-          )} MB. Choose a smaller document or split the document into two documents.`
-        );
-      }
-
-      const fileExtension = document.name.split(".").pop();
-      if (fileExtension && IsAlreadyText(fileExtension)) {
-        const decoder = new TextDecoder();
-        const textContent = decoder.decode(response);
-
-        return {
-          ...document,
-          paragraphs: [textContent],
-        };
-      }
-
-      const diClient = DocumentIntelligenceInstance();
-
-      const poller = await diClient.beginAnalyzeDocument(
-        "prebuilt-read",
-        response
-      );
-
-      const { paragraphs } = await poller.pollUntilDone();
-
-      const docs: Array<string> = [];
-
-      if (paragraphs) {
-        for (const paragraph of paragraphs) {
-          docs.push(paragraph.content);
-        }
-      }
-
-      return {
-        ...document,
-        paragraphs: docs,
-      };
+      return ExtractTextFromNonTextFile(response, document);
     });
 
     try {
@@ -582,10 +534,68 @@ const SharePointFileToText = async (
   }
 };
 
-const IsAlreadyText = (extension: string) => {
-  if (!extension) return false;
+const DownloadSharePointFile = async (client: any, document: DocumentMetadata): Promise<ArrayBuffer> => {
+  const response = (await client
+    .api(`/drives/${document.parentReference.driveId}/items/${document.documentId}/content`)
+    .responseType(ResponseType.ARRAYBUFFER)
+    .get()) as ArrayBuffer;
+  if (response.byteLength === 0) {
+    throw new Error(`Document is empty.`);
+  }
+  return response;
+};
+
+const ValidateSharePointFileSize = (response: ArrayBuffer, document: DocumentMetadata) => {
+  if (
+    response.byteLength >
+    (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)
+  ) {
+    throw new Error(
+      `Document ${document.name} is too big. Maximum is ${(
+        Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) /
+        (1024 * 1024)
+      ).toFixed(
+        2
+      )} MB. Choose a smaller document or split the document into two documents.`
+    );
+  }
+};
+
+
+const ExtractTextFromArrayBuffer = (response: ArrayBuffer, document: DocumentMetadata): SharePointFileContent => {
+  const decoder = new TextDecoder();
+  const textContent = decoder.decode(response);
+  return {
+    ...document,
+    paragraphs: [textContent],
+  };
+};
+
+const ExtractTextFromNonTextFile = async (response: ArrayBuffer, document: DocumentMetadata): Promise<SharePointFileContent> => {
+  const diClient = DocumentIntelligenceInstance();
+  const poller = await diClient.beginAnalyzeDocument(
+    "prebuilt-read",
+    response
+  );
+  const { paragraphs } = await poller.pollUntilDone();
+  const docs: Array<string> = [];
+  if (paragraphs) {
+    for (const paragraph of paragraphs) {
+      docs.push(paragraph.content);
+    }
+  }
+  return {
+    ...document,
+    paragraphs: docs,
+  };
+};
+
+const IsTextFile = (fileName: string) => {
+  const fileExtension = fileName.split(".").pop();
+
+  if (!fileExtension) return false;
   return Object.values(SupportedFileExtensionsTextFiles).includes(
-    extension.toUpperCase() as SupportedFileExtensionsTextFiles
+    fileExtension.toUpperCase() as SupportedFileExtensionsTextFiles
   );
 };
 
