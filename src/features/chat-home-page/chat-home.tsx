@@ -120,15 +120,6 @@ const PersonasSection = ({ personas }: { personas: PersonaModel[] }) => (
 export const ChatHome: FC<ChatPersonaProps> = ({ personas, news }) => {
   const [showChangelog, setShowChangelog] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.has("changelog")) {
-        setShowChangelog(true);
-      }
-    }
-  }, []);
-
   return (
     <ScrollArea className="flex-1 px-3">
       <main className="flex flex-1 flex-col gap-6 pb-6">
