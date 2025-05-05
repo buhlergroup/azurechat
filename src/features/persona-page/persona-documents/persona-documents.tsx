@@ -31,7 +31,8 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
 
   useEffect(() => {
     const fetchAllDocuments = async () => {
-      if (!initialPersonaDocumentIds || initialPersonaDocumentIds.length === 0) return;
+      if (!initialPersonaDocumentIds || initialPersonaDocumentIds.length === 0)
+        return;
       setIsLoading(true);
       const personaDocuments = await fetchPersonaDocuments();
       await fetchMetadataForDocuments(personaDocuments);
@@ -52,13 +53,19 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
             return convertPersonaDocumentToSharePointDocument(
               response.response
             );
-          } else {
-            handleErrors(
-              response.errors,
-              `Error fetching document details for ID: ${initialPersonaDocumentIds[index]}. Please try again.`
-            );
+          }
+
+          // A document may not be found if the user opens the same persona to fast after deletion of a document
+          // because then the persona page was not updated yet.
+          if (response.status === "NOT_FOUND") {
             return null;
           }
+
+          handleErrors(
+            response.errors,
+            `Error fetching document details for ID: ${initialPersonaDocumentIds[index]}. Please try again.`
+          );
+          return null;
         })
         .filter(Boolean) as SharePointFile[];
     } catch {
@@ -130,6 +137,16 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
     );
   };
 
+  const removeToBigDocument = (file: SharePointFile) => {
+    setDocumentsToBig((prev) =>
+      prev.filter((f) => f.documentId !== file.documentId)
+    );
+  };
+
+  const removeNoAccessDocument = (id: string) => {
+    setNoAccessDocuments((prev) => prev.filter((f) => f !== id));
+  };
+
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between space-x-2">
@@ -169,6 +186,8 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
               "The document(s) may have been deleted or you don't have access to them anymore."
             }
             tooltipContent="Your persona chat experience may suffer from the lack of documents."
+            actionIcon={<Trash size={15} className="text-red-500" />}
+            action={() => removeNoAccessDocument(noAccessDocuments[0])}
           />
         )}
 
@@ -178,6 +197,8 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
             title={`The document "${document.name}" exceeds limit of ${process.env.NEXT_PUBLIC_MAX_PERSONA_DOCUMENT_LIMIT} MB`}
             description="This document is too large to be processed."
             tooltipContent="Consider reducing the document size or splitting it into smaller parts."
+            actionIcon={<Trash size={15} className="text-red-500" />}
+            action={() => removeToBigDocument(document)}
           />
         ))}
 
