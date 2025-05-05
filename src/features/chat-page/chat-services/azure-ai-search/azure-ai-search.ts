@@ -266,7 +266,7 @@ export const IndexDocuments = async (
         embeddingsResponse.response
       );
 
-      const response: Array<ServerActionResponse<boolean>> = [];
+      const response: ServerActionResponse<boolean>[] = [];
       uploadResponse.results.forEach((r) => {
         if (r.succeeded) {
           response.push({
@@ -355,7 +355,7 @@ export const DeleteDocumentsOfChatThread = async (
   }
 };
 
-export const DeleteDocumentByPersonaDocumentId = async (
+export const DeleteSearchDocumentByPersonaDocumentId = async (
   personaDocumentId: string
 ): Promise<ServerActionResponse<boolean>> => {
   try {

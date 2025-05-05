@@ -26,6 +26,7 @@ import {
   UpdateOrAddPersonaDocuments as AddOrUpdatePersonaDocuments,
 } from "./persona-documents-service";
 import { AccessGroupById } from "./access-group-service";
+import { RevalidateCache } from "@/features/common/navigation-helpers";
 
 interface PersonaInput {
   name: string;
@@ -177,7 +178,6 @@ export const EnsurePersonaOperation = async (
   personaId: string
 ): Promise<ServerActionResponse<PersonaModel>> => {
   const personaResponse = await FindPersonaByID(personaId);
-  // Persona access check
   const currentUser = await getCurrentUser();
   const hashedId = await userHashedId();
 
@@ -242,16 +242,15 @@ export const UpsertPersona = async (
       const { response: persona } = personaResponse;
       const user = await getCurrentUser();
 
-      const personaDocumentIds = await AddOrUpdatePersonaDocuments(
+      const personaDocumentIdsResponse = await AddOrUpdatePersonaDocuments(
         sharePointFiles,
         personaInput.personaDocumentIds || []
       );
 
-      if (personaDocumentIds.status !== "OK") {
-        return {
-          status: "ERROR",
-          errors: personaDocumentIds.errors,
-        };
+      let personaDocumentIds: string[] = [];
+
+      if (personaDocumentIdsResponse.status == "OK") {
+        personaDocumentIds = personaDocumentIdsResponse.response;
       }
 
       const modelToUpdate: PersonaModel = {
@@ -265,7 +264,7 @@ export const UpsertPersona = async (
         createdAt: new Date(),
         extensionIds: personaInput.extensionIds,
         accessGroup: personaInput.accessGroup,
-        personaDocumentIds: personaDocumentIds.response,
+        personaDocumentIds: personaDocumentIds,
       };
 
       const validationResponse = ValidateSchema(modelToUpdate);
@@ -276,6 +275,18 @@ export const UpsertPersona = async (
       const { resource } = await HistoryContainer().items.upsert<PersonaModel>(
         modelToUpdate
       );
+
+      // the check is here so that we are sure that a [] is saved for the personaDocumentIds
+      if (personaDocumentIdsResponse.status !== "OK") {
+        RevalidateCache({
+          page: "persona",
+        });
+
+        return {
+          status: "ERROR",
+          errors: personaDocumentIdsResponse.errors,
+        };
+      }
 
       if (resource) {
         return {

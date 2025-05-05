@@ -4,7 +4,6 @@ import {
   DocumentMetadata,
   PERSONA_ATTRIBUTE,
   PersonaModel,
-  SharePointFile,
 } from "./persona-services/models";
 import {
   CreatePersona,

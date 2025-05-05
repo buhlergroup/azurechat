@@ -21,7 +21,7 @@ import { HistoryContainer } from "@/features/common/services/cosmos";
 import { SqlQuerySpec } from "@azure/cosmos";
 import { FindPersonaByID } from "./persona-service";
 import {
-  DeleteDocumentByPersonaDocumentId,
+  DeleteSearchDocumentByPersonaDocumentId,
   IndexDocuments,
   PersonaDocumentExistsInIndex,
 } from "@/features/chat-page/chat-services/azure-ai-search/azure-ai-search";
@@ -133,23 +133,31 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
 }
 
 function IsDocumentLimitExceeded(sharePointFiles: DocumentMetadata[]): boolean {
-  return sharePointFiles.length > Number(process.env.MAX_PERSONA_DOCUMENT_LIMIT);
+  return (
+    sharePointFiles.length > Number(process.env.MAX_PERSONA_DOCUMENT_LIMIT)
+  );
 }
 
 async function RemoveUnselectedPersonaDocuments(removeDocuments: string[]) {
-  await Promise.all(
-    removeDocuments.map(async (id) => {
-      await HistoryContainer().item(id, await userHashedId()).delete();
-    })
-  );
-  await Promise.all(
-    removeDocuments.map(async (oldDocumentId) => {
-      await DeleteDocumentByPersonaDocumentId(oldDocumentId);
-    })
-  );
+  try {
+    await Promise.all(
+      removeDocuments.map(async (id) => {
+        await HistoryContainer()
+          .item(id, await userHashedId())
+          .delete();
+      })
+    );
+    await Promise.all(
+      removeDocuments.map(async (oldDocumentId) => {
+        await DeleteSearchDocumentByPersonaDocumentId(oldDocumentId);
+      })
+    );
+  } catch (error) {
+    // Fail silently because we don't want to block the process if we can't delete the document
+  }
 }
 
-async function GetNewPersonaDocuments(sharePointFiles: DocumentMetadata[]) {
+async function GetNewNotIndexedDocuments(sharePointFiles: DocumentMetadata[]) {
   const newDocuments = [];
   for (const file of sharePointFiles) {
     if (!file.id) {
@@ -174,11 +182,17 @@ export const UpdateOrAddPersonaDocuments = async (
       status: "ERROR",
       errors: [
         {
-          message: `Document IDs limit exceeded. Maximum is ${process.env.MAX_PERSONA_DOCUMENT_LIMIT}.`,
+          message: `Document limit exceeded. Maximum is ${process.env.MAX_PERSONA_DOCUMENT_LIMIT}.`,
         },
       ],
     };
   }
+
+  const removeDocuments = currentPersonaDocuments.filter((id) => {
+    return !sharePointFiles.map((e) => e.id).includes(id);
+  });
+
+  await RemoveUnselectedPersonaDocuments(removeDocuments);
 
   // create or update documents in the database
   const addOrUpdateResponse = await AddOrUpdatePersonaDocuments(
@@ -196,13 +210,10 @@ export const UpdateOrAddPersonaDocuments = async (
     file.id = addOrUpdateResponse.response[index];
   });
 
-  const removeDocuments = currentPersonaDocuments.filter((id) => {
-    return !sharePointFiles.map((e) => e.id).includes(id);
-  });
+  const { newDocuments, error } = await GetNewNotIndexedDocuments(
+    sharePointFiles
+  );
 
-  await RemoveUnselectedPersonaDocuments(removeDocuments);
-
-  const { newDocuments, error } = await GetNewPersonaDocuments(sharePointFiles);
   if (error) {
     return {
       status: "ERROR",
@@ -215,6 +226,15 @@ export const UpdateOrAddPersonaDocuments = async (
   );
 
   if (handleNewDocumentsResponse.status !== "OK") {
+    // Remove documents from Cosmos DB because something went wrong with indexing
+    await Promise.all(
+      newDocuments.map(async (oldDocumentId) => {
+        if (oldDocumentId.id) {
+          return await DeletePersonaDocumentById(oldDocumentId.id);
+        }
+      })
+    );
+
     return {
       status: "ERROR",
       errors: handleNewDocumentsResponse.errors,
@@ -283,48 +303,23 @@ export const DeletePersonaDocumentsByPersonaId = async (personaId: string) => {
     return;
   }
 
-  const querySpec: SqlQuerySpec = {
-    query: `SELECT * FROM root r WHERE ARRAY_CONTAINS(@ids, r.id)`,
-    parameters: [
-      {
-        name: "@ids",
-        value: personaDocuments,
-      },
-    ],
-  };
+  // Delete Documents from Azure Search
+  await Promise.all(
+    personaDocuments.map(async (oldDocumentId) => {
+      return await DeleteSearchDocumentByPersonaDocumentId(oldDocumentId);
+    })
+  );
 
-  try {
-    // remove old documents from the vector database
-    const deleteResponses = await Promise.all(
-      personaDocuments.map(async (oldDocumentId) => {
-        return await DeleteDocumentByPersonaDocumentId(oldDocumentId);
-      })
-    );
-
-    const failedDeletions = deleteResponses.filter(
-      (response) => response.status !== "OK"
-    );
-
-    if (failedDeletions.length > 0) {
-      throw new Error(
-        `Failed to delete some persona documents: ${failedDeletions
-          .map((failure) => failure.errors?.map((e) => e.message).join(", "))
-          .join("; ")}`
-      );
-    }
-
-    const { resources } = await HistoryContainer()
-      .items.query<PersonaDocument>(querySpec)
-      .fetchAll();
-
-    for (const document of resources) {
-      await HistoryContainer()
-        .item(document.id, await userHashedId())
-        .delete();
-    }
-  } catch (error) {
-    // throw new Error("Failed to delete persona documents. Error: " + error);
+  // Delete Documents from Cosmos DB
+  for (const id of persona.response.personaDocumentIds || []) {
+    DeletePersonaDocumentById(id);
   }
+};
+
+const DeletePersonaDocumentById = async (personaDocumentId: string) => {
+  await HistoryContainer()
+    .item(personaDocumentId, await userHashedId())
+    .delete();
 };
 
 export const AuthorizedDocuments = async (
@@ -439,6 +434,8 @@ const IndexNewPersonaDocuments = async (
     })
   );
 
+  const successfullyIndexedPersonaDocuments: string[] = [];
+
   const documentIndexResponses = await Promise.all(
     splitDocuments.map(async (doc) => {
       if (!doc.chunks) {
@@ -452,29 +449,42 @@ const IndexNewPersonaDocuments = async (
         };
       }
 
-      const indexResponses = await IndexDocuments(
+      const results = await IndexDocuments(
         doc.chunks,
         doc.name,
         undefined,
         doc.id
       );
 
-      return indexResponses;
+      for (const result of results) {
+        // if one of the documents was OK add it to the successfully indexed documents so we can delete it later
+        if (result.status === "OK" && doc.id) {
+          successfullyIndexedPersonaDocuments.push(doc.id);
+          return results;
+        }
+      }
+
+      return results;
     })
   );
 
-  const allDocumentsIndexed = documentIndexResponses
-    .flat()
-    .every((r) => r.status === "OK");
-
-  // TODO: if there is an error in indexing, delete the documents from the database
+  const flatResponses = documentIndexResponses.flat();
+  const allDocumentsIndexed = flatResponses.every((r) => r.status === "OK");
 
   if (!allDocumentsIndexed) {
+    // If any document failed to index, delete all successfully indexed documents
+    await Promise.all(
+      successfullyIndexedPersonaDocuments.map(async (id) => {
+        await DeleteSearchDocumentByPersonaDocumentId(id);
+      })
+    );
+
     return {
       status: "ERROR",
       errors: [
         {
-          message: "Problem with indexing persona documents",
+          message:
+            "Problem with indexing persona documents due to high traffic. Try again later.",
         },
       ],
     };
@@ -534,9 +544,14 @@ const SharePointFileToText = async (
   }
 };
 
-const DownloadSharePointFile = async (client: any, document: DocumentMetadata): Promise<ArrayBuffer> => {
+const DownloadSharePointFile = async (
+  client: any,
+  document: DocumentMetadata
+): Promise<ArrayBuffer> => {
   const response = (await client
-    .api(`/drives/${document.parentReference.driveId}/items/${document.documentId}/content`)
+    .api(
+      `/drives/${document.parentReference.driveId}/items/${document.documentId}/content`
+    )
     .responseType(ResponseType.ARRAYBUFFER)
     .get()) as ArrayBuffer;
   if (response.byteLength === 0) {
@@ -545,7 +560,10 @@ const DownloadSharePointFile = async (client: any, document: DocumentMetadata): 
   return response;
 };
 
-const ValidateSharePointFileSize = (response: ArrayBuffer, document: DocumentMetadata) => {
+const ValidateSharePointFileSize = (
+  response: ArrayBuffer,
+  document: DocumentMetadata
+) => {
   if (
     response.byteLength >
     (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)
@@ -561,8 +579,10 @@ const ValidateSharePointFileSize = (response: ArrayBuffer, document: DocumentMet
   }
 };
 
-
-const ExtractTextFromArrayBuffer = (response: ArrayBuffer, document: DocumentMetadata): SharePointFileContent => {
+const ExtractTextFromArrayBuffer = (
+  response: ArrayBuffer,
+  document: DocumentMetadata
+): SharePointFileContent => {
   const decoder = new TextDecoder();
   const textContent = decoder.decode(response);
   return {
@@ -571,12 +591,12 @@ const ExtractTextFromArrayBuffer = (response: ArrayBuffer, document: DocumentMet
   };
 };
 
-const ExtractTextFromNonTextFile = async (response: ArrayBuffer, document: DocumentMetadata): Promise<SharePointFileContent> => {
+const ExtractTextFromNonTextFile = async (
+  response: ArrayBuffer,
+  document: DocumentMetadata
+): Promise<SharePointFileContent> => {
   const diClient = DocumentIntelligenceInstance();
-  const poller = await diClient.beginAnalyzeDocument(
-    "prebuilt-read",
-    response
-  );
+  const poller = await diClient.beginAnalyzeDocument("prebuilt-read", response);
   const { paragraphs } = await poller.pollUntilDone();
   const docs: Array<string> = [];
   if (paragraphs) {
