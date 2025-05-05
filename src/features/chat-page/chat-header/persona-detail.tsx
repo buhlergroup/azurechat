@@ -159,7 +159,6 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
         extensionIds: chatThread.response.extension,
       };
 
-      // TODO: Implement file copying
       personaStore.newPersonaAndOpen(duplicatePersona);
       router.push("/persona");
     } catch {
