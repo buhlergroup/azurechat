@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v2.3.0] – 2025-04-11
+
+- Added: Add SharePoint Files to Persona
+- Added: Configure Persona Access via SharePoint Groups
+
 ## [v2.2.0] – 2025-03-21
 
 - Added: Duplicate and customise personas.

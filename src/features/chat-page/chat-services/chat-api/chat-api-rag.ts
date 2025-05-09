@@ -13,6 +13,11 @@ import { CreateCitations, FormatCitations } from "../citation-service";
 import { ChatCitationModel, ChatThreadModel } from "../models";
 import { reportPromptTokens } from "@/features/common/services/chat-metrics-service";
 import { ChatTokenService } from "@/features/common/services/chat-token-service";
+import {
+  AuthorizedDocuments,
+  PersonaDocumentById,
+} from "@/features/persona-page/persona-services/persona-documents-service";
+import { convertPersonaDocumentToSharePointDocument } from "@/features/persona-page/persona-services/models";
 
 export const ChatApiRAG = async (props: {
   chatThread: ChatThreadModel;
@@ -22,12 +27,25 @@ export const ChatApiRAG = async (props: {
 }): Promise<ChatCompletionStreamingRunner> => {
   const { chatThread, userMessage, history, signal } = props;
 
+  const allowedPersonaDocumentIdsResponse = await AllowedPersonaDocumentIds(
+    chatThread.personaDocumentIds
+  );
+
   const openAI = OpenAIInstance();
+
+  const personaFilter =
+    allowedPersonaDocumentIdsResponse.length > 0
+      ? `(${allowedPersonaDocumentIdsResponse
+          .map((id) => `personaDocumentId eq '${id}'`)
+          .join(" or ")})`
+      : "false";
 
   const documentResponse = await SimilaritySearch(
     userMessage,
     10,
-    `user eq '${await userHashedId()}' and chatThreadId eq '${chatThread.id}'`
+    `(user eq '${await userHashedId()}' and chatThreadId eq '${
+      chatThread.id
+    }') or (chatThreadId eq null and ${personaFilter})`
   );
 
   const documents: ChatCitationModel[] = [];
@@ -78,7 +96,7 @@ ${userMessage}
         role: "user",
         content: _userMessage,
       },
-    ]
+    ],
   };
 
   let chatTokenService = new ChatTokenService();
@@ -86,8 +104,36 @@ ${userMessage}
   let promptTokens = chatTokenService.getTokenCountFromHistory(stream.messages);
 
   for (let tokens of promptTokens) {
-    reportPromptTokens(tokens.tokens, "gpt-4", tokens.role, { personaMessageTitle: chatThread.personaMessageTitle, messageCount: stream.messages.length, threadId: chatThread.id });
+    reportPromptTokens(tokens.tokens, "gpt-4", tokens.role, {
+      personaMessageTitle: chatThread.personaMessageTitle,
+      messageCount: stream.messages.length,
+      threadId: chatThread.id,
+    });
   }
 
   return openAI.beta.chat.completions.stream(stream, { signal });
+};
+
+const AllowedPersonaDocumentIds = async (personaDocumentIds: string[]) => {
+  const personaDocumentsResponses = await Promise.all(
+    personaDocumentIds.map(async (id) => {
+      try {
+        return await PersonaDocumentById(id);
+      } catch (error) {
+        return null;
+      }
+    })
+  );
+
+  const personaDocuments = personaDocumentsResponses.filter(
+    (response) => response !== null && response.status === "OK"
+  );
+
+  const allowedPersonaDocuments = await AuthorizedDocuments(
+    personaDocuments.map((e) =>
+      convertPersonaDocumentToSharePointDocument(e.response)
+    )
+  );
+
+  return allowedPersonaDocuments;
 };

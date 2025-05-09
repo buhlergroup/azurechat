@@ -13,23 +13,18 @@ import { CircleUserRound, LogOut } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { Avatar, AvatarImage } from "../ui/avatar";
 import { ThemeToggle } from "./theme-toggle";
+import { useProfilePicture } from "@/features/common/hooks/useProfilePicture";
 
 export const UserProfile = () => {
   const { data: session } = useSession();
+  const profilePicture = useProfilePicture(session?.user?.accessToken);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {session?.user.image ? (
-          <Avatar className="rounded-md">
-            <AvatarImage
-              src={session?.user?.image!}
-              alt={session?.user?.name!}
-            />
-          </Avatar>
-        ) : (
-          <CircleUserRound {...menuIconProps} role="button" />
-        )}
+        <Avatar className="rounded-md">
+          <AvatarImage src={profilePicture} alt={session?.user?.name!} />
+        </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" className="w-56" align="end">
         <DropdownMenuLabel className="font-normal">

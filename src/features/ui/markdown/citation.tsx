@@ -32,6 +32,10 @@ export const Citation: FC<Props> = (props: Props) => {
     return acc;
   }, {} as Record<string, Citation[]>);
 
+  if(Object.keys(citations).length === 0) {
+    return null;
+  }
+
   return (
     <div className="interactive-citation p-4 border mt-4 flex flex-col rounded-md gap-2">
       {Object.entries(citations).map(([name, items], index: number) => {

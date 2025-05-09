@@ -67,13 +67,13 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
   ]);
   // Starting values for system and user prompt
   // Note that the system message will also get prepended with the extension execution steps. Please see ChatApiExtensions method.
-  currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\n ${currentChatThread.personaMessage}`;
+  currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\n Todays Date: ${new Date().toLocaleString()}\n\n ${currentChatThread.personaMessage}`;
 
   let chatType: ChatTypes = "extensions";
 
   if (props.multimodalImage && props.multimodalImage.length > 0) {
     chatType = "multimodal";
-  } else if (docs.length > 0) {
+  } else if (docs.length > 0 || currentChatThread.personaDocumentIds.length > 0) {
     chatType = "chat-with-file";
   } else if (extension.length > 0) {
     chatType = "extensions";

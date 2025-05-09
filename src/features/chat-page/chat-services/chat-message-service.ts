@@ -121,6 +121,7 @@ export const CreateChatMessage = async ({
   multiModalImage?: string;
 }): Promise<ServerActionResponse<ChatMessageModel>> => {
   const userId = await userHashedId();
+
   const modelToSave: ChatMessageModel = {
     id: uniqueId(),
     createdAt: new Date(),

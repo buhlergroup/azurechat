@@ -7,7 +7,7 @@ import { AI_DESCRIPTION, AI_NAME } from "@/features/theme/theme-config";
 import { Hero } from "@/features/ui/hero";
 import { ScrollArea } from "@/features/ui/scroll-area";
 import Image from "next/image";
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 import { NewsArticleModel } from "@/features/common/services/news-service/news-model";
 import { NewsArticle } from "./news-article";
 import { Button } from "../ui/button";
@@ -119,6 +119,7 @@ const PersonasSection = ({ personas }: { personas: PersonaModel[] }) => (
 
 export const ChatHome: FC<ChatPersonaProps> = ({ personas, news }) => {
   const [showChangelog, setShowChangelog] = useState<boolean>(false);
+
   return (
     <ScrollArea className="flex-1 px-3">
       <main className="flex flex-1 flex-col gap-6 pb-6">
