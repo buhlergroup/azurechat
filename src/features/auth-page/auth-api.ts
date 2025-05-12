@@ -50,7 +50,7 @@ const configureIdentityProvider = () => {
         authorization: {
           params: {
             scope:
-              "offline_access openid profile User.Read email Files.Read.All Sites.Read.All AllSites.Read MyFiles.Read Group.Read.All",
+              "offline_access openid profile User.Read email Group.Read.All",
           },
         },
         async profile(profile, tokens) {
