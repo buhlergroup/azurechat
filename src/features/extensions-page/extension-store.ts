@@ -12,7 +12,6 @@ import {
   ExtensionModel,
   HeaderModel,
 } from "./extension-services/models";
-import { DiscoverMCPFunctions } from "../common/services/mcp-service";
 
 interface FormState {
   success: boolean;
@@ -39,8 +38,6 @@ class ExtensionState {
       executionSteps: "",
       createdAt: new Date(),
       isPublished: false,
-      isMCP: true,
-      mcpDiscoveryUrl: "",
       type: "EXTENSION",
       functions: [],
       headers: [
@@ -106,12 +103,6 @@ class ExtensionState {
       ...this.createDefaultFunction(),
       id: uniqueId(),
     });
-  }
-
-  public async addMCPDiscoveryUrl(mcpDiscoveryUrl: string){
-    if(mcpDiscoveryUrl === undefined) return;
-
-    await DiscoverMCPFunctions(mcpDiscoveryUrl)
   }
 
   public cloneFunction(functionModel: ExtensionFunctionModel) {
@@ -232,7 +223,6 @@ export const FormToExtensionModel = (formData: FormData): ExtensionModel => {
     description: formData.get("description") as string,
     executionSteps: formData.get("executionSteps") as string,
     isPublished: formData.get("isPublished") === "on" ? true : false,
-    isMCP: formData.get("isMCP") === "on" ? true : false,
     userId: "", // the user id is set on the server once the user is authenticated
     createdAt: new Date(),
     type: "EXTENSION",

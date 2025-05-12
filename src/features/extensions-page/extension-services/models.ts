@@ -72,8 +72,6 @@ export const ExtensionModelSchema = z.object({
     })
     .refine(refineFromEmpty, "Description cannot be empty"),
   headers: z.array(HeaderSchema),
-  isMCP: z.boolean(),
-  mcpDiscoveryUrl: z.string().optional(),
   userId: z.string(),
   isPublished: z.boolean(),
   createdAt: z.date(),
