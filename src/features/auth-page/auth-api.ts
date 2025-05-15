@@ -4,9 +4,9 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GitHubProvider from "next-auth/providers/github";
 import { Provider } from "next-auth/providers/index";
 import { hashValue } from "./helpers";
-import { getGraphClient } from "../common/services/microsoft-graph-client";
-import { ResponseType } from "@microsoft/microsoft-graph-client";
 import { JWT } from "next-auth/jwt";
+
+const SCOPES = "offline_access openid profile User.Read email Group.Read.All";
 
 const configureIdentityProvider = () => {
   const providers: Array<Provider> = [];
@@ -49,8 +49,7 @@ const configureIdentityProvider = () => {
         tenantId: process.env.AZURE_AD_TENANT_ID,
         authorization: {
           params: {
-            scope:
-              "offline_access openid profile User.Read email Group.Read.All",
+            scope: SCOPES,
           },
         },
         async profile(profile, tokens) {
@@ -140,8 +139,7 @@ async function refreshAccessToken(token: JWT) {
         client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
         grant_type: "refresh_token",
         refresh_token: token.refreshToken as string,
-        scope:
-          "offline_access openid profile User.Read email Files.Read.All Sites.Read.All AllSites.Read MyFiles.Read Group.Read.All",
+        scope: SCOPES,
       }),
     });
 
