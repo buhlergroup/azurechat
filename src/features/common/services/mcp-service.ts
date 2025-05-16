@@ -16,17 +16,9 @@ export const DiscoverMCPFunctions = async (discoveryURL: string) => {
     
   } catch (error) {
     // If that fails with a 4xx error, try the older SSE transport
+    console.log(error)
     console.log(
       "Streamable HTTP connection failed, falling back to SSE transport"
     );
-
-    client = new Client({
-      name: "sse-client",
-      version: "1.0.0",
-    });
-
-    const sseTransport = new SSEClientTransport(new URL(discoveryURL));
-    await client.connect(sseTransport);
-    console.log("Connected using SSE transport");
   }
 };

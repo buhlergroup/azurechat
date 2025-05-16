@@ -4,7 +4,7 @@ import { ServerActionResponse } from "@/features/common/server-action-response";
 import { LoadingIndicator } from "@/features/ui/loading";
 import { Textarea } from "@/features/ui/textarea";
 import { useSession } from "next-auth/react";
-import { FC, useActionState } from "react";
+import { FC, useActionState, useState } from "react";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
 import { Label } from "../../ui/label";
@@ -39,6 +39,8 @@ export const AddExtension: FC<Props> = (props) => {
     initialState
   );
 
+  const [isMcp, setIsMCP] = useState<boolean>(false);
+
   const PublicSwitch = () => {
     if (data === undefined || data === null) return null;
 
@@ -50,6 +52,16 @@ export const AddExtension: FC<Props> = (props) => {
         </div>
       );
     }
+  };
+
+  const ExtensionTypeSwitch = () => {
+    return (
+      <div className="flex items-center space-x-2">
+        <Label htmlFor="description">HTTP</Label>
+        <Switch name="isMCP" onClick={() => setIsMCP((e) => !e)} checked={isMcp}/>
+        <Label htmlFor="description">MCP</Label>
+      </div>
+    );
   };
 
   return (
@@ -100,8 +112,32 @@ export const AddExtension: FC<Props> = (props) => {
                   placeholder="Describe specialties and the steps to execute the extension"
                 />
               </div>
-              <EndpointHeader />
-              <AddFunction />
+              <ExtensionTypeSwitch />
+              {isMcp ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Endpoint</Label>
+                  <Input
+                    type="text"
+                    required
+                    defaultValue={extension.mcpDiscoveryUrl}
+                    name="mcp-endpoint"
+                    placeholder="Endpoint URL"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      extensionStore.addMCPDiscoveryUrl("http://localhost:8080");
+                    }}
+                  >Discover Tools</Button>
+                </div>
+              ) : (
+                <>
+                  <EndpointHeader />
+                  <AddFunction />
+                </>
+              )}
             </div>
           </ScrollArea>
           <SheetFooter className="py-2 flex sm:justify-between flex-row">
