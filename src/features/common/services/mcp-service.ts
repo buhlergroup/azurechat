@@ -1,3 +1,5 @@
+"use server";
+import "server-only";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -13,6 +15,8 @@ export const DiscoverMCPFunctions = async (discoveryURL: string) => {
     const transport = new StreamableHTTPClientTransport(new URL(discoveryURL));
     await client.connect(transport);
     console.log("Connected using Streamable HTTP transport");
+    const tools = await client.listTools();
+    console.log("Discovered tools:", tools);
     
   } catch (error) {
     // If that fails with a 4xx error, try the older SSE transport
