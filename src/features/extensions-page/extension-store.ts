@@ -100,7 +100,7 @@ class ExtensionState {
       });
     }
   }
-  
+
   public addFunction() {
     this.extension.functions.push({
       ...this.createDefaultFunction(),
@@ -108,10 +108,18 @@ class ExtensionState {
     });
   }
 
-  public async addMCPDiscoveryUrl(mcpDiscoveryUrl: string){
-    if(mcpDiscoveryUrl === undefined) return;
+  public async addMCPDiscoveryUrl(mcpDiscoveryUrl: string) {
+    if (mcpDiscoveryUrl === undefined) return;
 
-    await DiscoverMCPFunctions(mcpDiscoveryUrl)
+    const result = await DiscoverMCPFunctions(mcpDiscoveryUrl);
+
+    if (result.status === "OK") {
+      console.log(result.response.tools.tools[1]);
+      return;
+    }
+
+    this.formState.errors = result.errors;
+    return;
   }
 
   public cloneFunction(functionModel: ExtensionFunctionModel) {

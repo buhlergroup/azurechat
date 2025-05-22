@@ -80,3 +80,20 @@ export const ExtensionModelSchema = z.object({
   functions: z.array(ExtensionFunctionSchema), // validation is done in the function schema
   type: z.literal(EXTENSION_ATTRIBUTE),
 });
+
+export type MCPTool = {
+  name: string;
+  description?: string;
+  inputSchema: {
+    type: object;
+    properties: {
+      [key: string]: {
+        description: string;
+        type: string;
+      };
+    };
+    title: string;
+    description: string;
+    required: string[];
+  };
+}

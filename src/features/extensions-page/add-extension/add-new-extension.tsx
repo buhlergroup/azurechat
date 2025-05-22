@@ -39,7 +39,10 @@ export const AddExtension: FC<Props> = (props) => {
     initialState
   );
 
-  const [isMcp, setIsMCP] = useState<boolean>(false);
+  const [isMcp, setIsMCP] = useState<boolean>(extension.isMCP);
+  const [discoveryUrl, setDiscoveryUrl] = useState<string>(
+    extension.description
+  );
 
   const PublicSwitch = () => {
     if (data === undefined || data === null) return null;
@@ -58,7 +61,11 @@ export const AddExtension: FC<Props> = (props) => {
     return (
       <div className="flex items-center space-x-2">
         <Label htmlFor="description">HTTP</Label>
-        <Switch name="isMCP" onClick={() => setIsMCP((e) => !e)} checked={isMcp}/>
+        <Switch
+          name="isMCP"
+          onClick={() => setIsMCP((e) => !e)}
+          checked={isMcp}
+        />
         <Label htmlFor="description">MCP</Label>
       </div>
     );
@@ -119,7 +126,8 @@ export const AddExtension: FC<Props> = (props) => {
                   <Input
                     type="text"
                     required
-                    defaultValue={extension.mcpDiscoveryUrl}
+                    value={discoveryUrl}
+                    onChange={(e) => setDiscoveryUrl(e.target.value)}
                     name="mcp-endpoint"
                     placeholder="Endpoint URL"
                   />
@@ -128,9 +136,11 @@ export const AddExtension: FC<Props> = (props) => {
                     variant="outline"
                     className="w-full"
                     onClick={() => {
-                      extensionStore.addMCPDiscoveryUrl("http://localhost:8080");
+                      extensionStore.addMCPDiscoveryUrl(discoveryUrl);
                     }}
-                  >Discover Tools</Button>
+                  >
+                    Discover Tools
+                  </Button>
                 </div>
               ) : (
                 <>
