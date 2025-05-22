@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { menuIconProps } from "@/ui/menu";
-import { LogOut } from "lucide-react";
+import { LogOut, User } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { Avatar, AvatarImage } from "../ui/avatar";
 import { ThemeToggle } from "./theme-toggle";
@@ -22,9 +22,15 @@ export const UserProfile = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Avatar className="rounded-md">
-          <AvatarImage src={profilePicture} alt={session?.user?.name!} />
-        </Avatar>
+        {profilePicture ? (
+          <Avatar className="rounded-md">
+            <AvatarImage src={profilePicture} alt={session?.user?.name!} />
+          </Avatar>
+        ) : (
+          <Avatar>
+            <User />
+          </Avatar>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" className="w-56" align="end">
         <DropdownMenuLabel className="font-normal">
