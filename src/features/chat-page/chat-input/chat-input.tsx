@@ -37,6 +37,8 @@ import { SoftDeleteChatDocumentsForCurrentUser } from "../chat-services/chat-thr
 import { RevalidateCache } from "@/features/common/navigation-helpers";
 import { ExtensionModel } from "@/features/extensions-page/extension-services/models";
 import { InternetSearch } from "@/features/ui/chat/chat-input-area/internet-search";
+import { ReasoningEffortSelector } from "./reasoning-effort-selector";
+import { MODEL_CONFIGS } from "../chat-services/models";
 
 interface ChatInputProps {
   chatDocuments: ChatDocumentModel[];
@@ -49,7 +51,7 @@ export const ChatInput = ({
   internetSearch,
   threadExtensions
 }: ChatInputProps) => {
-  const { loading, input, chatThreadId } = useChat();
+  const { loading, input, chatThreadId, selectedModel, reasoningEffort } = useChat();
   const { uploadButtonLabel } = useFileStore();
   const { isPlaying } = useTextToSpeech();
   const { isMicrophoneReady } = useSpeechToText();
@@ -164,6 +166,12 @@ export const ChatInput = ({
       <ChatInputActionArea>
         <ChatInputSecondaryActionArea>
           {internetSearch && threadExtensions && <InternetSearch extension={internetSearch} threadExtensions={threadExtensions}/>}
+          <ReasoningEffortSelector
+            value={reasoningEffort}
+            onChange={(effort) => chatStore.updateReasoningEffort(effort)}
+            disabled={loading === "loading"}
+            showReasoningModelsOnly={MODEL_CONFIGS[selectedModel]?.supportsReasoning}
+          />
           <AttachFile
             onClick={(formData) =>
               fileStore.onFileChange({ formData, chatThreadId })

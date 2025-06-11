@@ -88,3 +88,23 @@ export const OpenAIVisionInstance = () => {
   });
   return openai;
 };
+
+export const OpenAIReasoningInstance = () => {
+  if (
+    !process.env.AZURE_OPENAI_API_KEY ||
+    !process.env.AZURE_OPENAI_API_REASONING_DEPLOYMENT_NAME ||
+    !process.env.AZURE_OPENAI_API_INSTANCE_NAME
+  ) {
+    throw new Error(
+      "Azure OpenAI Reasoning deployment config is not set, check environment variables."
+    );
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    baseURL: `https://${process.env.AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/${process.env.AZURE_OPENAI_API_REASONING_DEPLOYMENT_NAME}`,
+    defaultQuery: { "api-version": "2025-04-01-preview" },
+    defaultHeaders: { "api-key": process.env.AZURE_OPENAI_API_KEY },
+  });
+  return openai;
+};

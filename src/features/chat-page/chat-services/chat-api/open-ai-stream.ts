@@ -1,9 +1,10 @@
 import { AI_NAME } from "@/features/theme/theme-config";
-import { ChatCompletionStreamingRunner } from "openai/resources/beta/chat/completions";
+import { ChatCompletionStreamingRunner } from "openai/resources/chat/completions";
 import { CreateChatMessage } from "../chat-message-service";
 import {
   AzureChatCompletion,
   AzureChatCompletionAbort,
+  AzureChatCompletionReasoning,
   ChatThreadModel,
 } from "../models";
 
@@ -23,8 +24,51 @@ export const OpenAIStream = (props: {
       };
 
       let lastMessage = "";
+      let reasoningContent = "";
+      let reasoningSummaries: Record<number, string> = {}; // Track multiple summary parts
 
       runner
+        .on("response.reasoning_summary_text.delta" as any, (event: any) => {
+          // Handle reasoning summary delta events          
+          if (event.delta) {
+            const summaryIndex = event.summary_index || 0;
+            reasoningSummaries[summaryIndex] = (reasoningSummaries[summaryIndex] || '') + event.delta;
+            
+            // Combine all summary parts for streaming
+            const combinedReasoning = Object.values(reasoningSummaries).join('\n\n');
+            
+            if (combinedReasoning !== reasoningContent) {
+              reasoningContent = combinedReasoning;
+              
+              const reasoningResponse: AzureChatCompletionReasoning = {
+                type: "reasoning",
+                response: reasoningContent,
+              };
+              streamResponse(reasoningResponse.type, JSON.stringify(reasoningResponse));
+            }
+          }
+        })
+        .on("response.reasoning_summary_text.done" as any, (event: any) => {
+          // Handle reasoning summary completion events
+          
+          if (event.text) {
+            const summaryIndex = event.summary_index || 0;
+            reasoningSummaries[summaryIndex] = event.text;
+            
+            // Combine all summary parts
+            const combinedReasoning = Object.values(reasoningSummaries).join('\n\n');
+            
+            if (combinedReasoning !== reasoningContent) {
+              reasoningContent = combinedReasoning;
+              
+              const reasoningResponse: AzureChatCompletionReasoning = {
+                type: "reasoning",
+                response: reasoningContent,
+              };
+              streamResponse(reasoningResponse.type, JSON.stringify(reasoningResponse));
+            }
+          }
+        })
         .on("content", (content) => {
           const completion = runner.currentChatCompletionSnapshot;
 
@@ -34,10 +78,55 @@ export const OpenAIStream = (props: {
               response: completion,
             };
             lastMessage = completion.choices[0].message.content ?? "";
+            
+            // Check for reasoning content in O1/O3 responses
+            const message = completion.choices[0].message as any;
+            const choice = completion.choices[0] as any;
+            
+            // Debug logging to see the structure
+            console.log("🔍 OpenAI Response Structure:", {
+              messageKeys: Object.keys(message),
+              choiceKeys: Object.keys(choice),
+              hasReasoning: !!message.reasoning,
+              hasReasoningContent: !!message.reasoning_content,
+              hasThoughts: !!message.thoughts,
+              choiceHasReasoning: !!choice.reasoning,
+              completionKeys: Object.keys(completion),
+              hasReasoningSummary: !!(completion as any).reasoning?.summary,
+              reasoningKeys: (completion as any).reasoning ? Object.keys((completion as any).reasoning) : []
+            });
+            
+            // Handle different reasoning field structures
+            let currentReasoningContent = null;
+            
+            // First check for reasoning summary from the new API structure
+            if ((completion as any).reasoning?.summary) {
+              currentReasoningContent = (completion as any).reasoning.summary;
+            }
+            // Fallback to existing reasoning content fields
+            else if (message.reasoning) {
+              currentReasoningContent = message.reasoning;
+            } else if (message.reasoning_content) {
+              currentReasoningContent = message.reasoning_content;
+            } else if (message.thoughts) {
+              currentReasoningContent = message.thoughts;
+            } else if (choice.reasoning) {
+              currentReasoningContent = choice.reasoning;
+            }
+            
+            if (currentReasoningContent && currentReasoningContent !== reasoningContent) {
+              reasoningContent = currentReasoningContent;
+              const reasoningResponse: AzureChatCompletionReasoning = {
+                type: "reasoning",
+                response: reasoningContent,
+              };
+              streamResponse(reasoningResponse.type, JSON.stringify(reasoningResponse));
+            }
+            
             streamResponse(response.type, JSON.stringify(response));
           }
         })
-        .on("functionCall", async (functionCall) => {
+        .on("functionToolCall" as any, async (functionCall: any) => {
           await CreateChatMessage({
             name: functionCall.name,
             content: functionCall.arguments,
@@ -51,7 +140,7 @@ export const OpenAIStream = (props: {
           };
           streamResponse(response.type, JSON.stringify(response));
         })
-        .on("functionCallResult", async (functionCallResult) => {
+        .on("functionToolCallResult" as any, async (functionCallResult: any) => {
           const response: AzureChatCompletion = {
             type: "functionCallResult",
             response: functionCallResult,
@@ -91,11 +180,20 @@ export const OpenAIStream = (props: {
           controller.close();
         })
         .on("finalContent", async (content: string) => {
+          // Prioritize event-based reasoning summaries over legacy field-based approach
+          let finalReasoningContent = reasoningContent;
+          
+          // If we have event-based reasoning summaries, use those
+          if (Object.keys(reasoningSummaries).length > 0) {
+            finalReasoningContent = Object.values(reasoningSummaries).join('\n\n');
+          }
+          
           await CreateChatMessage({
             name: AI_NAME,
             content: content,
             role: "assistant",
             chatThreadId: props.chatThread.id,
+            reasoningContent: finalReasoningContent || undefined,
           });
 
           const response: AzureChatCompletion = {

@@ -113,12 +113,14 @@ export const CreateChatMessage = async ({
   role,
   chatThreadId,
   multiModalImage,
+  reasoningContent,
 }: {
   name: string;
   role: ChatRole;
   content: string;
   chatThreadId: string;
   multiModalImage?: string;
+  reasoningContent?: string;
 }): Promise<ServerActionResponse<ChatMessageModel>> => {
   const userId = await userHashedId();
 
@@ -133,6 +135,7 @@ export const CreateChatMessage = async ({
     threadId: chatThreadId,
     userId: userId,
     multiModalImage: multiModalImage,
+    reasoningContent: reasoningContent,
   };
   return await UpsertChatMessage(modelToSave);
 };

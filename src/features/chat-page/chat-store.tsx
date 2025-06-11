@@ -17,11 +17,14 @@ import {
   AddExtensionToChatThread,
   RemoveExtensionFromChatThread,
   UpdateChatTitle,
+  UpdateChatThreadSelectedModel,
 } from "./chat-services/chat-thread-service";
 import {
   AzureChatCompletion,
   ChatMessageModel,
   ChatThreadModel,
+  ChatModel,
+  ReasoningEffort,
 } from "./chat-services/models";
 let abortController: AbortController = new AbortController();
 
@@ -35,8 +38,11 @@ class ChatState {
   public autoScroll: boolean = false;
   public userName: string = "";
   public chatThreadId: string = "";
+  public selectedModel: ChatModel = "gpt-4.1";
+  public reasoningEffort: ReasoningEffort = "medium";
 
   private chatThread: ChatThreadModel | undefined;
+  private tempReasoningContent: string = "";
 
   private addToMessages(message: ChatMessageModel) {
     const currentMessage = this.messages.find((el) => el.id === message.id);
@@ -71,6 +77,36 @@ class ChatState {
     this.chatThreadId = chatThread.id;
     this.messages = messages;
     this.userName = userName;
+    // Initialize selected model from thread or default to gpt-4.1
+    this.selectedModel = chatThread.selectedModel || "gpt-4.1";
+  }
+
+  public async updateSelectedModel(model: ChatModel) {
+    this.selectedModel = model;
+    
+    // Persist model selection to thread
+    if (this.chatThreadId) {
+      try {
+        const response = await UpdateChatThreadSelectedModel(this.chatThreadId, model);
+        if (response.status !== "OK") {
+          showError("Failed to save model selection");
+        }
+      } catch (error) {
+        showError("Failed to save model selection: " + error);
+      }
+    }
+  }
+
+  public getSelectedModel(): ChatModel {
+    return this.selectedModel;
+  }
+
+  public updateReasoningEffort(effort: ReasoningEffort) {
+    this.reasoningEffort = effort;
+  }
+
+  public getReasoningEffort(): ReasoningEffort {
+    return this.reasoningEffort;
   }
 
   public async AddExtensionToChatThread(extensionId: string) {
@@ -213,6 +249,8 @@ class ChatState {
     const body = JSON.stringify({
       id: this.chatThreadId,
       message: this.input,
+      selectedModel: this.selectedModel,
+      reasoningEffort: this.reasoningEffort,
     });
     formData.append("content", body);
 
@@ -266,10 +304,16 @@ class ChatState {
               type: "CHAT_MESSAGE",
               userId: "",
               multiModalImage: "",
+              reasoningContent: this.tempReasoningContent || undefined,
             };
 
             this.addToMessages(mappedContent);
             this.lastMessage = mappedContent.content;
+            
+            // Clear temporary reasoning content after using it
+            if (this.tempReasoningContent) {
+              this.tempReasoningContent = "";
+            }
             break;
           case "abort":
             this.removeMessage(newUserMessage.id);
@@ -278,6 +322,23 @@ class ChatState {
           case "error":
             showError(responseType.response);
             this.loading = "idle";
+            break;
+          case "reasoning":
+            console.log("🧠 Chat Store: Received reasoning event", responseType.response.substring(0, 100) + "...");
+            // Handle reasoning content - update the last assistant message with reasoning
+            // or store it temporarily if no assistant message exists yet
+            const lastAssistantMessage = this.messages
+              .slice()
+              .reverse()
+              .find(m => m.role === "assistant");
+            if (lastAssistantMessage) {
+              console.log("🧠 Chat Store: Updating existing assistant message with reasoning");
+              lastAssistantMessage.reasoningContent = responseType.response;
+            } else {
+              console.log("🧠 Chat Store: Storing reasoning content temporarily");
+              // Store reasoning content temporarily for the next assistant message
+              this.tempReasoningContent = responseType.response;
+            }
             break;
           case "finalContent":
             this.loading = "idle";

@@ -6,11 +6,11 @@ import { OpenAIInstance } from "@/features/common/services/openai";
 import {
   ChatCompletionStreamingRunner,
   ChatCompletionStreamParams,
-} from "openai/resources/beta/chat/completions";
+} from "openai/resources/chat/completions";
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { SimilaritySearch } from "../azure-ai-search/azure-ai-search";
 import { CreateCitations, FormatCitations } from "../citation-service";
-import { ChatCitationModel, ChatThreadModel } from "../models";
+import { ChatCitationModel, ChatThreadModel, MODEL_CONFIGS } from "../models";
 import { reportPromptTokens } from "@/features/common/services/chat-metrics-service";
 import { ChatTokenService } from "@/features/common/services/chat-token-service";
 import {
@@ -24,8 +24,9 @@ export const ChatApiRAG = async (props: {
   userMessage: string;
   history: ChatCompletionMessageParam[];
   signal: AbortSignal;
+  reasoningEffort?: string;
 }): Promise<ChatCompletionStreamingRunner> => {
-  const { chatThread, userMessage, history, signal } = props;
+  const { chatThread, userMessage, history, signal, reasoningEffort } = props;
 
   const allowedPersonaDocumentIdsResponse = await AllowedPersonaDocumentIds(
     chatThread.personaDocumentIds
@@ -99,6 +100,20 @@ ${userMessage}
     ],
   };
 
+  // Add reasoning configuration for reasoning models
+  const modelConfig = MODEL_CONFIGS[chatThread.selectedModel || "gpt-4.1"];
+  if (modelConfig?.supportsReasoning) {
+    // Add reasoning effort if specified
+    if (reasoningEffort) {
+      (stream as any).reasoning_effort = reasoningEffort;
+    }
+    
+    console.log(`🧠 Configuring reasoning for RAG with ${chatThread.selectedModel}:`, {
+      effort: reasoningEffort || "medium",
+      supportedSummarizers: modelConfig.supportedSummarizers
+    });
+  }
+
   let chatTokenService = new ChatTokenService();
 
   let promptTokens = chatTokenService.getTokenCountFromHistory(stream.messages);
@@ -111,7 +126,7 @@ ${userMessage}
     });
   }
 
-  return openAI.beta.chat.completions.stream(stream, { signal });
+  return openAI.chat.completions.stream(stream, { signal });
 };
 
 const AllowedPersonaDocumentIds = async (personaDocumentIds: string[]) => {

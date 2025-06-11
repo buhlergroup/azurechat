@@ -4,9 +4,9 @@ import "server-only";
 import { OpenAIInstance } from "@/features/common/services/openai";
 import { FindExtensionByID } from "@/features/extensions-page/extension-services/extension-service";
 import { RunnableToolFunction } from "openai/lib/RunnableFunction";
-import { ChatCompletionStreamingRunner } from "openai/resources/beta/chat/completions";
+import { ChatCompletionStreamingRunner } from "openai/resources/chat/completions";
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { ChatThreadModel } from "../models";
+import { ChatThreadModel, MODEL_CONFIGS } from "../models";
 import { ChatTokenService } from "@/features/common/services/chat-token-service";
 import { reportPromptTokens } from "@/features/common/services/chat-metrics-service";
 export const ChatApiExtensions = async (props: {
@@ -15,10 +15,12 @@ export const ChatApiExtensions = async (props: {
   history: ChatCompletionMessageParam[];
   extensions: RunnableToolFunction<any>[];
   signal: AbortSignal;
+  openaiInstance?: any;
+  reasoningEffort?: string;
 }): Promise<ChatCompletionStreamingRunner> => {
-  const { userMessage, history, signal, chatThread, extensions } = props;
+  const { userMessage, history, signal, chatThread, extensions, openaiInstance, reasoningEffort } = props;
 
-  const openAI = OpenAIInstance();
+  const openAI = openaiInstance || OpenAIInstance();
   const systemMessage = await extensionsSystemMessage(chatThread);
 
   const messages: ChatCompletionMessageParam[] =  [
@@ -51,15 +53,28 @@ export const ChatApiExtensions = async (props: {
     reportPromptTokens(toolsTokens, "gpt-4", "tools", {"functionName": e.function.name || "", "personaMessageTitle": chatThread.personaMessageTitle, threadId: chatThread.id, messageCount: messages.length});
   }
 
-  return openAI.beta.chat.completions.runTools(
-    {
-      model: "",
-      stream: true,
-      messages: messages,
-      tools: extensions,
-    },
-    { signal: signal }
-  );
+  const requestOptions: any = {
+    model: "",
+    stream: true,
+    messages: messages,
+    tools: extensions,
+  };
+
+  // Add reasoning configuration for reasoning models
+  const modelConfig = MODEL_CONFIGS[chatThread.selectedModel || "gpt-4.1"];
+  if (modelConfig?.supportsReasoning) {
+    // Add reasoning effort if specified
+    if (reasoningEffort) {
+      requestOptions.reasoning_effort = reasoningEffort;
+    }
+    
+    console.log(`🧠 Configuring reasoning for ${chatThread.selectedModel}:`, {
+      effort: reasoningEffort || "medium",
+      supportedSummarizers: modelConfig.supportedSummarizers
+    });
+  }
+
+  return openAI.chat.completions.stream(requestOptions, { signal: signal });
 };
 
 const extensionsSystemMessage = async (chatThread: ChatThreadModel) => {

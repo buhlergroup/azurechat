@@ -1,5 +1,5 @@
 import { Markdown } from "@/features/ui/markdown/markdown";
-import { FunctionSquare } from "lucide-react";
+import { FunctionSquare, Brain } from "lucide-react";
 import React from "react";
 import {
   Accordion,
@@ -16,13 +16,41 @@ interface MessageContentProps {
     content: string;
     name: string;
     multiModalImage?: string;
+    reasoningContent?: string;
   };
 }
 
 const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
+
   if (message.role === "assistant" || message.role === "user") {
     return (
       <>
+        {message.reasoningContent && message.role === "assistant" && (
+          <div className="mb-4">
+            <Accordion
+              type="multiple"
+              className="bg-background rounded-md border p-2"
+            >
+              <AccordionItem value="reasoning" className="">
+                <AccordionTrigger className="text-sm py-1 items-center gap-2">
+                  <div className="flex gap-2 items-center">
+                    <Brain
+                      size={18}
+                      strokeWidth={1.4}
+                      className="text-blue-500"
+                    />
+                    Show reasoning thoughts
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="text-sm text-muted-foreground bg-slate-50 dark:bg-slate-900 p-3 rounded-md">
+                    <Markdown content={message.reasoningContent} onCitationClick={CitationAction} />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        )}
         <Markdown
           content={message.content}
           onCitationClick={CitationAction}

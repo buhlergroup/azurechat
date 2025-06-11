@@ -90,7 +90,12 @@ async function executeCreateImage(
   }
 
   // Check the response is valid
-  if (response.data[0].b64_json === undefined) {
+  if (
+    !response.data ||
+    !Array.isArray(response.data) ||
+    !response.data[0] ||
+    response.data[0].b64_json === undefined
+  ) {
     return {
       error:
         "There was an error creating the image: Invalid API response received. Return this message to the user and halt execution.",

@@ -3,7 +3,7 @@ import "server-only";
 
 import { getCurrentUser } from "@/features/auth-page/helpers";
 import { CHAT_DEFAULT_SYSTEM_PROMPT } from "@/features/theme/theme-config";
-import { ChatCompletionStreamingRunner } from "openai/resources/beta/chat/completions";
+import { ChatCompletionStreamingRunner } from "openai/resources/chat/completions";
 import { ChatApiRAG } from "../chat-api/chat-api-rag";
 import { FindAllChatDocuments } from "../chat-document-service";
 import {
@@ -27,6 +27,7 @@ import {
   reportUserChatMessage,
 } from "../../../common/services/chat-metrics-service";
 import { ChatTokenService } from "@/features/common/services/chat-token-service";
+import { MODEL_CONFIGS } from "../models";
 type ChatTypes = "extensions" | "chat-with-file" | "multimodal";
 
 export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
@@ -35,6 +36,11 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
   if (currentChatThreadResponse.status !== "OK") {
     return new Response("", { status: 401 });
   }
+
+  // Get selected model from props or default to gpt-4.1
+  const selectedModel = props.selectedModel || "gpt-4.1";
+  const modelConfig = MODEL_CONFIGS[selectedModel];
+  const reasoningEffort = props.reasoningEffort || "medium";
 
   if (props.multimodalImage) {
     const base64Image = props.multimodalImage;
@@ -90,6 +96,9 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
 
   let runner: ChatCompletionStreamingRunner;
 
+  // Get the appropriate OpenAI instance based on selected model
+  const openaiInstance = modelConfig.getInstance();
+
   switch (chatType) {
     case "chat-with-file":
       runner = await ChatApiRAG({
@@ -97,6 +106,7 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
         userMessage: props.message,
         history: history,
         signal: signal,
+        reasoningEffort: reasoningEffort,
       });
       break;
     case "multimodal":
@@ -105,6 +115,7 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
         userMessage: props.message,
         file: props.multimodalImage,
         signal: signal,
+        reasoningEffort: reasoningEffort,
       });
       break;
     case "extensions":
@@ -114,6 +125,8 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
         history: history,
         extensions: extension,
         signal: signal,
+        openaiInstance: openaiInstance,
+        reasoningEffort: reasoningEffort,
       });
       break;
   }
