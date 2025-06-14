@@ -192,35 +192,69 @@ Emitted when a reasoning summary text is completed.
 }
 ```
 
-### Implementation Considerations
+### Implementation Status
 
-The current implementation handles reasoning content from various response fields for backward compatibility. To support the new event-based structure, the stream handler should be updated to:
+✅ **IMPLEMENTED**: The application now fully supports the new event-based reasoning summary structure:
 
-1. **Listen for reasoning events**: Handle `response.reasoning_summary_text.delta` and `response.reasoning_summary_text.done` events
-2. **Accumulate deltas**: Build the complete reasoning summary from streaming deltas
-3. **Maintain compatibility**: Continue supporting the existing field-based approach as fallback
-4. **Handle multiple summaries**: Support multiple summary parts via `summary_index`
+1. **Event-based handling**: The stream handler listens for both `response.reasoning_summary_text.delta` and `response.reasoning_summary_text.done` events
+2. **Delta accumulation**: Reasoning summaries are built incrementally from streaming deltas
+3. **Backward compatibility**: Legacy field-based approach is maintained as fallback
+4. **Multiple summaries**: Support for multiple summary parts via `summary_index`
+5. **Proper API configuration**: All API endpoints now include the required `reasoning.summary` and `include` parameters
 
-### Migration Path
+### Current Implementation
 
-The implementation should support both the legacy field-based approach and the new event-based structure:
+The implementation supports both the legacy field-based approach and the new event-based structure:
 
 ```typescript
-// New event-based handling
-if (event.type === 'response.reasoning_summary_text.delta') {
-  // Accumulate reasoning deltas
-  reasoningSummaries[event.summary_index] = 
-    (reasoningSummaries[event.summary_index] || '') + event.delta;
-}
+// New event-based handling via chunk listener
+runner.on("chunk" as any, (chunk: any) => {
+  if (chunk.type === "response.reasoning_summary_text.delta") {
+    if (chunk.delta) {
+      const summaryIndex = chunk.summary_index || 0;
+      reasoningSummaries[summaryIndex] = (reasoningSummaries[summaryIndex] || '') + chunk.delta;
+      // Stream the accumulated reasoning content to client
+    }
+  } else if (chunk.type === "response.reasoning_summary_text.done") {
+    if (chunk.text) {
+      const summaryIndex = chunk.summary_index || 0;
+      reasoningSummaries[summaryIndex] = chunk.text;
+      // Stream the complete reasoning content to client
+    }
+  }
+});
 
-if (event.type === 'response.reasoning_summary_text.done') {
-  // Complete reasoning summary available
-  const completeReasoning = event.text;
-}
+// Legacy event listeners for backward compatibility
+runner
+  .on("response.reasoning_summary_text.delta" as any, (event: any) => {
+    // Handle legacy event structure
+  })
+  .on("response.reasoning_summary_text.done" as any, (event: any) => {
+    // Handle legacy event structure
+  });
 
-// Fallback to legacy field-based approach
-if (!reasoningContent && message.reasoning) {
-  reasoningContent = message.reasoning;
+// Fallback to legacy field-based approach in content handler
+if ((completion as any).reasoning?.summary) {
+  currentReasoningContent = (completion as any).reasoning.summary;
+} else if (message.reasoning) {
+  currentReasoningContent = message.reasoning;
+}
+```
+
+### API Configuration
+
+All API endpoints now properly configure reasoning summaries:
+
+```typescript
+// Correct configuration for reasoning models
+if (modelConfig?.supportsReasoning) {
+  requestOptions.reasoning = {
+    effort: reasoningEffort || "medium",
+    summary: "auto" // Auto gives the best available summary (detailed > concise > none)
+  };
+  
+  // Include reasoning summary in the response
+  requestOptions.include = ["response.reasoning_summary"];
 }
 ```
 

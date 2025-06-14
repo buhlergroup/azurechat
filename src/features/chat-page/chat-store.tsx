@@ -25,6 +25,7 @@ import {
   ChatThreadModel,
   ChatModel,
   ReasoningEffort,
+  getDefaultModel as getDefaultModelFromAPI,
 } from "./chat-services/models";
 let abortController: AbortController = new AbortController();
 
@@ -38,16 +39,21 @@ class ChatState {
   public autoScroll: boolean = false;
   public userName: string = "";
   public chatThreadId: string = "";
-  public selectedModel: ChatModel = "gpt-4.1";
+  public selectedModel: ChatModel = "gpt-4.1"; // Will be updated when available models are fetched
   public reasoningEffort: ReasoningEffort = "medium";
 
   private chatThread: ChatThreadModel | undefined;
   private tempReasoningContent: string = "";
+  private currentAssistantMessageId: string = "";
 
   private addToMessages(message: ChatMessageModel) {
     const currentMessage = this.messages.find((el) => el.id === message.id);
     if (currentMessage) {
+      // Update existing message properties
       currentMessage.content = message.content;
+      if (message.reasoningContent !== undefined) {
+        currentMessage.reasoningContent = message.reasoningContent;
+      }
     } else {
       this.messages.push(message);
     }
@@ -77,7 +83,7 @@ class ChatState {
     this.chatThreadId = chatThread.id;
     this.messages = messages;
     this.userName = userName;
-    // Initialize selected model from thread or default to gpt-4.1
+    // Initialize selected model from thread or use fallback
     this.selectedModel = chatThread.selectedModel || "gpt-4.1";
   }
 
@@ -168,6 +174,9 @@ class ChatState {
   private async chat(formData: FormData) {
     this.updateAutoScroll(true);
     this.loading = "loading";
+
+    // Reset the current assistant message ID for new conversation
+    this.currentAssistantMessageId = "";
 
     const multimodalImage = formData.get("image-base64") as unknown as string;
 
@@ -260,93 +269,139 @@ class ChatState {
   private createStreamParser(newUserMessage: ChatMessageModel) {
     return createParser((event: ParsedEvent | ReconnectInterval) => {
       if (event.type === "event") {
-        const responseType = JSON.parse(event.data) as AzureChatCompletion;
-        switch (responseType.type) {
-          case "functionCall":
-            const mappedFunction: ChatMessageModel = {
-              id: uniqueId(),
-              content: responseType.response.arguments,
-              name: responseType.response.name,
-              role: "function",
-              createdAt: new Date(),
-              isDeleted: false,
-              threadId: this.chatThreadId,
-              type: "CHAT_MESSAGE",
-              userId: "",
-              multiModalImage: "",
-            };
-            this.addToMessages(mappedFunction);
-            break;
-          case "functionCallResult":
-            const mappedFunctionResult: ChatMessageModel = {
-              id: uniqueId(),
-              content: responseType.response,
-              name: "tool",
-              role: "tool",
-              createdAt: new Date(),
-              isDeleted: false,
-              threadId: this.chatThreadId,
-              type: "CHAT_MESSAGE",
-              userId: "",
-              multiModalImage: "",
-            };
-            this.addToMessages(mappedFunctionResult);
-            break;
-          case "content":
-            const mappedContent: ChatMessageModel = {
-              id: responseType.response.id,
-              content: responseType.response.choices[0].message.content || "",
-              name: AI_NAME,
-              role: "assistant",
-              createdAt: new Date(),
-              isDeleted: false,
-              threadId: this.chatThreadId,
-              type: "CHAT_MESSAGE",
-              userId: "",
-              multiModalImage: "",
-              reasoningContent: this.tempReasoningContent || undefined,
-            };
+        console.log("🔍 Chat Store: Received event data:", event.data);
+        try {
+          const responseType = JSON.parse(event.data) as AzureChatCompletion;
+          console.log("🔍 Chat Store: Parsed response type:", responseType.type, responseType);
+          switch (responseType.type) {
+            case "functionCall":
+              const mappedFunction: ChatMessageModel = {
+                id: uniqueId(),
+                content: responseType.response.arguments,
+                name: responseType.response.name,
+                role: "function",
+                createdAt: new Date(),
+                isDeleted: false,
+                threadId: this.chatThreadId,
+                type: "CHAT_MESSAGE",
+                userId: "",
+                multiModalImage: "",
+              };
+              this.addToMessages(mappedFunction);
+              break;
+            case "functionCallResult":
+              const mappedFunctionResult: ChatMessageModel = {
+                id: uniqueId(),
+                content: responseType.response,
+                name: "tool",
+                role: "tool",
+                createdAt: new Date(),
+                isDeleted: false,
+                threadId: this.chatThreadId,
+                type: "CHAT_MESSAGE",
+                userId: "",
+                multiModalImage: "",
+              };
+              this.addToMessages(mappedFunctionResult);
+              break;
+            case "content":
+              const contentChunk = responseType.response.choices?.[0]?.message?.content || "";
+              
+              // Use consistent message ID for all chunks of the same response
+              if (!this.currentAssistantMessageId) {
+                this.currentAssistantMessageId = responseType.response.id || uniqueId();
+              }
+              
+              // Find existing assistant message or create new one
+              let existingMessage = this.messages.find(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+              
+              if (existingMessage) {
+                // Accumulate content chunks
+                existingMessage.content += contentChunk;
+                this.lastMessage = existingMessage.content;
+              } else {
+                // Create new message for first chunk
+                const mappedContent: ChatMessageModel = {
+                  id: this.currentAssistantMessageId,
+                  content: contentChunk,
+                  name: AI_NAME,
+                  role: "assistant",
+                  createdAt: new Date(),
+                  isDeleted: false,
+                  threadId: this.chatThreadId,
+                  type: "CHAT_MESSAGE",
+                  userId: "",
+                  multiModalImage: "",
+                  reasoningContent: this.tempReasoningContent || undefined,
+                };
 
-            this.addToMessages(mappedContent);
-            this.lastMessage = mappedContent.content;
-            
-            // Clear temporary reasoning content after using it
-            if (this.tempReasoningContent) {
+                this.addToMessages(mappedContent);
+                this.lastMessage = mappedContent.content;
+                
+                // Don't clear temporary reasoning content here - it might still be accumulating
+                // It will be cleared in the finalContent event
+              }
+              break;
+            case "abort":
+              this.removeMessage(newUserMessage.id);
+              this.loading = "idle";
+              break;
+            case "error":
+              showError(responseType.response);
+              this.loading = "idle";
+              break;
+            case "reasoning":
+              console.log("🧠 Chat Store: Received reasoning event", responseType.response.substring(0, 100) + "...");
+              
+              // Ensure we have a consistent message ID for reasoning content
+              if (!this.currentAssistantMessageId) {
+                this.currentAssistantMessageId = uniqueId();
+              }
+              
+              // Try to find existing assistant message
+              let targetMessage = this.messages.find(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+              
+              if (targetMessage) {
+                console.log("🧠 Chat Store: Updating existing assistant message with reasoning");
+                // Accumulate reasoning content instead of overwriting
+                targetMessage.reasoningContent = (targetMessage.reasoningContent || "") + responseType.response;
+              } else {
+                console.log("🧠 Chat Store: Storing reasoning content temporarily");
+                // Accumulate reasoning content temporarily for the next assistant message
+                this.tempReasoningContent = (this.tempReasoningContent || "") + responseType.response;
+              }
+              break;
+            case "finalContent":
+              // The finalContent event signals that streaming is complete
+              console.log("🎯 Chat Store: Processing finalContent event");
+              
+              // Ensure any remaining temporary reasoning content is applied
+              if (this.currentAssistantMessageId && this.tempReasoningContent) {
+                const finalMessage = this.messages.find(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+                if (finalMessage) {
+                  console.log("🧠 Chat Store: Applying remaining temp reasoning content to final message");
+                  finalMessage.reasoningContent = (finalMessage.reasoningContent || "") + this.tempReasoningContent;
+                }
+              }
+              
+              // Clear temporary state only after ensuring content is preserved
               this.tempReasoningContent = "";
-            }
-            break;
-          case "abort":
-            this.removeMessage(newUserMessage.id);
-            this.loading = "idle";
-            break;
-          case "error":
-            showError(responseType.response);
-            this.loading = "idle";
-            break;
-          case "reasoning":
-            console.log("🧠 Chat Store: Received reasoning event", responseType.response.substring(0, 100) + "...");
-            // Handle reasoning content - update the last assistant message with reasoning
-            // or store it temporarily if no assistant message exists yet
-            const lastAssistantMessage = this.messages
-              .slice()
-              .reverse()
-              .find(m => m.role === "assistant");
-            if (lastAssistantMessage) {
-              console.log("🧠 Chat Store: Updating existing assistant message with reasoning");
-              lastAssistantMessage.reasoningContent = responseType.response;
-            } else {
-              console.log("🧠 Chat Store: Storing reasoning content temporarily");
-              // Store reasoning content temporarily for the next assistant message
-              this.tempReasoningContent = responseType.response;
-            }
-            break;
-          case "finalContent":
-            this.loading = "idle";
-            this.completed(this.lastMessage);
-            this.updateTitle();
-            break;
-          default:
-            break;
+              
+              // Set loading to idle and complete the conversation
+              this.loading = "idle";
+              this.completed(this.lastMessage);
+              this.updateTitle();
+              
+              // Reset the current assistant message ID for the next conversation
+              // Do this last to avoid any race conditions
+              this.currentAssistantMessageId = "";
+              break;
+            default:
+              break;
+          }
+        } catch (error) {
+          console.error("🔴 Chat Store: Error parsing event data:", error, event.data);
+          showError("Error parsing response data");
         }
       }
     });

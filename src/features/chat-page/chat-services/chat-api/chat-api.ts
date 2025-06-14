@@ -20,8 +20,10 @@ import { mapOpenAIChatMessages } from "../utils";
 import { GetDefaultExtensions } from "./chat-api-default-extensions";
 import { GetDynamicExtensions } from "./chat-api-dynamic-extensions";
 import { ChatApiExtensions } from "./chat-api-extension";
+import { ChatApiResponses } from "./chat-api-responses";
 import { ChatApiMultimodal } from "./chat-api-multimodal";
 import { OpenAIStream } from "./open-ai-stream";
+import { OpenAIResponsesStream } from "./openai-responses-stream";
 import {
   reportCompletionTokens,
   reportUserChatMessage,
@@ -94,59 +96,99 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
     multiModalImage: props.multimodalImage,
   });
 
-  let runner: ChatCompletionStreamingRunner;
+  // Validate deployment name exists
+  if (!modelConfig.deploymentName) {
+    console.error(`🔴 Missing deployment name for model ${selectedModel}. Check environment variables.`);
+    return new Response(`Missing deployment configuration for model ${selectedModel}`, { status: 500 });
+  }
 
   // Get the appropriate OpenAI instance based on selected model
-  const openaiInstance = modelConfig.getInstance();
+  let openaiInstance;
+  try {
+    openaiInstance = modelConfig.getInstance();
+  } catch (error) {
+    console.error(`🔴 Failed to create OpenAI instance for model ${selectedModel}:`, error);
+    return new Response(`Failed to initialize AI service for model ${selectedModel}`, { status: 500 });
+  }
 
-  switch (chatType) {
-    case "chat-with-file":
-      runner = await ChatApiRAG({
-        chatThread: currentChatThread,
-        userMessage: props.message,
-        history: history,
-        signal: signal,
-        reasoningEffort: reasoningEffort,
+  // Enable Responses API for models that support it
+  const useResponsesAPI = modelConfig.supportsResponsesAPI;
+  
+  let readableStream: ReadableStream;
+
+  if (useResponsesAPI) {
+    console.log("🚀 Using Azure OpenAI v1 Responses API for streaming");
+    
+    // Use the new Responses API for supported models
+    const stream = await ChatApiResponses({
+      chatThread: currentChatThread,
+      userMessage: props.message,
+      history: history,
+      extensions: extension,
+      signal: signal,
+      openaiInstance: openaiInstance,
+      reasoningEffort: reasoningEffort,
+      multiModalImage: props.multimodalImage,
+    });
+
+    readableStream = OpenAIResponsesStream({
+      stream: stream,
+      chatThread: currentChatThread,
+    });
+  } else {
+    console.log("🔄 Using legacy Chat Completions API for streaming");
+    
+    let runner: ChatCompletionStreamingRunner;
+
+    switch (chatType) {
+      case "chat-with-file":
+        runner = await ChatApiRAG({
+          chatThread: currentChatThread,
+          userMessage: props.message,
+          history: history,
+          signal: signal,
+          reasoningEffort: reasoningEffort,
+        });
+        break;
+      case "multimodal":
+        runner = await ChatApiMultimodal({
+          chatThread: currentChatThread,
+          userMessage: props.message,
+          file: props.multimodalImage,
+          signal: signal,
+          reasoningEffort: reasoningEffort,
+        });
+        break;
+      case "extensions":
+        runner = await ChatApiExtensions({
+          chatThread: currentChatThread,
+          userMessage: props.message,
+          history: history,
+          extensions: extension,
+          signal: signal,
+          openaiInstance: openaiInstance,
+          reasoningEffort: reasoningEffort,
+        });
+        break;
+    }
+
+    readableStream = OpenAIStream({
+      runner: runner,
+      chatThread: currentChatThread,
+    });
+
+    runner.on("finalContent", async (finalContent: string) => {
+      const chatTokenService = new ChatTokenService();
+      const tokens = chatTokenService.getTokenCount(finalContent);
+      reportCompletionTokens(tokens, "gpt-4", {
+        personaMessageTitle: currentChatThread.personaMessageTitle,
       });
-      break;
-    case "multimodal":
-      runner = await ChatApiMultimodal({
-        chatThread: currentChatThread,
-        userMessage: props.message,
-        file: props.multimodalImage,
-        signal: signal,
-        reasoningEffort: reasoningEffort,
-      });
-      break;
-    case "extensions":
-      runner = await ChatApiExtensions({
-        chatThread: currentChatThread,
-        userMessage: props.message,
-        history: history,
-        extensions: extension,
-        signal: signal,
-        openaiInstance: openaiInstance,
-        reasoningEffort: reasoningEffort,
-      });
-      break;
+    });
   }
 
   reportUserChatMessage("gpt-4", {
     personaMessageTitle: currentChatThread.personaMessageTitle,
     threadId: currentChatThread.id,
-  });
-
-  const readableStream = OpenAIStream({
-    runner: runner,
-    chatThread: currentChatThread,
-  });
-
-  runner.on("finalContent", async (finalContent: string) => {
-    const chatTokenService = new ChatTokenService();
-    const tokens = chatTokenService.getTokenCount(finalContent);
-    reportCompletionTokens(tokens, "gpt-4", {
-      personaMessageTitle: currentChatThread.personaMessageTitle,
-    });
   });
 
   return new Response(readableStream, {

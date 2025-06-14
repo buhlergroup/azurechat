@@ -1,11 +1,14 @@
 "use server";
 import "server-only";
 
+import OpenAI from "openai";
+import { RunnableToolFunction } from "openai/lib/RunnableFunction";
+import { 
+  ChatCompletionMessageParam,
+  ChatCompletionStreamingRunner
+} from "openai/resources/chat/completions";
 import { OpenAIInstance } from "@/features/common/services/openai";
 import { FindExtensionByID } from "@/features/extensions-page/extension-services/extension-service";
-import { RunnableToolFunction } from "openai/lib/RunnableFunction";
-import { ChatCompletionStreamingRunner } from "openai/resources/chat/completions";
-import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { ChatThreadModel, MODEL_CONFIGS } from "../models";
 import { ChatTokenService } from "@/features/common/services/chat-token-service";
 import { reportPromptTokens } from "@/features/common/services/chat-metrics-service";
@@ -54,24 +57,17 @@ export const ChatApiExtensions = async (props: {
   }
 
   const requestOptions: any = {
-    model: "",
+    model: chatThread.selectedModel || "gpt-4o",
     stream: true,
     messages: messages,
     tools: extensions,
   };
 
-  // Add reasoning configuration for reasoning models
+  // Note: Azure OpenAI doesn't support reasoning parameters in Chat Completions API
+  // Reasoning models will work but without explicit reasoning configuration
   const modelConfig = MODEL_CONFIGS[chatThread.selectedModel || "gpt-4.1"];
   if (modelConfig?.supportsReasoning) {
-    // Add reasoning effort if specified
-    if (reasoningEffort) {
-      requestOptions.reasoning_effort = reasoningEffort;
-    }
-    
-    console.log(`🧠 Configuring reasoning for ${chatThread.selectedModel}:`, {
-      effort: reasoningEffort || "medium",
-      supportedSummarizers: modelConfig.supportedSummarizers
-    });
+    console.log(`🧠 Using reasoning model ${chatThread.selectedModel} with Chat Completions API (Azure OpenAI)`);
   }
 
   return openAI.chat.completions.stream(requestOptions, { signal: signal });

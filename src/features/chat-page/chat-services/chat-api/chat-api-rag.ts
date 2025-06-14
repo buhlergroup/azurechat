@@ -32,7 +32,10 @@ export const ChatApiRAG = async (props: {
     chatThread.personaDocumentIds
   );
 
-  const openAI = OpenAIInstance();
+  // Get the appropriate OpenAI instance based on selected model
+  const selectedModel = chatThread.selectedModel || "gpt-4.1";
+  const modelConfig = MODEL_CONFIGS[selectedModel];
+  const openAI = modelConfig.getInstance();
 
   const personaFilter =
     allowedPersonaDocumentIdsResponse.length > 0
@@ -85,7 +88,7 @@ ${userMessage}
 `;
 
   const stream: ChatCompletionStreamParams = {
-    model: "",
+    model: chatThread.selectedModel || "gpt-4o",
     stream: true,
     messages: [
       {
@@ -100,18 +103,10 @@ ${userMessage}
     ],
   };
 
-  // Add reasoning configuration for reasoning models
-  const modelConfig = MODEL_CONFIGS[chatThread.selectedModel || "gpt-4.1"];
+  // Note: Azure OpenAI doesn't support reasoning parameters in Chat Completions API
+  // Reasoning models will work but without explicit reasoning configuration
   if (modelConfig?.supportsReasoning) {
-    // Add reasoning effort if specified
-    if (reasoningEffort) {
-      (stream as any).reasoning_effort = reasoningEffort;
-    }
-    
-    console.log(`🧠 Configuring reasoning for RAG with ${chatThread.selectedModel}:`, {
-      effort: reasoningEffort || "medium",
-      supportedSummarizers: modelConfig.supportedSummarizers
-    });
+    console.log(`🧠 Using reasoning model ${chatThread.selectedModel} with RAG via Chat Completions API (Azure OpenAI)`);
   }
 
   let chatTokenService = new ChatTokenService();

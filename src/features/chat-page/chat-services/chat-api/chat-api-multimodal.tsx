@@ -13,10 +13,15 @@ export const ChatApiMultimodal = async (props: {
 }): Promise<ChatCompletionStreamingRunner> => {
   const { chatThread, userMessage, signal, file, reasoningEffort } = props;
 
-  const openAI = OpenAIVisionInstance();
+  // Get the appropriate OpenAI instance based on selected model
+  const selectedModel = chatThread.selectedModel || "gpt-4.1";
+  const modelConfig = MODEL_CONFIGS[selectedModel];
+  
+  // For reasoning models, use the reasoning instance, otherwise use vision instance
+  const openAI = modelConfig.supportsReasoning ? modelConfig.getInstance() : OpenAIVisionInstance();
 
   const streamParams: any = {
-    model: "",
+    model: chatThread.selectedModel || "gpt-4o",
     stream: true,
     max_tokens: 4096,
     messages: [
@@ -41,18 +46,10 @@ export const ChatApiMultimodal = async (props: {
     ],
   };
 
-  // Add reasoning configuration for reasoning models
-  const modelConfig = MODEL_CONFIGS[chatThread.selectedModel || "gpt-4.1"];
+  // Note: Azure OpenAI doesn't support reasoning parameters in Chat Completions API
+  // Reasoning models will work but without explicit reasoning configuration
   if (modelConfig?.supportsReasoning) {
-    // Add reasoning effort if specified
-    if (reasoningEffort) {
-      streamParams.reasoning_effort = reasoningEffort;
-    }
-    
-    console.log(`🧠 Configuring reasoning for multimodal with ${chatThread.selectedModel}:`, {
-      effort: reasoningEffort || "medium",
-      supportedSummarizers: modelConfig.supportedSummarizers
-    });
+    console.log(`🧠 Using reasoning model ${chatThread.selectedModel} with multimodal via Chat Completions API (Azure OpenAI)`);
   }
 
   return openAI.chat.completions.stream(streamParams, { signal });

@@ -1,12 +1,27 @@
 import { ChatCompletionMessage } from "openai/resources/chat/completions";
-import { OpenAIInstance, OpenAIReasoningInstance } from "@/features/common/services/openai";
+import { 
+  OpenAIInstance, 
+  OpenAIReasoningInstance, 
+  OpenAIV1Instance, 
+  OpenAIV1ReasoningInstance,
+  OpenAIV1ImageInstance 
+} from "@/features/common/services/openai";
 
 export const CHAT_DOCUMENT_ATTRIBUTE = "CHAT_DOCUMENT";
 export const CHAT_THREAD_ATTRIBUTE = "CHAT_THREAD";
 export const MESSAGE_ATTRIBUTE = "CHAT_MESSAGE";
 export const CHAT_CITATION_ATTRIBUTE = "CHAT_CITATION";
 
-export type ChatModel = "gpt-4.1" | "o3" | "o4-mini";
+export type ChatModel = 
+  | "gpt-4o" 
+  | "gpt-4o-mini" 
+  | "gpt-4.1" 
+  | "gpt-4.1-mini" 
+  | "gpt-4.1-nano" 
+  | "gpt-image-1"
+  | "o3" 
+  | "o4-mini"
+  | "computer-use-preview";
 
 export interface ModelConfig {
   id: ChatModel;
@@ -15,33 +30,168 @@ export interface ModelConfig {
   getInstance: () => any;
   supportsReasoning: boolean;
   supportedSummarizers?: string[];
+  supportsResponsesAPI: boolean;
+  supportsImageGeneration?: boolean;
+  supportsComputerUse?: boolean;
+  deploymentName?: string;
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
+  "gpt-4o": {
+    id: "gpt-4o",
+    name: "GPT-4o",
+    description: "Most capable multimodal model, great for complex tasks",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME
+  },
+  "gpt-4o-mini": {
+    id: "gpt-4o-mini",
+    name: "GPT-4o Mini",
+    description: "Fast and efficient model for everyday tasks",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME
+  },
   "gpt-4.1": {
     id: "gpt-4.1",
     name: "GPT-4.1",
-    description: "Fast responses, general conversations",
-    getInstance: () => OpenAIInstance(),
-    supportsReasoning: false
+    description: "Latest GPT-4.1 model with enhanced capabilities",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT41_DEPLOYMENT_NAME
+  },
+  "gpt-4.1-mini": {
+    id: "gpt-4.1-mini",
+    name: "GPT-4.1 Mini",
+    description: "Efficient version of GPT-4.1",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT41_MINI_DEPLOYMENT_NAME
+  },
+  "gpt-4.1-nano": {
+    id: "gpt-4.1-nano",
+    name: "GPT-4.1 Nano",
+    description: "Ultra-fast and lightweight GPT-4.1",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT41_NANO_DEPLOYMENT_NAME
+  },
+  "gpt-image-1": {
+    id: "gpt-image-1",
+    name: "GPT Image 1",
+    description: "Specialized model for image generation and editing",
+    getInstance: () => OpenAIV1ImageInstance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    supportsImageGeneration: true,
+    deploymentName: process.env.AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME
   },
   "o3": {
     id: "o3",
-    name: "o3 reasoning",
-    description: "Latest reasoning model, step-by-step thinking",
-    getInstance: () => OpenAIReasoningInstance(),
+    name: "o3 Reasoning",
+    description: "Advanced reasoning model with step-by-step thinking",
+    getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
-    supportedSummarizers: ["detailed", "concise"]
+    supportsResponsesAPI: true,
+    supportedSummarizers: ["detailed", "concise", "auto"],
+    deploymentName: process.env.AZURE_OPENAI_API_O3_DEPLOYMENT_NAME
   },
   "o4-mini": {
     id: "o4-mini",
     name: "o4-Mini",
-    description: "Latest mini reasoning model with detailed summaries",
-    getInstance: () => OpenAIReasoningInstance(),
+    description: "Efficient reasoning model with detailed summaries",
+    getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
-    supportedSummarizers: ["detailed"]
+    supportsResponsesAPI: true,
+    supportedSummarizers: ["detailed", "concise", "auto"],
+    deploymentName: process.env.AZURE_OPENAI_API_O4_MINI_DEPLOYMENT_NAME
+  },
+  "computer-use-preview": {
+    id: "computer-use-preview",
+    name: "Computer Use Preview",
+    description: "Experimental model with computer interaction capabilities",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    supportsComputerUse: true,
+    deploymentName: process.env.AZURE_OPENAI_API_COMPUTER_USE_DEPLOYMENT_NAME
   }
 };
+
+/**
+ * Fetches available models from the server API
+ * This is necessary because environment variables are only accessible on the server side
+ */
+export async function getAvailableModels(): Promise<Record<ChatModel, ModelConfig>> {
+  try {
+    const response = await fetch('/api/models');
+    if (!response.ok) {
+      throw new Error('Failed to fetch available models');
+    }
+    const data = await response.json();
+    return data.availableModels;
+  } catch (error) {
+    console.error('Error fetching available models:', error);
+    // Fallback to all models if API fails
+    return MODEL_CONFIGS;
+  }
+}
+
+/**
+ * Fetches available model IDs from the server API
+ */
+export async function getAvailableModelIds(): Promise<ChatModel[]> {
+  try {
+    const response = await fetch('/api/models');
+    if (!response.ok) {
+      throw new Error('Failed to fetch available models');
+    }
+    const data = await response.json();
+    return data.availableModelIds;
+  } catch (error) {
+    console.error('Error fetching available model IDs:', error);
+    // Fallback to all model IDs if API fails
+    return Object.keys(MODEL_CONFIGS) as ChatModel[];
+  }
+}
+
+/**
+ * Fetches the default model from the server API
+ */
+export async function getDefaultModel(): Promise<ChatModel> {
+  try {
+    const response = await fetch('/api/models');
+    if (!response.ok) {
+      throw new Error('Failed to fetch default model');
+    }
+    const data = await response.json();
+    return data.defaultModel;
+  } catch (error) {
+    console.error('Error fetching default model:', error);
+    // Fallback to gpt-4.1 if API fails
+    return "gpt-4.1";
+  }
+}
+
+/**
+ * Checks if a specific model is available by fetching from server API
+ */
+export async function isModelAvailable(modelId: ChatModel): Promise<boolean> {
+  try {
+    const availableModels = await getAvailableModels();
+    return !!availableModels[modelId];
+  } catch (error) {
+    console.error('Error checking model availability:', error);
+    // Fallback to checking if model exists in config
+    return !!MODEL_CONFIGS[modelId];
+  }
+}
 
 export interface ChatMessageModel {
   id: string;
