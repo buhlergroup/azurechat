@@ -11,8 +11,8 @@ export const ChatInputForm = React.forwardRef<
   HTMLFormElement,
   React.HTMLAttributes<HTMLFormElement> & ChatInputAreaProps // Add ChatInputAreaProps to the type definition
 >(({ status, ...props }, ref) => (
-  <div className="absolute bottom-0 w-full py-2 ">
-    <div className="container max-w-3xl flex flex-col gap-1">
+  <div className="absolute bottom-0 left-0 right-0 py-2 px-3">
+    <div className="w-full max-w-3xl mx-auto flex flex-col gap-1">
       <ChatInputStatus status={status} />
       <div className="backdrop-blur-xl bg-background/70 rounded-md overflow-hidden focus-within:border-primary border">
         <form ref={ref} className="p-[2px]" {...props}>
@@ -36,17 +36,17 @@ export const ChatInputStatus = (props: { status?: string }) => {
 };
 
 export const ChatInputActionArea = (props: { children?: React.ReactNode }) => {
-  return <div className="flex justify-between p-2">{props.children}</div>;
+  return <div className="flex justify-between p-2 gap-2">{props.children}</div>;
 };
 
 export const ChatInputPrimaryActionArea = (props: {
   children?: React.ReactNode;
 }) => {
-  return <div className="flex space-x-1">{props.children}</div>;
+  return <div className="flex space-x-1 shrink-0">{props.children}</div>;
 };
 
 export const ChatInputSecondaryActionArea = (props: {
   children?: React.ReactNode;
 }) => {
-  return <div className="flex space-x-1">{props.children}</div>;
+  return <div className="flex space-x-1 overflow-x-auto scrollbar-hide min-w-0">{props.children}</div>;
 };
