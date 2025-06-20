@@ -56,7 +56,7 @@ export const CodeBlock: FC<Props> = memo(({ language, children }) => {
         </Button>
       </div>
 
-      <Prism language={language} style={atomDark} PreTag="pre" showLineNumbers>
+      <Prism language={language} style={atomDark} PreTag="pre" customStyle={{maxInlineSize: "100cqw", boxSizing: "border-box", overflow: "auto"}} showLineNumbers>
         {children}
       </Prism>
     </div>
