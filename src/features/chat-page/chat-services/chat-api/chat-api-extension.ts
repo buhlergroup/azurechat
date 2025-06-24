@@ -53,7 +53,7 @@ export const ChatApiExtensions = async (props: {
 
   return openAI.beta.chat.completions.runTools(
     {
-      model: "",
+      model: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME || "",
       stream: true,
       messages: messages,
       tools: extensions,

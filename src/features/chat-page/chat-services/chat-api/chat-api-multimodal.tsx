@@ -16,7 +16,7 @@ export const ChatApiMultimodal = async (props: {
 
   return openAI.beta.chat.completions.stream(
     {
-      model: "",
+      model: process.env.AZURE_OPENAI_VISION_API_DEPLOYMENT_NAME || "",
       stream: true,
       max_tokens: 4096,
       messages: [

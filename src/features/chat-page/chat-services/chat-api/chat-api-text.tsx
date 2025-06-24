@@ -9,7 +9,7 @@ export const ChatApiText = async (
   const openAI = OpenAIMiniInstance();
 
   const response = await openAI.chat.completions.create({
-    model: "",
+    model: process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME || "",
     max_completion_tokens: 1000,
     stream: false,
     messages: [

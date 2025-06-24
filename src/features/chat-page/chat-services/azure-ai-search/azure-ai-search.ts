@@ -71,7 +71,7 @@ export const SimilaritySearch = async (
     const openai = OpenAIEmbeddingInstance();
     const embeddings = await openai.embeddings.create({
       input: searchText,
-      model: "",
+      model: process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME || "",
     });
 
     const searchClient = AzureAISearchInstance<AzureSearchDocumentIndex>();
@@ -165,7 +165,7 @@ export const ExtensionSimilaritySearch = async (props: {
 
     const embeddings = await openai.embeddings.create({
       input: searchText,
-      model: "",
+      model: process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME || "",
     });
 
     const endpoint = `https://${searchName}.search.windows.net`;

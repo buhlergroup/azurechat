@@ -84,7 +84,7 @@ ${userMessage}
 `;
 
   const stream: ChatCompletionStreamParams = {
-    model: "",
+    model: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME || "",
     stream: true,
     messages: [
       {
