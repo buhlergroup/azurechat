@@ -77,7 +77,7 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
     model: modelConfig.deploymentName,
     input: inputMessages,
     stream: true,
-    store: true,
+    store: false,
     tools: tools,
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: false, // Disable parallel tool calls to ensure sequential execution
@@ -90,101 +90,117 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
       summary: "auto"
     };
     console.log(`🧠 Using reasoning model ${selectedModel} with effort: ${reasoningEffort}`);
-  }  console.log("🚀 Starting chat with simplified function calling", {
+  }
+
+  console.log("🚀 Starting chat with simplified function calling", {
     model: selectedModel,
     toolsCount: tools.length,
     hasReasoning: !!requestOptions.reasoning,
     userMessage: props.message.substring(0, 100) + "..."
   });
   
-  let stream;
+  // Conversation loop approach:
+  // Keep the conversation going until no more function calls are needed
+  let conversationInput = inputMessages;
+  let finalStream = null;
   
-  // For now, let's handle function calling differently
-  // First, try without streaming to see if function calls work
   if (tools.length > 0) {
-    console.log("🔧 Tools available, using non-streaming approach for function calling");
-    const nonStreamingOptions = { ...requestOptions, stream: false };
+    console.log("🔧 Starting conversation loop with function calling support");
     
     try {
-      // Make initial non-streaming call
-      let response = await openaiInstance.responses.create(nonStreamingOptions, { signal });
-      
-      // Check if function calls were made
-      const functionCalls = response.output?.filter((item: any) => item.type === "function_call") || [];
-      
-      if (functionCalls.length > 0) {
-        console.log(`🔧 Processing ${functionCalls.length} function call(s)`);
-        
-        // Add the assistant's response (including function calls) to the context
-        let updatedInput = [...inputMessages, ...response.output];
-        
-        // Execute each function call and add results to context
-        for (const functionCallItem of functionCalls) {
-          const functionCall: FunctionCall = {
-            name: functionCallItem.name,
-            arguments: JSON.parse(functionCallItem.arguments),
-            call_id: functionCallItem.call_id,
-          };
-
-          console.log(`🔧 Executing function: ${functionCall.name}`, functionCall.arguments);
-
-          try {
-            const result = await executeFunction(functionCall, {
-              threadId: currentChatThread.id,
-              userMessage: props.message,
-              signal: signal,
-            });
-
-            console.log(`✅ Function result for ${functionCall.name}:`, result.output.substring(0, 200));
-
-            // Add function result to context
-            updatedInput.push({
-              type: "function_call_output" as any,
-              call_id: functionCall.call_id,
-              output: result.output
-            });
-
-          } catch (error) {
-            console.error(`🔴 Function execution failed for ${functionCall.name}:`, error);
-            
-            // Add error result to context
-            updatedInput.push({
-              type: "function_call_output" as any,
-              call_id: functionCall.call_id,
-              output: JSON.stringify({ error: `Function execution failed: ${error}` })
-            });
-          }
-        }
-
-        // Make second API call with function results to get final assistant response
-        console.log("🔄 Making second API call with function results");
-        const finalRequestOptions = {
+      while (true) {
+        // Make API call to continue the conversation
+        const response = await openaiInstance.responses.create({
           ...requestOptions,
-          input: updatedInput,
-          stream: true, // Enable streaming for final response
-          tools: [], // Remove tools for final response to avoid infinite loops
-        };
+          input: conversationInput,
+          stream: false, // Non-streaming for conversation management
+        }, { signal });
         
-        stream = await openaiInstance.responses.create(finalRequestOptions, { signal });
-      } else {
-        // No function calls, enable streaming for the response
-        stream = await openaiInstance.responses.create(requestOptions, { signal });
+        // Check if function calls were made
+        const functionCalls = response.output?.filter((item: any) => item.type === "function_call") || [];
+        
+        if (functionCalls.length > 0) {
+          console.log(`🔧 Processing ${functionCalls.length} function call(s) in conversation turn`);
+          
+          // Add the assistant's response (including function calls) to the conversation
+          conversationInput = [...conversationInput, ...response.output];
+          
+          // Execute each function call and add results to conversation
+          for (const functionCallItem of functionCalls) {
+            const functionCall: FunctionCall = {
+              name: functionCallItem.name,
+              arguments: JSON.parse(functionCallItem.arguments),
+              call_id: functionCallItem.call_id,
+            };
+
+            console.log(`🔧 Executing function: ${functionCall.name}`, functionCall.arguments);
+
+            try {
+              const result = await executeFunction(functionCall, {
+                threadId: currentChatThread.id,
+                userMessage: props.message,
+                signal: signal,
+              });
+
+              console.log(`✅ Function result for ${functionCall.name}:`, result.output.substring(0, 200));
+
+              // Add function result to conversation
+              conversationInput.push({
+                type: "function_call_output" as any,
+                call_id: functionCall.call_id,
+                output: result.output
+              } as any);
+
+            } catch (error) {
+              console.error(`🔴 Function execution failed for ${functionCall.name}:`, error);
+              
+              // Add error result to conversation
+              conversationInput.push({
+                type: "function_call_output" as any,
+                call_id: functionCall.call_id,
+                output: JSON.stringify({ error: `Function execution failed: ${error}` })
+              } as any);
+            }
+          }
+          
+          // Continue the loop to let LLM process function results
+          console.log("🔄 Continuing conversation with function results");
+          
+        } else {
+          // No function calls - conversation is complete, now stream the final response
+          console.log("✅ No more function calls needed, streaming final response");
+          finalStream = await openaiInstance.responses.create({
+            ...requestOptions,
+            input: conversationInput,
+            stream: true, // Now enable streaming for the final response
+            tools: [], // Remove tools to prevent further function calls
+          }, { signal });
+          break;
+        }
       }
       
     } catch (error) {
-      console.error("🔴 Error in function calling workflow:", error);
+      console.error("🔴 Error in conversation loop:", error);
       // Fallback to streaming without tools
-      const fallbackOptions = { ...requestOptions, tools: [] };
-      stream = await openaiInstance.responses.create(fallbackOptions, { signal });
+      finalStream = await openaiInstance.responses.create({
+        ...requestOptions,
+        input: conversationInput,
+        stream: true,
+        tools: [],
+      }, { signal });
     }
   } else {
-    // No tools, just stream the response
-    stream = await openaiInstance.responses.create(requestOptions, { signal });
+    // No tools available, just stream directly
+    console.log("🚀 No tools available, streaming response directly");
+    finalStream = await openaiInstance.responses.create({
+      ...requestOptions,
+      stream: true
+    }, { signal });
   }
 
   // Create readable stream for response
   const readableStream = OpenAIResponsesStream({
-    stream: stream,
+    stream: finalStream,
     chatThread: currentChatThread,
   });
 

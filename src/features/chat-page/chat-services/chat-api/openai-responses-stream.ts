@@ -145,12 +145,15 @@ export const OpenAIResponsesStream = (props: {
   };
   const readableStream = new ReadableStream({
     async start(controller) {
+
       const streamResponse = (event: string, value: string) => {
         if (controller.desiredSize !== null) {
           controller.enqueue(encoder.encode(`event: ${event} \n`));
           controller.enqueue(encoder.encode(`data: ${value} \n\n`));
         }
-      };      let lastMessage = "";
+      };      
+      
+      let lastMessage = "";
       let reasoningContent = "";
       let reasoningSummaries: Record<number, string> = {};
       let messageSaved = false;
@@ -225,7 +228,8 @@ export const OpenAIResponsesStream = (props: {
                 reasoningSummaries[summaryIndex] = event.text;
                 reasoningContent = Object.values(reasoningSummaries).join('\n\n');
               }
-              break;            case "response.output_item.done":
+              break;            
+            case "response.output_item.done":
               console.log(`🔍 response.output_item.done event:`, JSON.stringify(event, null, 2));
               
               if (event.item?.content) {
@@ -236,19 +240,18 @@ export const OpenAIResponsesStream = (props: {
                 }
               }              // Check if this output item is a function call
               if (event.item?.type === "function_call") {
-                console.log(`🔧 Found function call in output_item.done:`, event.item);
+                console.log(`🔧 Found function call in stream (should be handled in two-phase approach):`, event.item);
                 hasFunctionCalls = true; // Mark that we've seen function calls
                 
-                // Execute the function
-                const functionCall: FunctionCall = {
+                // Just stream the function call to the client for display purposes
+                // Function execution should already be handled in the two-phase approach
+                const functionCall = {
                   name: event.item.name,
                   arguments: JSON.parse(event.item.arguments),
                   call_id: event.item.call_id,
                 };
 
-                console.log(`🔧 Executing function: ${functionCall.name}`, functionCall.arguments);
-
-                // Add function call to content for message history
+                // Add function call to content for message history (for display only)
                 functionCallsContent += `\n**Function Call: ${functionCall.name}**\n`;
                 functionCallsContent += `Arguments: ${JSON.stringify(functionCall.arguments, null, 2)}\n`;
 
@@ -259,38 +262,9 @@ export const OpenAIResponsesStream = (props: {
                 };
                 streamResponse(functionResponse.type, JSON.stringify(functionResponse));
 
-                try {
-                  const result = await executeFunction(functionCall, {
-                    threadId: chatThread.id,
-                    userMessage: "", // We could pass this through if needed
-                    signal: new AbortController().signal, // Create a signal for the function
-                  });
-
-                  console.log(`✅ Function result for ${functionCall.name}:`, result.output.substring(0, 200));
-
-                  // Add function result to content for message history
-                  functionCallsContent += `\n**Function Result:**\n${result.output}\n`;
-
-                  // Stream the function result to the client
-                  const resultResponse: AzureChatCompletion = {
-                    type: "functionCallResult",
-                    response: result.output,
-                  };
-                  streamResponse(resultResponse.type, JSON.stringify(resultResponse));
-
-                } catch (error) {
-                  console.error(`🔴 Function execution failed for ${functionCall.name}:`, error);
-                  
-                  // Add error to content for message history
-                  functionCallsContent += `\n**Function Error:**\n${error}\n`;
-                  
-                  // Stream the error result
-                  const errorResponse: AzureChatCompletion = {
-                    type: "functionCallResult", 
-                    response: JSON.stringify({ error: `Function execution failed: ${error}` }),
-                  };
-                  streamResponse(errorResponse.type, JSON.stringify(errorResponse));
-                }
+                // Note: Function execution is handled in ChatAPISimplified two-phase approach
+                // We don't execute functions here during streaming
+                console.log(`ℹ️ Function call logged for display, execution handled separately`);
               }
               break;// Function calling events
             case "response.function_call_arguments.delta":
@@ -304,18 +278,18 @@ export const OpenAIResponsesStream = (props: {
             case "response.function_call.delta":
               break;            case "response.function_call.done":
               if (event.function_call) {
+                console.log(`🔧 Found function call in stream (should be handled in two-phase approach):`, event.function_call);
                 hasFunctionCalls = true; // Mark that we've seen function calls
                 
-                // Execute the function
-                const functionCall: FunctionCall = {
+                // Just stream the function call to the client for display purposes
+                // Function execution should already be handled in the two-phase approach
+                const functionCall = {
                   name: event.function_call.name,
                   arguments: JSON.parse(event.function_call.arguments),
                   call_id: event.function_call.call_id,
                 };
 
-                console.log(`🔧 Executing function: ${functionCall.name}`, functionCall.arguments);
-
-                // Add function call to content for message history
+                // Add function call to content for message history (for display only)
                 functionCallsContent += `\n**Function Call: ${functionCall.name}**\n`;
                 functionCallsContent += `Arguments: ${JSON.stringify(functionCall.arguments, null, 2)}\n`;
 
@@ -326,38 +300,9 @@ export const OpenAIResponsesStream = (props: {
                 };
                 streamResponse(functionResponse.type, JSON.stringify(functionResponse));
 
-                try {
-                  const result = await executeFunction(functionCall, {
-                    threadId: chatThread.id,
-                    userMessage: "", // We could pass this through if needed
-                    signal: new AbortController().signal, // Create a signal for the function
-                  });
-
-                  console.log(`✅ Function result for ${functionCall.name}:`, result.output.substring(0, 200));
-
-                  // Add function result to content for message history
-                  functionCallsContent += `\n**Function Result:**\n${result.output}\n`;
-
-                  // Stream the function result to the client
-                  const resultResponse: AzureChatCompletion = {
-                    type: "functionCallResult",
-                    response: result.output,
-                  };
-                  streamResponse(resultResponse.type, JSON.stringify(resultResponse));
-
-                } catch (error) {
-                  console.error(`🔴 Function execution failed for ${functionCall.name}:`, error);
-                  
-                  // Add error to content for message history
-                  functionCallsContent += `\n**Function Error:**\n${error}\n`;
-                  
-                  // Stream the error result
-                  const errorResponse: AzureChatCompletion = {
-                    type: "functionCallResult", 
-                    response: JSON.stringify({ error: `Function execution failed: ${error}` }),
-                  };
-                  streamResponse(errorResponse.type, JSON.stringify(errorResponse));
-                }
+                // Note: Function execution is handled in ChatAPISimplified two-phase approach
+                // We don't execute functions here during streaming
+                console.log(`ℹ️ Function call logged for display, execution handled separately`);
               }
               break;
 

@@ -24,6 +24,5 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
     }
   }
 
-  // Use the simplified chat API
   return ChatAPISimplified(props, signal);
 };

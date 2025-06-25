@@ -203,9 +203,10 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
   // Ensure built-in functions are registered
   await ensureBuiltInFunctionsRegistered();
   
-  return [
+  // Define the base schemas for built-in functions
+  const builtInFunctions = [
     {
-      type: "function",
+      type: "function" as const,
       name: "create_image",
       description: "Create an image using DALL-E 3. Only use this when the user explicitly asks to create, generate, or make an image.",
       parameters: {
@@ -215,34 +216,71 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
             type: "string",
             description: "A detailed description of the image to create. Be descriptive and specific."
           }
-        },
-        required: ["prompt"],
-        additionalProperties: false
+        }
       },
-      strict: true
+      strict: true as const
     },
     {
-      type: "function", 
+      type: "function" as const, 
       name: "search_documents",
-      description: "Search through uploaded documents and knowledge base to find relevant information. Use this when the user asks questions that might be answered by their documents.",
+      description: "Search through attached documents to the chat thread to find relevant information. Use this when the user asks questions that might be answered by their documents.",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "The search query to find relevant documents and information"
+            description: "The search query to find relevant documents and information. Should be the raw question or a summarized version which is used for semantic search."
           },
           limit: {
             type: ["number", "null"],
             description: "Maximum number of documents to return (default: 10)"
           }
-        },
-        required: ["query", "limit"],
-        additionalProperties: false
+        }
       },
-      strict: true
+      strict: true as const
     }
   ];
+
+  // Apply schema validation to all built-in functions
+  return builtInFunctions.map(func => ({
+    ...func,
+    parameters: validateAndFixSchema(func.parameters)
+  }));
+}
+
+// Helper function to validate and fix function schemas for Azure OpenAI strict mode
+function validateAndFixSchema(schema: any): any {
+  if (typeof schema !== 'object' || schema === null) {
+    return schema;
+  }
+
+  // Create a deep copy to avoid mutating the original
+  const fixedSchema = JSON.parse(JSON.stringify(schema));
+
+  // Ensure additionalProperties is set to false for all object types
+  if (fixedSchema.type === 'object') {
+    fixedSchema.additionalProperties = false;
+    
+    // Ensure all properties are marked as required for OpenAI compatibility
+    if (fixedSchema.properties) {
+      const propertyKeys = Object.keys(fixedSchema.properties);
+      if (propertyKeys.length > 0) {
+        fixedSchema.required = propertyKeys;
+      }
+      
+      // Recursively fix nested properties
+      for (const key in fixedSchema.properties) {
+        fixedSchema.properties[key] = validateAndFixSchema(fixedSchema.properties[key]);
+      }
+    }
+  }
+
+  // Handle arrays
+  if (fixedSchema.type === 'array' && fixedSchema.items) {
+    fixedSchema.items = validateAndFixSchema(fixedSchema.items);
+  }
+
+  return fixedSchema;
 }
 
 // Add support for dynamic extensions
@@ -254,6 +292,11 @@ export async function registerDynamicFunction(
   method: string = "POST",
   headers: Record<string, string> = {}
 ) {
+  // Validate and fix the parameters schema to ensure it meets Azure OpenAI strict mode requirements
+  const validatedParameters = validateAndFixSchema(parameters);
+  
+  console.log(`🔧 Registering dynamic function ${name} with validated schema`);
+  
   const implementation = async (args: any, context: any) => {
     console.log(`🔧 Calling dynamic function ${name} with args:`, args);
 
@@ -296,7 +339,7 @@ export async function registerDynamicFunction(
     type: "function" as const,
     name,
     description,
-    parameters,
+    parameters: validateAndFixSchema(parameters),
     strict: true
   };
 }
