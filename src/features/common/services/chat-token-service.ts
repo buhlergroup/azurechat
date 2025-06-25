@@ -15,10 +15,21 @@ export class ChatTokenService{
             console.log("Model was not parsable from environment variable -> falling back to gpt-4 model for tokencount")
             this.encoder = encodingForModel("gpt-4");  // js-tiktoken
         }
-    }
-
-    public getTokenCountFromMessage(message: any){
-        const tokenList = this.encoder.encode(message.content || "");
+    }    public getTokenCountFromMessage(message: any){
+        let content = "";
+        
+        // Handle multimodal content (array) vs text content (string)
+        if (Array.isArray(message.content)) {
+            // Extract text content from multimodal message
+            content = message.content
+                .filter((item: any) => item.type === "text")
+                .map((item: any) => item.text)
+                .join(" ");
+        } else {
+            content = message.content || "";
+        }
+        
+        const tokenList = this.encoder.encode(content);
         return tokenList.length;
     }
 
@@ -26,7 +37,20 @@ export class ChatTokenService{
         let promptTokens = [];
 
         for (const message of topHistory) {
-            const tokenList = this.encoder.encode(message.content || "");
+            let content = "";
+            
+            // Handle multimodal content (array) vs text content (string)
+            if (Array.isArray(message.content)) {
+                // Extract text content from multimodal message
+                content = message.content
+                    .filter((item: any) => item.type === "text")
+                    .map((item: any) => item.text)
+                    .join(" ");
+            } else {
+                content = message.content || "";
+            }
+            
+            const tokenList = this.encoder.encode(content);
             promptTokens.push({ role: <string>message.role, tokens: <number>tokenList.length });
         }
 

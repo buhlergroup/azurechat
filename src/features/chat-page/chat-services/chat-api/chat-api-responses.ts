@@ -143,15 +143,15 @@ const reportTokenUsage = async (inputMessages: any[], chatThread: ChatThreadMode
 const convertToResponsesAPIInput = (inputMessages: any[]) => {
   return inputMessages.map(msg => {
     if (Array.isArray(msg.content)) {
-      // Handle multimodal content
+      // Handle multimodal content - keep the standard format
       return {
         type: "message" as const,
-        role: msg.role,
-        content: msg.content.map((item: any) => {
+        role: msg.role,        content: msg.content.map((item: any) => {
           if (item.type === "text") {
-            return { type: "text", text: item.text };
+            return { type: "input_text", text: item.text };
           } else if (item.type === "image_url") {
-            return { type: "image_url", image_url: item.image_url.url };
+            // Convert to Azure Responses API format: input_image with image_url field
+            return { type: "input_image", image_url: item.image_url.url };
           }
           return item;
         })

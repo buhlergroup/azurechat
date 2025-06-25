@@ -21,7 +21,6 @@ import { GetDefaultExtensions } from "./chat-api-default-extensions";
 import { GetDynamicExtensions } from "./chat-api-dynamic-extensions";
 import { ChatApiExtensions } from "./chat-api-extension";
 import { ChatApiResponses } from "./chat-api-responses";
-import { ChatApiMultimodal } from "./chat-api-multimodal";
 import { OpenAIStream } from "./open-ai-stream";
 import { OpenAIResponsesStream } from "./openai-responses-stream";
 import {
@@ -30,7 +29,7 @@ import {
 } from "../../../common/services/chat-metrics-service";
 import { ChatTokenService } from "@/features/common/services/chat-token-service";
 import { MODEL_CONFIGS } from "../models";
-type ChatTypes = "extensions" | "chat-with-file" | "multimodal";
+type ChatTypes = "extensions" | "chat-with-file";
 
 export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
   const currentChatThreadResponse = await EnsureChatThreadOperation(props.id);
@@ -76,12 +75,9 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
   // Starting values for system and user prompt
   // Note that the system message will also get prepended with the extension execution steps. Please see ChatApiExtensions method.
   currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\n Todays Date: ${new Date().toLocaleString()}\n\n ${currentChatThread.personaMessage}`;
-
   let chatType: ChatTypes = "extensions";
 
-  if (props.multimodalImage && props.multimodalImage.length > 0) {
-    chatType = "multimodal";
-  } else if (docs.length > 0 || currentChatThread.personaDocumentIds.length > 0) {
+  if (docs.length > 0 || currentChatThread.personaDocumentIds.length > 0) {
     chatType = "chat-with-file";
   } else if (extension.length > 0) {
     chatType = "extensions";
@@ -138,23 +134,12 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
   } else {
     console.log("🔄 Using legacy Chat Completions API for streaming");
     
-    let runner: ChatCompletionStreamingRunner;
-
-    switch (chatType) {
+    let runner: ChatCompletionStreamingRunner;    switch (chatType) {
       case "chat-with-file":
         runner = await ChatApiRAG({
           chatThread: currentChatThread,
           userMessage: props.message,
           history: history,
-          signal: signal,
-          reasoningEffort: reasoningEffort,
-        });
-        break;
-      case "multimodal":
-        runner = await ChatApiMultimodal({
-          chatThread: currentChatThread,
-          userMessage: props.message,
-          file: props.multimodalImage,
           signal: signal,
           reasoningEffort: reasoningEffort,
         });
