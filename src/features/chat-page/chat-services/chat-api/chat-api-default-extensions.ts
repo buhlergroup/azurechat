@@ -72,7 +72,7 @@ async function executeCreateImage(
     response = await openAI.images.generate(
       {
         model: "dall-e-3",
-        prompt: userMessage,
+        prompt: args.prompt, // Use the function argument instead of userMessage
         response_format: "b64_json",
       },
       {
