@@ -1,5 +1,12 @@
 import { Tiktoken, TiktokenModel, encodingForModel } from "js-tiktoken";
 
+/**
+ * ChatTokenService provides token counting capabilities using js-tiktoken.
+ * 
+ * Note: This service is primarily used as a fallback for manual token calculation.
+ * The preferred method is to use actual token usage data from the OpenAI API
+ * response.completed event, which provides more accurate token counts.
+ */
 export class ChatTokenService{
 
 

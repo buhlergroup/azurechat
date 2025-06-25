@@ -155,13 +155,13 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
           reasoningEffort: reasoningEffort,
         });
         break;
-    }
-
-    readableStream = OpenAIStream({
+    }    readableStream = OpenAIStream({
       runner: runner,
       chatThread: currentChatThread,
     });
 
+    // Legacy token reporting using manual calculation
+    // Note: Responses API models use more accurate token data from response.completed events
     runner.on("finalContent", async (finalContent: string) => {
       const chatTokenService = new ChatTokenService();
       const tokens = chatTokenService.getTokenCount(finalContent);
