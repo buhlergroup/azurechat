@@ -114,6 +114,9 @@ export const OpenAIResponsesStream = (props: {
     };
     streamResponse(finalResponse.type, JSON.stringify(finalResponse));
     
+    // Ensure the stream is flushed before closing by yielding to the event loop
+    await Promise.resolve();
+    
     // Signal completion
     if (onComplete) {
       await onComplete();
@@ -291,6 +294,10 @@ export const OpenAIResponsesStream = (props: {
               }
 
               streamResponse(errorResponse.type, JSON.stringify(errorResponse));
+              
+              // Ensure the stream is flushed before closing by yielding to the event loop
+              await Promise.resolve();
+              
               controller.close();
               return;
 
@@ -311,6 +318,9 @@ export const OpenAIResponsesStream = (props: {
             response: lastMessage,
           };
           streamResponse(finalResponse.type, JSON.stringify(finalResponse));
+          
+          // Ensure the stream is flushed before closing by yielding to the event loop
+          await Promise.resolve();
         }
         controller.close();
       } catch (error) {
@@ -325,6 +335,10 @@ export const OpenAIResponsesStream = (props: {
           response: error instanceof Error ? error.message : "Stream processing error",
         };
         streamResponse(errorResponse.type, JSON.stringify(errorResponse));
+        
+        // Ensure the stream is flushed before closing by yielding to the event loop
+        await Promise.resolve();
+        
         controller.close();
       }
     },
