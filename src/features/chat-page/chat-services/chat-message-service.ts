@@ -91,16 +91,10 @@ export const FindAllChatMessagesForCurrentUser = async (
       .items.query<ChatMessageModel>(querySpec)
       .fetchAll();
 
-    console.log(`🔍 Chat Messages Loaded for thread ${chatThreadID}:`, {
+    console.debug("🔍 Chat Messages Loaded", {
+      threadId: chatThreadID,
       count: resources.length,
-      messages: resources.map(m => ({
-        id: m.id,
-        role: m.role,
-        contentLength: m.content?.length || 0,
-        hasReasoningContent: !!m.reasoningContent,
-        reasoningContentLength: m.reasoningContent?.length || 0,
-        createdAt: m.createdAt
-      }))
+      userId: userHashedId
     });
 
     return {
@@ -164,12 +158,11 @@ export const UpsertChatMessage = async (
       isDeleted: false,
     };
 
-    console.log(`💾 Upserting chat message:`, {
+    console.debug("💾 Upserting chat message", {
       id: modelToSave.id,
       role: modelToSave.role,
       contentLength: modelToSave.content?.length || 0,
       hasReasoningContent: !!modelToSave.reasoningContent,
-      reasoningContentLength: modelToSave.reasoningContent?.length || 0,
       threadId: modelToSave.threadId
     });
 
@@ -253,12 +246,11 @@ export const UpdateChatMessage = async (
       isDeleted: false,
     };
 
-    console.log(`🔄 Updating chat message:`, {
+    console.debug("🔄 Updating chat message", {
       id: updatedMessage.id,
       role: updatedMessage.role,
       contentLength: updatedMessage.content?.length || 0,
       hasReasoningContent: !!updatedMessage.reasoningContent,
-      reasoningContentLength: updatedMessage.reasoningContent?.length || 0,
       threadId: updatedMessage.threadId
     });
 

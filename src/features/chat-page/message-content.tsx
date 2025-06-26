@@ -29,6 +29,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
           <div className="mb-4">
             <Accordion
               type="multiple"
+              defaultValue={["reasoning"]}
               className="bg-background rounded-md border p-2"
             >
               <AccordionItem value="reasoning" className="">

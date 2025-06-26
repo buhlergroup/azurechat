@@ -100,7 +100,6 @@ jobs:
           resource-group-name: ${{ secrets.AZURE_APP_SERVICE_RG_NAME_DEV }}
           app-name: ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
           package: ${{ github.workspace }}/Nextjs-site.zip
-    
   deploy-production:
     runs-on: ubuntu-latest
     needs: build

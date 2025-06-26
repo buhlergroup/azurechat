@@ -2,7 +2,7 @@
 import "server-only";
 
 import { SupportedFileExtensionsInputImages, UserPrompt } from "../models";
-import { ChatAPISimplified } from "./chat-api-simplified";
+import { ChatAPIResponse } from "./chat-api-response";
 
 export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
   // Validate multimodal image if provided
@@ -24,5 +24,5 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
     }
   }
 
-  return ChatAPISimplified(props, signal);
+  return ChatAPIResponse(props, signal);
 };

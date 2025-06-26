@@ -7,6 +7,7 @@ import { GetImageUrl, UploadImageToStore } from "../chat-image-service";
 import { SimilaritySearch } from "../azure-ai-search/azure-ai-search";
 import { CreateCitations, FormatCitations } from "../citation-service";
 import { userHashedId } from "@/features/auth-page/helpers";
+import { skip } from "node:test";
 
 // Type definitions for function calling
 export interface FunctionDefinition {
@@ -79,7 +80,11 @@ async function createImage(
   args: { prompt: string }, 
   context: { threadId: string; userMessage: string; signal: AbortSignal }
 ) {
-  console.log("🎨 Creating image with prompt:", args.prompt);
+  console.info("🎨 Creating image with DALL-E", { 
+    promptLength: args.prompt?.length || 0,
+    threadId: context.threadId 
+  });
+  console.debug("🎨 Image prompt:", args.prompt);
 
   if (!args.prompt) {
     throw new Error("No prompt provided");
@@ -127,19 +132,27 @@ async function createImage(
 
 // RAG search function
 async function searchDocuments(
-  args: { query: string; limit?: number }, 
+  args: { query: string; limit?: number, skip?: number }, 
   context: { threadId: string; userMessage: string; signal: AbortSignal }
 ) {
-  console.log("🔍 Searching documents with query:", args.query);
+  console.info("🔍 Searching documents", { 
+    queryLength: args.query?.length || 0,
+    limit: args.limit || 10,
+    skip: args.skip || 0,
+    threadId: context.threadId 
+  });
+  console.debug("🔍 Search query:", args.query);
 
   const limit = args.limit || 10;
+  const skip = args.skip || 0;
   const userId = await userHashedId();
 
   // Perform similarity search across user's documents and thread-specific documents
   const documentResponse = await SimilaritySearch(
     args.query,
     limit,
-    `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`
+    `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`,
+    skip
   );
 
   if (documentResponse.status !== "OK") {
@@ -151,6 +164,10 @@ async function searchDocuments(
       error: true
     };
   }
+  
+  console.info("✅ Document search completed", { 
+    resultCount: documentResponse.response?.length || 0 
+  });
 
   const withoutEmbedding = FormatCitations(documentResponse.response);
   const citationResponse = await CreateCitations(withoutEmbedding);
@@ -223,7 +240,7 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
     {
       type: "function" as const, 
       name: "search_documents",
-      description: "Search through attached documents to the chat thread to find relevant information. Use this when the user asks questions that might be answered by their documents.",
+      description: "Search through attached documents to the chat thread to find relevant information. Use this when the user asks questions that might be answered by their documents. Use multiple iterations in combination with limit and skip parameters to find the best answer if required.",
       parameters: {
         type: "object",
         properties: {
@@ -234,7 +251,11 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
           limit: {
             type: ["number", "null"],
             description: "Maximum number of documents to return (default: 10)"
-          }
+          },
+          skip: {
+            type: ["number", "null"],
+            description: "Number of documents to skip (default: 0). This is useful for pagination if the question cannot be answered with the first batch of documents."
+          }  
         }
       },
       strict: true as const
@@ -295,10 +316,19 @@ export async function registerDynamicFunction(
   // Validate and fix the parameters schema to ensure it meets Azure OpenAI strict mode requirements
   const validatedParameters = validateAndFixSchema(parameters);
   
-  console.log(`🔧 Registering dynamic function ${name} with validated schema`);
+  console.debug("🔧 Registering dynamic function", { 
+    name, 
+    method, 
+    endpoint: endpoint.substring(0, 50) + "...",
+    hasHeaders: Object.keys(headers).length > 0 
+  });
   
   const implementation = async (args: any, context: any) => {
-    console.log(`🔧 Calling dynamic function ${name} with args:`, args);
+    console.debug("🔧 Calling dynamic function", { 
+      name, 
+      argsKeys: Object.keys(args || {}),
+      contextKeys: Object.keys(context || {}) 
+    });
 
     let url = endpoint;
     const requestInit: RequestInit = {

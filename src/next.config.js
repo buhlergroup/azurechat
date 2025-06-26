@@ -13,6 +13,10 @@ const nextConfig = {
       bodySizeLimit: "3mb", // default is "1mb" 
     },
   },
+  turbopack: {
+    // Turbopack handles source maps automatically in dev mode
+    rules: {},
+  }
 };
 
 module.exports = nextConfig;

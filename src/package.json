@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:debug": "next dev",
+    "dev:turbo-debug": "cross-env NODE_OPTIONS=--inspect next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -56,7 +58,7 @@
     "openai": "^5.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-syntax-highlighter": "^15.6.1",
+    "react-syntax-highlighter": "15.6.1",
     "server-only": "^0.0.1",
     "sharp": "^0.33.5",
     "tailwind-merge": "^2.5.4",
@@ -70,6 +72,7 @@
     "@types/react-dom": "^18.3.1",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^7.0.3",
     "eslint": "^8",
     "eslint-config-next": "^15.0.1",
     "postcss": "^8.4.47",

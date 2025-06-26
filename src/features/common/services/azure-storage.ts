@@ -34,7 +34,11 @@ export const UploadBlob = async (
 
   // Check for upload success
   if (response.errorCode !== undefined) {
-    console.error(response);
+    console.error("🔴 Azure Storage upload failed:", { 
+      errorCode: response.errorCode,
+      blobName: blobName,
+      containerName: containerName 
+    });
     return {
       status: "ERROR",
       errors: [
@@ -45,7 +49,11 @@ export const UploadBlob = async (
     };
   }
 
-  console.log("Upload of generated image was successfull");
+  console.info("✅ Azure Storage upload successful", { 
+    blobName, 
+    containerName,
+    url: blockBlobClient.url 
+  });
 
   return {
     status: "OK",
@@ -53,7 +61,11 @@ export const UploadBlob = async (
   };
   
   } catch (error){
-    console.error(error);
+    console.error("🔴 Azure Storage upload error:", { 
+      error: error instanceof Error ? error.message : String(error),
+      blobName,
+      containerName 
+    });
     throw error;
   }
 };

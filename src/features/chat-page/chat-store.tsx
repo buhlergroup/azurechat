@@ -47,13 +47,15 @@ class ChatState {
   private currentAssistantMessageId: string = "";
 
   private addToMessages(message: ChatMessageModel) {
-    const currentMessage = this.messages.find((el) => el.id === message.id);
-    if (currentMessage) {
-      // Update existing message properties
-      currentMessage.content = message.content;
-      if (message.reasoningContent !== undefined) {
-        currentMessage.reasoningContent = message.reasoningContent;
-      }
+    const currentMessageIndex = this.messages.findIndex((el) => el.id === message.id);
+    if (currentMessageIndex !== -1) {
+      // Update existing message by replacing the entire object to ensure Valtio reactivity
+      const currentMessage = this.messages[currentMessageIndex];
+      this.messages[currentMessageIndex] = {
+        ...currentMessage,
+        content: message.content,
+        ...(message.reasoningContent !== undefined && { reasoningContent: message.reasoningContent })
+      };
     } else {
       this.messages.push(message);
     }
@@ -85,6 +87,10 @@ class ChatState {
     this.userName = userName;
     // Initialize selected model from thread or use fallback
     this.selectedModel = chatThread.selectedModel || "gpt-4.1";
+        
+    // Reset temporary state to prevent reasoning content from previous threads leaking through
+    this.tempReasoningContent = "";
+    this.currentAssistantMessageId = "";
   }
 
   public async updateSelectedModel(model: ChatModel) {
@@ -234,11 +240,19 @@ class ChatState {
 
   private async updateTitle() {
     if (this.chatThread && this.chatThread.name === NEW_CHAT_NAME) {
-      await UpdateChatTitle(this.chatThreadId, this.messages[0].content);
-      RevalidateCache({
-        page: "chat",
-        type: "layout",
-      });
+      // Fire-and-forget: update title asynchronously without blocking the UI
+      setTimeout(async () => {
+        try {
+          await UpdateChatTitle(this.chatThreadId, this.messages[0].content);
+          RevalidateCache({
+            page: "chat",
+            type: "layout",
+          });
+        } catch (error) {
+          console.error("Failed to update chat title:", error);
+          // Don't show error to user since this is non-critical
+        }
+      }, 0);
     }
   }
 
@@ -269,10 +283,15 @@ class ChatState {
   private createStreamParser(newUserMessage: ChatMessageModel) {
     return createParser((event: ParsedEvent | ReconnectInterval) => {
       if (event.type === "event") {
-        console.log("🔍 Chat Store: Received event data:", event.data);
+        console.debug("🔍 Chat Store: Received event", { 
+          dataLength: event.data?.length || 0 
+        });
         try {
           const responseType = JSON.parse(event.data) as AzureChatCompletion;
-          console.log("🔍 Chat Store: Parsed response type:", responseType.type, responseType);
+          console.debug("🔍 Chat Store: Parsed response", { 
+            type: responseType.type,
+            hasContent: !!responseType.response 
+          });
           switch (responseType.type) {
             case "functionCall":
               const mappedFunction: ChatMessageModel = {
@@ -313,12 +332,17 @@ class ChatState {
               }
               
               // Find existing assistant message or create new one
-              let existingMessage = this.messages.find(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+              const existingMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
               
-              if (existingMessage) {
-                // Accumulate content chunks
-                existingMessage.content += contentChunk;
-                this.lastMessage = existingMessage.content;
+              if (existingMessageIndex !== -1) {
+                // Accumulate content chunks by replacing the entire message object
+                const existingMessage = this.messages[existingMessageIndex];
+                const updatedContent = existingMessage.content + contentChunk;
+                this.messages[existingMessageIndex] = {
+                  ...existingMessage,
+                  content: updatedContent
+                };
+                this.lastMessage = updatedContent;
               } else {
                 // Create new message for first chunk
                 const mappedContent: ChatMessageModel = {
@@ -351,7 +375,10 @@ class ChatState {
               this.loading = "idle";
               break;
             case "reasoning":
-              console.log("🧠 Chat Store: Received reasoning event", responseType.response.substring(0, 100) + "...");
+              console.debug("🧠 Chat Store: Received reasoning event", { 
+                contentLength: responseType.response?.length || 0,
+                messageId: this.currentAssistantMessageId 
+              });
               
               // Ensure we have a consistent message ID for reasoning content
               if (!this.currentAssistantMessageId) {
@@ -359,28 +386,39 @@ class ChatState {
               }
               
               // Try to find existing assistant message
-              let targetMessage = this.messages.find(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+              const targetMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
               
-              if (targetMessage) {
-                console.log("🧠 Chat Store: Updating existing assistant message with reasoning");
-                // Accumulate reasoning content instead of overwriting
-                targetMessage.reasoningContent = (targetMessage.reasoningContent || "") + responseType.response;
+              if (targetMessageIndex !== -1) {
+                console.debug("🧠 Chat Store: Updating existing assistant message with reasoning");
+                // Update the message in a way that triggers Valtio reactivity
+                const targetMessage = this.messages[targetMessageIndex];
+                const updatedReasoningContent = (targetMessage.reasoningContent || "") + responseType.response;
+                
+                // Create a new message object to ensure Valtio detects the change
+                this.messages[targetMessageIndex] = {
+                  ...targetMessage,
+                  reasoningContent: updatedReasoningContent
+                };
               } else {
-                console.log("🧠 Chat Store: Storing reasoning content temporarily");
+                console.debug("🧠 Chat Store: Storing reasoning content temporarily");
                 // Accumulate reasoning content temporarily for the next assistant message
                 this.tempReasoningContent = (this.tempReasoningContent || "") + responseType.response;
               }
               break;
             case "finalContent":
               // The finalContent event signals that streaming is complete
-              console.log("🎯 Chat Store: Processing finalContent event");
+              console.info("🎯 Chat Store: Processing finalContent event");
               
               // Ensure any remaining temporary reasoning content is applied
               if (this.currentAssistantMessageId && this.tempReasoningContent) {
-                const finalMessage = this.messages.find(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
-                if (finalMessage) {
-                  console.log("🧠 Chat Store: Applying remaining temp reasoning content to final message");
-                  finalMessage.reasoningContent = (finalMessage.reasoningContent || "") + this.tempReasoningContent;
+                const finalMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+                if (finalMessageIndex !== -1) {
+                  console.debug("🧠 Chat Store: Applying remaining temp reasoning content to final message");
+                  const finalMessage = this.messages[finalMessageIndex];
+                  this.messages[finalMessageIndex] = {
+                    ...finalMessage,
+                    reasoningContent: (finalMessage.reasoningContent || "") + this.tempReasoningContent
+                  };
                 }
               }
               
@@ -390,6 +428,8 @@ class ChatState {
               // Set loading to idle and complete the conversation
               this.loading = "idle";
               this.completed(this.lastMessage);
+              
+              // Update title asynchronously (non-blocking)
               this.updateTitle();
               
               // Reset the current assistant message ID for the next conversation
@@ -400,7 +440,10 @@ class ChatState {
               break;
           }
         } catch (error) {
-          console.error("🔴 Chat Store: Error parsing event data:", error, event.data);
+          console.error("🔴 Chat Store: Error parsing event data:", { 
+            error: error instanceof Error ? error.message : String(error),
+            eventDataLength: event.data?.length || 0 
+          });
           showError("Error parsing response data");
         }
       }

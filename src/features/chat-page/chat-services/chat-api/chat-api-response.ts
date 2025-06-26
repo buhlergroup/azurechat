@@ -19,7 +19,7 @@ import { createConversationState, startConversation, continueConversation, Conve
 import { FindAllExtensionForCurrentUserAndIds } from "@/features/extensions-page/extension-services/extension-service";
 import { reportUserChatMessage } from "@/features/common/services/chat-metrics-service";
 
-export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) => {
+export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) => {
   // Get current chat thread
   const currentChatThreadResponse = await EnsureChatThreadOperation(props.id);
   if (currentChatThreadResponse.status !== "OK") {
@@ -223,12 +223,11 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
 // Helper function to get chat history
 async function _getHistory(chatThread: ChatThreadModel) {
   const historyResponse = await FindTopChatMessagesForCurrentUser(chatThread.id);
-  
-  if (historyResponse.status === "OK") {
+    if (historyResponse.status === "OK") {
     const historyResults = historyResponse.response;
     return mapOpenAIChatMessages(historyResults).reverse();
   }
-
+  
   console.error("🔴 Error getting history:", historyResponse.errors);
   return [];
 }

@@ -1,7 +1,8 @@
 import { CheckIcon, ClipboardIcon } from "lucide-react";
 import { FC, memo, useEffect, useState } from "react";
-import { Prism } from "react-syntax-highlighter";
-import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight, oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useTheme } from "next-themes";
 import { Button } from "../button";
 
 export const fence = {
@@ -23,6 +24,7 @@ interface Props {
 
 export const CodeBlock: FC<Props> = memo(({ language, children }) => {
   const [isIconChecked, setIsIconChecked] = useState(false);
+  const { theme } = useTheme();
 
   const handleButtonClick = () => {
     navigator.clipboard.writeText(children);
@@ -56,9 +58,15 @@ export const CodeBlock: FC<Props> = memo(({ language, children }) => {
         </Button>
       </div>
 
-      <Prism language={language} style={atomDark} PreTag="pre" customStyle={{maxInlineSize: "100cqw", boxSizing: "border-box", overflow: "auto"}} showLineNumbers>
+      <SyntaxHighlighter 
+        language={language} 
+        style={theme === 'dark' ? oneDark : oneLight}
+        PreTag="pre" 
+        customStyle={{maxInlineSize: "100cqw", boxSizing: "border-box", overflow: "auto"}} 
+        showLineNumbers
+      >
         {children}
-      </Prism>
+      </SyntaxHighlighter>
     </div>
   );
 });

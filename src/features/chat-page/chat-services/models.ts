@@ -137,7 +137,9 @@ export async function getAvailableModels(): Promise<Record<ChatModel, ModelConfi
     const data = await response.json();
     return data.availableModels;
   } catch (error) {
-    console.error('Error fetching available models:', error);
+    console.error("🔴 Error fetching available models:", { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     // Fallback to all models if API fails
     return MODEL_CONFIGS;
   }
@@ -155,7 +157,9 @@ export async function getAvailableModelIds(): Promise<ChatModel[]> {
     const data = await response.json();
     return data.availableModelIds;
   } catch (error) {
-    console.error('Error fetching available model IDs:', error);
+    console.error("🔴 Error fetching available model IDs:", { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     // Fallback to all model IDs if API fails
     return Object.keys(MODEL_CONFIGS) as ChatModel[];
   }
@@ -173,7 +177,9 @@ export async function getDefaultModel(): Promise<ChatModel> {
     const data = await response.json();
     return data.defaultModel;
   } catch (error) {
-    console.error('Error fetching default model:', error);
+    console.error("🔴 Error fetching default model:", { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     // Fallback to gpt-4.1 if API fails
     return "gpt-4.1";
   }
@@ -187,7 +193,10 @@ export async function isModelAvailable(modelId: ChatModel): Promise<boolean> {
     const availableModels = await getAvailableModels();
     return !!availableModels[modelId];
   } catch (error) {
-    console.error('Error checking model availability:', error);
+    console.error("🔴 Error checking model availability:", { 
+      modelId,
+      error: error instanceof Error ? error.message : String(error) 
+    });
     // Fallback to checking if model exists in config
     return !!MODEL_CONFIGS[modelId];
   }

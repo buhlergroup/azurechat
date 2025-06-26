@@ -5,6 +5,8 @@ import {
   AzureChatCompletion,
   AzureChatCompletionAbort,
   AzureChatCompletionReasoning,
+  AzureChatCompletionFunctionCall,
+  AzureChatCompletionFunctionCallResult,
   ChatThreadModel,
   ChatMessageModel,
   MESSAGE_ATTRIBUTE,
@@ -14,57 +16,24 @@ import {
   reportPromptTokens 
 } from "@/features/common/services/chat-metrics-service";
 import { userHashedId } from "@/features/auth-page/helpers";
-import { executeFunction, FunctionCall } from "./function-registry";
+import { 
+  createConversationState, 
+  processFunctionCall, 
+  continueConversation,
+  ConversationState 
+} from "./conversation-manager";
+import { Stream } from "openai/core/streaming";
+import { ResponseStreamEvent } from "openai/resources/responses/responses";
 
 export const OpenAIResponsesStream = (props: {
-  stream: AsyncIterable<any>;
+  stream: Stream<ResponseStreamEvent>;
   chatThread: ChatThreadModel;
+  conversationState?: ConversationState;
+  onComplete?: () => Promise<void>;
+  onContinue?: (updatedState: ConversationState) => Promise<void>;
 }) => {
   const encoder = new TextEncoder();
-  const { stream, chatThread } = props;
-
-  // Helper function to extract text content from various response formats
-  const extractTextContent = (output: any): string => {
-    if (!output) return '';
-
-    // Handle array format (most common)
-    if (Array.isArray(output)) {
-      return output
-        .map((item: any) => {
-          if (typeof item === 'string') return item;
-          if (item?.content && Array.isArray(item.content)) {
-            return item.content
-              .map((contentItem: any) => {
-                if (typeof contentItem === 'string') return contentItem;
-                return contentItem?.text || contentItem?.content || '';
-              })
-              .join('');
-          }
-          return item?.text || item?.content || '';
-        })
-        .join('');
-    }
-
-    // Handle direct text properties
-    if (output.text) return output.text;
-    if (typeof output === 'string') return output;
-    
-    // Handle content property
-    if (output.content) {
-      if (Array.isArray(output.content)) {
-        return output.content
-          .map((item: any) => {
-            if (typeof item === 'string') return item;
-            return item?.text || item?.content || '';
-          })
-          .join('');
-      }
-      if (typeof output.content === 'string') return output.content;
-    }
-
-    // Fallback to common text properties
-    return output.message || output.text_content || output.data || '';
-  };
+  const { stream, chatThread, conversationState, onComplete, onContinue } = props;
 
   // Helper function to save message
   const saveMessage = async (messageId: string, content: string, reasoningContent: string, chatThread: ChatThreadModel) => {
@@ -82,7 +51,11 @@ export const OpenAIResponsesStream = (props: {
     };
     
     await UpsertChatMessage(messageToSave);
-    console.log(`💾 Message saved (${content.length} chars)`);
+    console.debug("💾 Message saved", { 
+      messageId, 
+      contentLength: content.length,
+      threadId: chatThread.id 
+    });
   };
 
   // Helper function to handle response completion
@@ -96,17 +69,16 @@ export const OpenAIResponsesStream = (props: {
     controller: ReadableStreamDefaultController, 
     streamResponse: (event: string, value: string) => void
   ) => {
-    console.log(`🎯 Response ${event.type === 'response.completed' ? 'completed' : 'done'}`);
+    console.info("🎯 Response completion", { 
+      eventType: event.type,
+      messageLength: lastMessage?.length || 0,
+      hasReasoning: !!reasoningContent
+    });
     
-    // Extract final content from response if available
-    if (event.response?.output) {
-      const extractedContent = extractTextContent(event.response.output);
-      if (extractedContent) {
-        lastMessage = extractedContent;
-        console.log(`📝 Final content extracted (${extractedContent.length} chars)`);
-      }
-    }
-
+    // For response.completed events, the final content is already accumulated in lastMessage
+    // The event.response.output contains the final structured output, but we've been
+    // building the text content incrementally through delta events
+    
     // Use event-based reasoning summaries if available
     const finalReasoningContent = Object.keys(reasoningSummaries).length > 0 
       ? Object.values(reasoningSummaries).join('\n\n') 
@@ -141,8 +113,15 @@ export const OpenAIResponsesStream = (props: {
       response: lastMessage,
     };
     streamResponse(finalResponse.type, JSON.stringify(finalResponse));
+    
+    // Signal completion
+    if (onComplete) {
+      await onComplete();
+    }
+    
     controller.close();
   };
+
   const readableStream = new ReadableStream({
     async start(controller) {
 
@@ -157,29 +136,24 @@ export const OpenAIResponsesStream = (props: {
       let reasoningContent = "";
       let reasoningSummaries: Record<number, string> = {};
       let messageSaved = false;
-      let hasFunctionCalls = false; // Track if we've seen function calls
-      let functionCallsContent = ""; // Track function calls and results for message content
+      let functionCalls: Record<number, any> = {}; // Track function calls
+      let currentConversationState = conversationState; // Use passed conversation state
       const messageId = uniqueId();
+
       try {
         for await (const event of stream) {
           // Log event type and basic info
           console.log(`🔍 SSE event: ${event.type}`);
 
           switch (event.type) {
-            case "response.queued":
             case "response.created":
-            case "response.in_progress":
-            case "response.content_part.added":
-              // Status events - no action needed
+              console.log("📨 Response created");
               break;
 
-            case "response.output_item.added":
-              // Output item initialization - no action needed
-              break;            case "response.output_text.delta":
-            case "response.text.delta":
+            case "response.output_text.delta":
               // Handle text delta events
               if (event.delta) {
-                const deltaContent = typeof event.delta === 'string' ? event.delta : String(event.delta);
+                const deltaContent = event.delta;
                 lastMessage += deltaContent;
 
                 const response: AzureChatCompletion = {
@@ -198,16 +172,94 @@ export const OpenAIResponsesStream = (props: {
               }
               break;
 
-            case "response.text.done":
-            case "response.output_text.done":
-            case "response.content_part.done":
-              // Handle completion of text content
-              if (event.text) {
-                lastMessage = event.text;
-              } else if (event.part?.text) {
-                lastMessage = event.part.text;
+            case "response.output_item.added":
+              // Function call started
+              if (event.item?.type === "function_call") {
+                console.log(`🔧 Function call started: ${event.item.name}`);
+                functionCalls[event.output_index] = {
+                  ...event.item,
+                  arguments: ""
+                };
+                
+                // Don't stream function call start - wait for completion
               }
-              break;            case "response.reasoning_summary_text.delta":
+              break;
+
+            case "response.function_call_arguments.delta":
+              // Accumulate function arguments
+              const index = event.output_index;
+              if (functionCalls[index]) {
+                functionCalls[index].arguments += event.delta;
+                
+                // Don't stream function arguments delta - wait for completion
+              }
+              break;
+
+            case "response.function_call_arguments.done":
+              // Function call arguments complete - execute the function
+              if (currentConversationState) {
+                const completedCall = functionCalls[event.output_index];
+                if (completedCall) {
+                  // Stream function call info now that it's complete
+                  const functionCallResponse: AzureChatCompletionFunctionCall = {
+                    type: "functionCall",
+                    response: {
+                      name: completedCall.name,
+                      arguments: completedCall.arguments,
+                    } as any,
+                  };
+                  streamResponse(functionCallResponse.type, JSON.stringify(functionCallResponse));
+
+                  const result = await processFunctionCall(currentConversationState, {
+                    name: completedCall.name,
+                    arguments: completedCall.arguments,
+                    call_id: completedCall.call_id,
+                  });
+
+                  // Update the conversation state
+                  currentConversationState = result.updatedState;
+
+                  if (result.success) {
+                    // Stream function result
+                    const functionResultResponse: AzureChatCompletionFunctionCallResult = {
+                      type: "functionCallResult",
+                      response: result.result!,
+                    };
+                    streamResponse(functionResultResponse.type, JSON.stringify(functionResultResponse));
+                  } else {
+                    // Stream function error
+                    const functionErrorResponse: AzureChatCompletion = {
+                      type: "error",
+                      response: result.error!,
+                    };
+                    streamResponse(functionErrorResponse.type, JSON.stringify(functionErrorResponse));
+                  }
+                }
+              }
+              break;
+
+            case "response.output_item.done":
+              // Check if this was a function call completion
+              if (event.item?.type === "function_call") {
+                console.log(`🔧 Function call completed: ${event.item.name}`);
+                
+                // If we have conversation state and function calls, signal continuation
+                if (currentConversationState && Object.keys(functionCalls).length > 0) {
+                  console.log("🔄 Function calls complete, signaling for conversation continuation");
+                  
+                  // Signal that conversation should continue with updated state
+                  if (onContinue) {
+                    await onContinue(currentConversationState);
+                  }
+                  
+                  // End this stream - the conversation manager will start a new one
+                  controller.close();
+                  return;
+                }
+              }
+              break;
+
+            case "response.reasoning_summary_text.delta":
               if (event.delta) {
                 const summaryIndex = event.summary_index || 0;
                 reasoningSummaries[summaryIndex] = (reasoningSummaries[summaryIndex] || '') + event.delta;
@@ -222,164 +274,15 @@ export const OpenAIResponsesStream = (props: {
               }
               break;
 
-            case "response.reasoning_summary_text.done":
-              if (event.text) {
-                const summaryIndex = event.summary_index || 0;
-                reasoningSummaries[summaryIndex] = event.text;
-                reasoningContent = Object.values(reasoningSummaries).join('\n\n');
-              }
-              break;            
-            case "response.output_item.done":
-              console.log(`🔍 response.output_item.done event:`, JSON.stringify(event, null, 2));
-              
-              if (event.item?.content) {
-                const extractedContent = extractTextContent(event.item.content);
-                if (extractedContent && extractedContent.trim() !== '' && extractedContent !== '[object Object]') {
-                  lastMessage = extractedContent;
-                  console.log(`✅ Extracted text (${extractedContent.length} chars)`);
-                }
-              }              // Check if this output item is a function call
-              if (event.item?.type === "function_call") {
-                console.log(`🔧 Found function call in stream (should be handled in two-phase approach):`, event.item);
-                hasFunctionCalls = true; // Mark that we've seen function calls
-                
-                // Just stream the function call to the client for display purposes
-                // Function execution should already be handled in the two-phase approach
-                const functionCall = {
-                  name: event.item.name,
-                  arguments: JSON.parse(event.item.arguments),
-                  call_id: event.item.call_id,
-                };
-
-                // Add function call to content for message history (for display only)
-                functionCallsContent += `\n**Function Call: ${functionCall.name}**\n`;
-                functionCallsContent += `Arguments: ${JSON.stringify(functionCall.arguments, null, 2)}\n`;
-
-                // Stream the function call to the client
-                const functionResponse: AzureChatCompletion = {
-                  type: "functionCall",
-                  response: event.item,
-                };
-                streamResponse(functionResponse.type, JSON.stringify(functionResponse));
-
-                // Note: Function execution is handled in ChatAPISimplified two-phase approach
-                // We don't execute functions here during streaming
-                console.log(`ℹ️ Function call logged for display, execution handled separately`);
-              }
-              break;// Function calling events
-            case "response.function_call_arguments.delta":
-              // Handle streaming function arguments - just pass through for now
-              break;
-
-            case "response.function_call_arguments.done":
-              // Function arguments are complete - just pass through for now
-              break;
-
-            case "response.function_call.delta":
-              break;            case "response.function_call.done":
-              if (event.function_call) {
-                console.log(`🔧 Found function call in stream (should be handled in two-phase approach):`, event.function_call);
-                hasFunctionCalls = true; // Mark that we've seen function calls
-                
-                // Just stream the function call to the client for display purposes
-                // Function execution should already be handled in the two-phase approach
-                const functionCall = {
-                  name: event.function_call.name,
-                  arguments: JSON.parse(event.function_call.arguments),
-                  call_id: event.function_call.call_id,
-                };
-
-                // Add function call to content for message history (for display only)
-                functionCallsContent += `\n**Function Call: ${functionCall.name}**\n`;
-                functionCallsContent += `Arguments: ${JSON.stringify(functionCall.arguments, null, 2)}\n`;
-
-                // Stream the function call to the client
-                const functionResponse: AzureChatCompletion = {
-                  type: "functionCall",
-                  response: event.function_call,
-                };
-                streamResponse(functionResponse.type, JSON.stringify(functionResponse));
-
-                // Note: Function execution is handled in ChatAPISimplified two-phase approach
-                // We don't execute functions here during streaming
-                console.log(`ℹ️ Function call logged for display, execution handled separately`);
-              }
-              break;
-
-            // Image generation events
-            case "response.image_generation_call.delta":
-              break;
-
-            case "response.image_generation_call.partial_image":
-              if (event.partial_image_b64) {
-                const imageResponse: AzureChatCompletion = {
-                  type: "content",
-                  response: {
-                    type: "partial_image",
-                    data: event.partial_image_b64,
-                    index: event.partial_image_index
-                  },
-                };
-                streamResponse(imageResponse.type, JSON.stringify(imageResponse));
-              }
-              break;
-
-            case "response.image_generation_call.done":
-              if (event.result) {
-                const imageResponse: AzureChatCompletion = {
-                  type: "content",
-                  response: {
-                    type: "image_generation",
-                    data: event.result
-                  },
-                };
-                streamResponse(imageResponse.type, JSON.stringify(imageResponse));
-              }
-              break;
-
-            // MCP events
-            case "response.mcp_approval_request":
-              const mcpApprovalResponse: AzureChatCompletion = {
-                type: "content",
-                response: {
-                  type: "mcp_approval_request",
-                  data: event
-                },
-              };
-              streamResponse(mcpApprovalResponse.type, JSON.stringify(mcpApprovalResponse));
-              break;
-
-            case "response.mcp_call.delta":
-            case "response.mcp_call.done":
-              break;
-
-            case "response.cancelled":
-              const cancelledResponse: AzureChatCompletion = {
-                type: "abort",
-                response: "Response was cancelled",
-              };
-              streamResponse(cancelledResponse.type, JSON.stringify(cancelledResponse));
-              controller.close();
-              break;            case "response.completed":
-            case "response.done":
-              // If we had function calls, include them in the final message
-              if (hasFunctionCalls) {
-                if (!lastMessage || lastMessage.trim() === "") {
-                  console.log("🔄 Function calls completed but no assistant response - using function content");
-                  lastMessage = functionCallsContent;
-                } else {
-                  // Combine assistant response with function calls
-                  lastMessage = functionCallsContent + "\n\n" + lastMessage;
-                }
-              }
+            case "response.completed":
               await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse);
               return;
 
             case "error":
-              console.log("🔴 Stream error:", event.error?.message || "Unknown error");
+              console.log("🔴 Stream error:", (event as any).error?.message || "Unknown error");
               const errorResponse: AzureChatCompletion = {
                 type: "error",
-                response: event.error?.message || "Unknown error occurred",
+                response: (event as any).error?.message || "Unknown error occurred",
               };
 
               if (lastMessage && !messageSaved) {

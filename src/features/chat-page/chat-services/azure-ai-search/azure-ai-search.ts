@@ -65,7 +65,8 @@ export const SimpleSearch = async (
 export const SimilaritySearch = async (
   searchText: string,
   k: number,
-  filter?: string
+  filter?: string,
+  skip: number = 0
 ): Promise<ServerActionResponse<Array<DocumentSearchResponse>>> => {
   try {
     const openai = OpenAIEmbeddingInstance();
@@ -79,13 +80,14 @@ export const SimilaritySearch = async (
     const searchResults = await searchClient.search(searchText, {
       top: k,
       filter: filter,
+      skip: skip,
       vectorSearchOptions: {
         queries: [
           {
             vector: embeddings.data[0].embedding,
             fields: ["embedding"],
             kind: "vector",
-            kNearestNeighborsCount: 10,
+            kNearestNeighborsCount: k
           },
         ],
       },
