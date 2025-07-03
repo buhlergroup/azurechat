@@ -289,10 +289,12 @@ class ChatState {
         });
         try {
           const responseType = JSON.parse(event.data) as AzureChatCompletion;
+          
           console.debug("🔍 Chat Store: Parsed response", { 
             type: responseType.type,
             hasContent: !!responseType.response 
           });
+
           switch (responseType.type) {
             case "functionCall":
               const mappedFunction: ChatMessageModel = {
