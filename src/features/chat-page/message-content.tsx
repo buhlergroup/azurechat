@@ -40,7 +40,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
                       strokeWidth={1.4}
                       className="text-blue-500"
                     />
-                    Show reasoning thoughts
+                    Reasoning output
                   </div>
                 </AccordionTrigger>
                 <AccordionContent>

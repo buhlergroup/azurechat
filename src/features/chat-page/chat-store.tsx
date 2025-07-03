@@ -181,8 +181,9 @@ class ChatState {
     this.updateAutoScroll(true);
     this.loading = "loading";
 
-    // Reset the current assistant message ID for new conversation
+    // Reset the current assistant message ID and temp reasoning content for new conversation
     this.currentAssistantMessageId = "";
+    this.tempReasoningContent = "";
 
     const multimodalImage = formData.get("image-base64") as unknown as string;
 
@@ -326,6 +327,12 @@ class ChatState {
             case "content":
               const contentChunk = responseType.response.choices?.[0]?.message?.content || "";
               
+              console.info("📝 Chat Store: Received content event", {
+                contentLength: contentChunk.length,
+                messageId: this.currentAssistantMessageId,
+                tempReasoningContentLength: this.tempReasoningContent?.length || 0
+              });
+              
               // Use consistent message ID for all chunks of the same response
               if (!this.currentAssistantMessageId) {
                 this.currentAssistantMessageId = responseType.response.id || uniqueId();
@@ -362,8 +369,8 @@ class ChatState {
                 this.addToMessages(mappedContent);
                 this.lastMessage = mappedContent.content;
                 
-                // Don't clear temporary reasoning content here - it might still be accumulating
-                // It will be cleared in the finalContent event
+                // Clear temporary reasoning content since we've created the message
+                this.tempReasoningContent = "";
               }
               break;
             case "abort":
@@ -375,9 +382,10 @@ class ChatState {
               this.loading = "idle";
               break;
             case "reasoning":
-              console.debug("🧠 Chat Store: Received reasoning event", { 
+              console.info("🧠 Chat Store: Received reasoning event", { 
                 contentLength: responseType.response?.length || 0,
-                messageId: this.currentAssistantMessageId 
+                messageId: this.currentAssistantMessageId,
+                tempReasoningContentLength: this.tempReasoningContent?.length || 0
               });
               
               // Ensure we have a consistent message ID for reasoning content
@@ -400,30 +408,31 @@ class ChatState {
                   reasoningContent: updatedReasoningContent
                 };
               } else {
-                console.debug("🧠 Chat Store: Storing reasoning content temporarily");
-                // Accumulate reasoning content temporarily for the next assistant message
-                this.tempReasoningContent = (this.tempReasoningContent || "") + responseType.response;
+                console.debug("🧠 Chat Store: Creating assistant message for reasoning display");
+                // Create an assistant message immediately to show reasoning in real-time
+                const reasoningMessage: ChatMessageModel = {
+                  id: this.currentAssistantMessageId,
+                  content: "", // Empty content initially
+                  name: AI_NAME,
+                  role: "assistant",
+                  createdAt: new Date(),
+                  isDeleted: false,
+                  threadId: this.chatThreadId,
+                  type: "CHAT_MESSAGE",
+                  userId: "",
+                  multiModalImage: "",
+                  reasoningContent: (this.tempReasoningContent || "") + responseType.response,
+                };
+
+                this.addToMessages(reasoningMessage);
+                
+                // Clear temp reasoning content since we've created the message
+                this.tempReasoningContent = "";
               }
               break;
             case "finalContent":
               // The finalContent event signals that streaming is complete
               console.info("🎯 Chat Store: Processing finalContent event");
-              
-              // Ensure any remaining temporary reasoning content is applied
-              if (this.currentAssistantMessageId && this.tempReasoningContent) {
-                const finalMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
-                if (finalMessageIndex !== -1) {
-                  console.debug("🧠 Chat Store: Applying remaining temp reasoning content to final message");
-                  const finalMessage = this.messages[finalMessageIndex];
-                  this.messages[finalMessageIndex] = {
-                    ...finalMessage,
-                    reasoningContent: (finalMessage.reasoningContent || "") + this.tempReasoningContent
-                  };
-                }
-              }
-              
-              // Clear temporary state only after ensuring content is preserved
-              this.tempReasoningContent = "";
               
               // Set loading to idle and complete the conversation
               this.loading = "idle";
