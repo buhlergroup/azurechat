@@ -478,44 +478,58 @@ const validateFunctionSchema = (
 
   for (let i = 0; i < model.functions.length; i++) {
     const f = model.functions[i];
+    
+    // Validate function name from the dedicated field
+    const name = f.functionName;
+    const findName = functionNames.find((n) => n === name);
+
+    if (name === undefined || name === null || name === "") {
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `Function name is required.`,
+          },
+        ],
+      };
+    }
+
+    if (name.includes(" ")) {
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `Function name ${name} cannot contain spaces.`,
+          },
+        ],
+      };
+    }
+
+    if (findName) {
+      return {
+        status: "ERROR",
+        errors: [
+          {
+            message: `Function name ${name} is already used. Please use a different name.`,
+          },
+        ],
+      };
+    } else {
+      functionNames.push(name);
+    }
+
+    // Validate JSON code structure
     try {
       const functionSchema = JSON.parse(f.code);
-      const name = functionSchema.name;
-      const findName = functionNames.find((n) => n === name);
-
-      if (name === undefined || name === null || name === "") {
+      if (!functionSchema.name) {
         return {
           status: "ERROR",
           errors: [
             {
-              message: `Function name is required.`,
+              message: `Function JSON must contain a 'name' field.`,
             },
           ],
         };
-      }
-
-      if (name.includes(" ")) {
-        return {
-          status: "ERROR",
-          errors: [
-            {
-              message: `Function name ${name} cannot contain spaces.`,
-            },
-          ],
-        };
-      }
-
-      if (findName) {
-        return {
-          status: "ERROR",
-          errors: [
-            {
-              message: `Function name ${name} is already used. Please use a different name.`,
-            },
-          ],
-        };
-      } else {
-        functionNames.push(name);
       }
     } catch (error) {
       return {

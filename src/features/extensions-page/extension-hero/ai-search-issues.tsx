@@ -35,6 +35,7 @@ export const AISearch = () => {
 },
 "description": "You must use this to search for content based on user questions."
 }`,
+          functionName: "aisearch",
           endpoint: "https:AZURE_CHAT_HOST.com/api/document",
           id: uniqueId(),
           endpointType: "POST",

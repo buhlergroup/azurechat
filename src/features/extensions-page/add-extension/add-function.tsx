@@ -42,7 +42,7 @@ export const AddFunction = () => {
             className="flex items-center justify-between  p-3   cursor-pointer  "
             onClick={() => extensionStore.toggleFunction(func.id)}
           >
-            <SheetTitle>{`${index + 1}. ${getName(func.code)}`}</SheetTitle>
+            <SheetTitle>{`${index + 1}. ${func.functionName}`}</SheetTitle>
             {func.isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </div>
           <div
@@ -73,6 +73,19 @@ export const AddFunction = () => {
                   <Trash size={18} /> Delete
                 </Button>
               </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Function Name</Label>
+              <Input
+                required
+                name="function-name[]"
+                defaultValue={func.functionName}
+                placeholder="Enter function name"
+                onChange={(e) => {
+                  extensionStore.updateFunctionName(func.id, e.target.value);
+                }}
+              />
             </div>
 
             <div className="grid gap-2">
@@ -122,13 +135,4 @@ export const AddFunction = () => {
       ))}
     </div>
   );
-};
-
-const getName = (value: string) => {
-  try {
-    const val = JSON.parse(value);
-    return val.name;
-  } catch (e) {
-    return "Unknown";
-  }
 };

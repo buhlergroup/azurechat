@@ -39,6 +39,7 @@ export const BingSearch = () => {
 "description": "Use BingSearch to search for information on the web to bring up to date information"
 }
           `,
+          functionName: "BingSearch",
           endpoint:
             "https://api.bing.microsoft.com/v7.0/search?q=BING_SEARCH_QUERY",
           id: uniqueId(),

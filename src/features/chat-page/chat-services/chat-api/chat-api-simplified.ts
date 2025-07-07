@@ -16,8 +16,9 @@ import {
 } from "./function-registry";
 import { OpenAIResponsesStream } from "./openai-responses-stream";
 import { createConversationState, startConversation, continueConversation, ConversationState } from "./conversation-manager";
-import { FindAllExtensionForCurrentUserAndIds } from "@/features/extensions-page/extension-services/extension-service";
+import { FindAllExtensionForCurrentUserAndIds, FindSecureHeaderValue } from "@/features/extensions-page/extension-services/extension-service";
 import { reportUserChatMessage } from "@/features/common/services/chat-metrics-service";
+import { FindAllChatDocuments } from "../chat-document-service";
 
 export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) => {
   // Get current chat thread
@@ -236,11 +237,18 @@ async function _getHistory(chatThread: ChatThreadModel) {
 // Helper function to get available tools
 async function _getAvailableTools(chatThread: ChatThreadModel) {
   const tools = [];
-  // Add built-in functions
+  
+  console.log(`🔧 Chat thread extensions: ${chatThread.extension?.join(", ") || "none"}`);
+  
+  // Always add create_image function (core feature) - only this specific function
   const builtInFunctions = await getAvailableFunctions();
-  tools.push(...builtInFunctions);
-
-  // Add dynamic extensions if any are configured
+  const createImageFunction = builtInFunctions.find(f => f.name === "create_image");
+  if (createImageFunction) {
+    tools.push(createImageFunction);
+    console.log(`🎨 Added create_image function (core feature)`);
+  }
+  
+  // Add dynamic extensions ONLY if they are configured for this chat thread
   if (chatThread.extension && chatThread.extension.length > 0) {
     const extensionResponse = await FindAllExtensionForCurrentUserAndIds(chatThread.extension);
     
@@ -250,6 +258,17 @@ async function _getAvailableTools(chatThread: ChatThreadModel) {
           try {
             const parsedFunction = JSON.parse(functionDef.code);
             
+            // Resolve headers from Key Vault
+            const resolvedHeaders: Record<string, string> = {};
+            for (const header of extension.headers) {
+              const headerValueResponse = await FindSecureHeaderValue(header.id);
+              if (headerValueResponse.status === "OK") {
+                resolvedHeaders[header.key] = headerValueResponse.response;
+              } else {
+                console.error(`🔴 Failed to resolve header ${header.key}:`, headerValueResponse.errors);
+              }
+            }
+            
             // Register the dynamic function
             const dynamicFunction = await registerDynamicFunction(
               parsedFunction.name,
@@ -257,7 +276,7 @@ async function _getAvailableTools(chatThread: ChatThreadModel) {
               parsedFunction.parameters,
               functionDef.endpoint,
               functionDef.endpointType,
-              extension.headers.reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {})
+              resolvedHeaders
             );
             
             tools.push(dynamicFunction);

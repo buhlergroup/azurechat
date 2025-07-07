@@ -69,7 +69,7 @@ export const OpenAIResponsesStream = (props: {
     controller: ReadableStreamDefaultController, 
     streamResponse: (event: string, value: string) => void
   ) => {
-    console.info("🎯 Response completion", { 
+    console.info("🎯 Response completion handler called", { 
       eventType: event.type,
       messageLength: lastMessage?.length || 0,
       hasReasoning: !!reasoningContent
@@ -112,16 +112,25 @@ export const OpenAIResponsesStream = (props: {
       type: "finalContent",
       response: lastMessage,
     };
+    console.log("🎯 Sending finalContent event to frontend", {
+      messageLength: lastMessage.length,
+      responseType: finalResponse.type
+    });
     streamResponse(finalResponse.type, JSON.stringify(finalResponse));
     
     // Ensure the stream is flushed before closing by yielding to the event loop
     await Promise.resolve();
+    
+    // Add a small delay to ensure the frontend has time to process the finalContent event
+    console.log("⏳ Waiting for frontend to process finalContent event...");
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // Signal completion
     if (onComplete) {
       await onComplete();
     }
     
+    console.log("🔒 Closing stream controller");
     controller.close();
   };
 
@@ -141,7 +150,13 @@ export const OpenAIResponsesStream = (props: {
       let messageSaved = false;
       let functionCalls: Record<number, any> = {}; // Track function calls
       let currentConversationState = conversationState; // Use passed conversation state
-      const messageId = uniqueId();
+      // Use a consistent message ID across the entire conversation
+      const messageId = conversationState?.messageId || uniqueId();
+      console.debug("🔄 OpenAI Responses Stream: Using message ID", {
+        messageId,
+        hasConversationState: !!conversationState,
+        conversationStateMessageId: conversationState?.messageId
+      });
 
       try {
         for await (const event of stream) {
@@ -278,6 +293,7 @@ export const OpenAIResponsesStream = (props: {
               break;
 
             case "response.completed":
+              console.log("🎯 Received response.completed event");
               await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse);
               return;
 
@@ -302,25 +318,34 @@ export const OpenAIResponsesStream = (props: {
               return;
 
             default:
-              // Log unknown events for debugging
-              console.log(`❓ Unknown event: ${event.type}`);
+              // Log unknown events for debugging but don't treat them as errors
+              // These might be informational events that don't need processing
+              console.log(`ℹ️ Unhandled event: ${event.type}`);
               break;
           }
         }
 
         // Stream ended without completion event - send final content if available
         if (lastMessage && !messageSaved) {
-          console.log("🔄 Stream ended without completion event");
+          console.log("🔄 Stream ended without completion event - sending final content");
           await saveMessage(messageId, lastMessage, reasoningContent, chatThread);
           
           const finalResponse: AzureChatCompletion = {
             type: "finalContent",
             response: lastMessage,
           };
+          console.log("🎯 Sending finalContent event (fallback)", {
+            messageLength: lastMessage.length,
+            responseType: finalResponse.type
+          });
           streamResponse(finalResponse.type, JSON.stringify(finalResponse));
           
           // Ensure the stream is flushed before closing by yielding to the event loop
           await Promise.resolve();
+          
+          // Add a small delay to ensure the frontend has time to process the finalContent event
+          console.log("⏳ Waiting for frontend to process finalContent event (fallback)...");
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
         controller.close();
       } catch (error) {

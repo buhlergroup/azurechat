@@ -285,14 +285,19 @@ class ChatState {
     return createParser((event: ParsedEvent | ReconnectInterval) => {
       if (event.type === "event") {
         console.debug("🔍 Chat Store: Received event", { 
-          dataLength: event.data?.length || 0 
+          dataLength: event.data?.length || 0,
+          eventType: event.type,
+          eventName: event.event,
+          eventData: event.data?.substring(0, 200) + "..." // Log first 200 chars of data
         });
         try {
           const responseType = JSON.parse(event.data) as AzureChatCompletion;
           
           console.debug("🔍 Chat Store: Parsed response", { 
             type: responseType.type,
-            hasContent: !!responseType.response 
+            hasContent: !!responseType.response,
+            responseType: typeof responseType.type,
+            responseKeys: Object.keys(responseType)
           });
 
           switch (responseType.type) {
@@ -332,12 +337,16 @@ class ChatState {
               console.info("📝 Chat Store: Received content event", {
                 contentLength: contentChunk.length,
                 messageId: this.currentAssistantMessageId,
-                tempReasoningContentLength: this.tempReasoningContent?.length || 0
+                tempReasoningContentLength: this.tempReasoningContent?.length || 0,
+                responseMessageId: responseType.response.id
               });
               
               // Use consistent message ID for all chunks of the same response
               if (!this.currentAssistantMessageId) {
                 this.currentAssistantMessageId = responseType.response.id || uniqueId();
+                console.debug("📝 Chat Store: Created new assistant message ID", {
+                  messageId: this.currentAssistantMessageId
+                });
               }
               
               // Find existing assistant message or create new one
@@ -434,9 +443,52 @@ class ChatState {
               break;
             case "finalContent":
               // The finalContent event signals that streaming is complete
-              console.info("🎯 Chat Store: Processing finalContent event");
+              console.info("🎯 Chat Store: Processing finalContent event", {
+                lastMessageLength: this.lastMessage?.length || 0,
+                currentAssistantMessageId: this.currentAssistantMessageId,
+                messagesCount: this.messages.length,
+                responseContent: responseType.response,
+                hasLastMessage: !!this.lastMessage,
+                hasCurrentAssistantMessageId: !!this.currentAssistantMessageId
+              });
+              
+              // Ensure the final message is properly displayed in the UI
+              if (this.lastMessage && this.currentAssistantMessageId) {
+                // Find the existing assistant message and ensure it has the final content
+                const existingMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
+                
+                console.debug("🎯 Chat Store: Looking for existing assistant message", {
+                  messageId: this.currentAssistantMessageId,
+                  existingMessageIndex,
+                  totalMessages: this.messages.length
+                });
+                
+                if (existingMessageIndex !== -1) {
+                  // Update the message with the final content to ensure UI reflects the complete response
+                  const existingMessage = this.messages[existingMessageIndex];
+                  this.messages[existingMessageIndex] = {
+                    ...existingMessage,
+                    content: this.lastMessage
+                  };
+                  console.debug("🎯 Chat Store: Updated final message content", {
+                    messageId: this.currentAssistantMessageId,
+                    contentLength: this.lastMessage.length
+                  });
+                } else {
+                  console.warn("🎯 Chat Store: No existing assistant message found for final content", {
+                    messageId: this.currentAssistantMessageId,
+                    availableMessageIds: this.messages.map(m => ({ id: m.id, role: m.role }))
+                  });
+                }
+              } else {
+                console.warn("🎯 Chat Store: Missing lastMessage or currentAssistantMessageId", {
+                  hasLastMessage: !!this.lastMessage,
+                  hasCurrentAssistantMessageId: !!this.currentAssistantMessageId
+                });
+              }
               
               // Set loading to idle and complete the conversation
+              console.info("🎯 Chat Store: Setting loading to idle and completing conversation");
               this.loading = "idle";
               this.completed(this.lastMessage);
               
@@ -445,9 +497,32 @@ class ChatState {
               
               // Reset the current assistant message ID for the next conversation
               // Do this last to avoid any race conditions
+              console.info("🎯 Chat Store: Resetting currentAssistantMessageId for next conversation");
               this.currentAssistantMessageId = "";
               break;
             default:
+              // Handle informational events that don't require UI updates
+              const eventType = (responseType as any).type;
+              if (eventType === "response.in_progress" ||
+                  eventType === "response.reasoning_summary_part.added" ||
+                  eventType === "response.reasoning_summary_text.done" ||
+                  eventType === "response.reasoning_summary_part.done" ||
+                  eventType === "response.content_part.added" ||
+                  eventType === "response.output_text.done" ||
+                  eventType === "response.content_part.done") {
+                console.debug("ℹ️ Chat Store: Received informational event", {
+                  eventType: eventType,
+                  hasResponse: !!(responseType as any).response
+                });
+                // These are informational events that don't require UI updates
+                // They're handled by the backend stream processor
+                break;
+              }
+              
+              console.log("❓ Chat Store: Unhandled response type", {
+                type: eventType,
+                hasResponse: !!(responseType as any).response
+              });
               break;
           }
         } catch (error) {

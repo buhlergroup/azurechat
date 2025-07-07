@@ -1,6 +1,7 @@
 "use server";
 import "server-only";
 
+import { uniqueId } from "@/features/common/util";
 import { executeFunction, FunctionCall } from "./function-registry";
 
 export interface ConversationContext {
@@ -24,6 +25,7 @@ export interface ConversationMessage {
 export interface ConversationState {
   conversationInput: ConversationMessage[];
   context: ConversationContext;
+  messageId?: string; // Consistent message ID across the entire conversation
 }
 
 /**
@@ -35,7 +37,8 @@ export async function createConversationState(
 ): Promise<ConversationState> {
   return {
     conversationInput: [...initialInput],
-    context
+    context,
+    messageId: uniqueId() // Generate a consistent message ID for the entire conversation
   };
 }
 
