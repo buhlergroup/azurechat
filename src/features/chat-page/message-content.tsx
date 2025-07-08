@@ -1,6 +1,6 @@
 import { Markdown } from "@/features/ui/markdown/markdown";
-import { FunctionSquare, Brain } from "lucide-react";
-import React from "react";
+import { FunctionSquare, Brain, Wrench } from "lucide-react";
+import React, { useState } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -9,6 +9,9 @@ import {
 } from "../ui/accordion";
 import { RecursiveUI } from "../ui/recursive-ui";
 import { CitationAction } from "./citation/citation-action";
+import { useToolCallHistory } from "./chat-store";
+import { chatStore } from "./chat-store";
+import ToolCallHistoryDialog from "./tool-call-history-dialog";
 
 interface MessageContentProps {
   message: {
@@ -17,14 +20,27 @@ interface MessageContentProps {
     name: string;
     multiModalImage?: string;
     reasoningContent?: string;
+    id: string;
   };
 }
 
 const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const toolCallHistory = useToolCallHistory(message.id);
 
   if (message.role === "assistant" || message.role === "user") {
     return (
       <>
+        {/* Tool call history icon for assistant messages */}
+        {message.role === "assistant" && (
+          <button
+            className="absolute top-2 right-2 p-1 rounded hover:bg-accent"
+            title="Show tool call history"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Wrench size={18} className="text-muted-foreground" />
+          </button>
+        )}
         {message.reasoningContent && message.role === "assistant" && (
           <div className="mb-4">
             <Accordion
@@ -57,6 +73,13 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
           onCitationClick={CitationAction}
         ></Markdown>
         {message.multiModalImage && <img src={message.multiModalImage} />}
+        {/* Tool call history dialog */}
+        <ToolCallHistoryDialog
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          toolCallHistory={toolCallHistory}
+          messageId={message.id}
+        />
       </>
     );
   }

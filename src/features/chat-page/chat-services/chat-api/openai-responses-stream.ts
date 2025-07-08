@@ -114,21 +114,26 @@ export const OpenAIResponsesStream = (props: {
     };
     console.log("🎯 Sending finalContent event to frontend", {
       messageLength: lastMessage.length,
-      responseType: finalResponse.type
+      responseType: finalResponse.type,
+      responseData: JSON.stringify(finalResponse)
     });
     streamResponse(finalResponse.type, JSON.stringify(finalResponse));
     
     // Ensure the stream is flushed before closing by yielding to the event loop
     await Promise.resolve();
     
-    // Add a small delay to ensure the frontend has time to process the finalContent event
+    // Add a longer delay to ensure the frontend has time to process the finalContent event
     console.log("⏳ Waiting for frontend to process finalContent event...");
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Signal completion
     if (onComplete) {
       await onComplete();
     }
+    
+    // Ensure the stream is fully flushed before closing
+    console.log("🔒 Flushing stream before closing...");
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     console.log("🔒 Closing stream controller");
     controller.close();
@@ -139,8 +144,15 @@ export const OpenAIResponsesStream = (props: {
 
       const streamResponse = (event: string, value: string) => {
         if (controller.desiredSize !== null) {
-          controller.enqueue(encoder.encode(`event: ${event} \n`));
-          controller.enqueue(encoder.encode(`data: ${value} \n\n`));
+          const eventData = `event: ${event} \n`;
+          const dataData = `data: ${value} \n\n`;
+          console.debug("🔍 Backend: Sending SSE event", {
+            eventType: event,
+            dataLength: value.length,
+            dataPreview: value.substring(0, 200) + "..."
+          });
+          controller.enqueue(encoder.encode(eventData));
+          controller.enqueue(encoder.encode(dataData));
         }
       };      
       
