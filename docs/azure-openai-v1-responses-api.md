@@ -22,6 +22,7 @@ The v1 Responses API is the next generation of Azure OpenAI APIs that provides:
 
 ### Reasoning Models (with summary support)
 - **o3**: Advanced reasoning with step-by-step thinking
+- **o3-pro**: Premium reasoning with enhanced capabilities
 - **o4-mini**: Efficient reasoning with detailed summaries
 
 ### Specialized Models
@@ -47,7 +48,7 @@ AZURE_OPENAI_API_COMPUTER_USE_DEPLOYMENT_NAME=computer-use-preview
 
 ### 1. Reasoning Summaries
 
-Reasoning models (o3, o4-mini) provide summaries of their thinking process:
+Reasoning models (o3, o3-pro, o4-mini) provide summaries of their thinking process:
 
 ```typescript
 // Automatic reasoning summaries
@@ -256,7 +257,7 @@ const response = await openai.responses.create({
 1. **Model Selection**: Use the appropriate model for your use case
    - `gpt-4o` for complex multimodal tasks
    - `gpt-4.1-nano` for fast, simple responses
-   - `o3`/`o4-mini` for reasoning tasks
+   - `o3`/`o3-pro`/`o4-mini` for reasoning tasks
 
 2. **Reasoning Effort**: Adjust based on task complexity
    - `low`: Simple questions

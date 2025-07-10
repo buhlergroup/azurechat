@@ -26,7 +26,7 @@ _Azure Chat powered by Azure Open AI Service_ is a that allows organisations to 
 ## ✨ Latest Features
 
 ### 🧠 Advanced Reasoning Models
-- **OpenAI o3, o3-mini, o4-mini** support with reasoning summaries
+- **OpenAI o3, o3-pro, o3-mini, o4-mini** support with reasoning summaries
 - **Auto-summarization** of model reasoning process
 - **Expandable reasoning thoughts** in the chat interface
 - **Multiple effort levels** (low, medium, high) for reasoning tasks
@@ -34,7 +34,7 @@ _Azure Chat powered by Azure Open AI Service_ is a that allows organisations to 
 ### 🎯 Smart Model Selection
 - **Environment-based model availability** - only configured models appear in the selector
 - **Automatic model filtering** based on deployment environment variables
-- **Support for latest models**: GPT-4.1, GPT-4.1 Mini, GPT-4.1 Nano, o3, o4-mini, Computer Use Preview
+- **Support for latest models**: GPT-4.1, GPT-4.1 Mini, GPT-4.1 Nano, o3, o3-pro, o4-mini, Computer Use Preview
 - **Dynamic model configuration** without code changes
 
 ### 🚀 Azure OpenAI v1 Responses API
@@ -162,6 +162,7 @@ Configure which models appear in your chat interface by setting environment vari
 ```bash
 # Enable specific models in .env.local
 AZURE_OPENAI_API_O3_DEPLOYMENT_NAME=o3-deployment
+AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME=o3-pro-deployment
 AZURE_OPENAI_API_GPT41_DEPLOYMENT_NAME=gpt41-deployment
 AZURE_OPENAI_API_GPT41_MINI_DEPLOYMENT_NAME=gpt41-mini-deployment
 ```
@@ -174,6 +175,7 @@ Test advanced reasoning capabilities with o3, o3-mini, and o4-mini models:
 ```bash
 # Configure reasoning model deployment
 AZURE_OPENAI_API_O3_DEPLOYMENT_NAME=your-o3-deployment
+AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME=your-o3-pro-deployment
 ```
 
 Features include:
@@ -264,6 +266,7 @@ See our [detailed debugging documentation](/docs/azure-openai-v1-responses-api.m
 
 ### Reasoning Models
 - **o3**: Advanced reasoning with detailed thought summaries
+- **o3-pro**: Premium reasoning model with enhanced capabilities
 - **o3-mini**: Efficient reasoning for faster responses  
 - **o4-mini**: Latest compact reasoning model
 

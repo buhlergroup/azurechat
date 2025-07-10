@@ -6,7 +6,7 @@ This document describes the implementation of Server Sent Events (SSE) streaming
 
 The Azure Chat application now supports two streaming approaches:
 
-1. **OpenAI Responses API** (New) - For reasoning models (o3, o4-mini)
+1. **OpenAI Responses API** (New) - For reasoning models (o3, o3-pro, o4-mini)
 2. **Chat Completions API** (Legacy) - For non-reasoning models and other scenarios like RAG and multimodal
 
 ## Implementation Details
@@ -53,7 +53,7 @@ The new streaming implementation handles these SSE event types:
 
 ### Reasoning Support
 
-For reasoning models (o3, o4-mini), the implementation:
+For reasoning models (o3, o3-pro, o4-mini), the implementation:
 
 1. Configures reasoning effort level (`low`, `medium`, `high`)
 2. Requests automatic summary generation (`summary: "auto"`)
@@ -65,7 +65,7 @@ For reasoning models (o3, o4-mini), the implementation:
 
 The implementation maintains backward compatibility by:
 
-- Using the new Responses API for all reasoning models (o3, o4-mini)
+- Using the new Responses API for all reasoning models (o3, o3-pro, o4-mini)
 - Falling back to Chat Completions API for non-reasoning models
 - Preserving existing event types and response formats
 - Maintaining the same client-side streaming interface
@@ -79,7 +79,7 @@ const useResponsesAPI = modelConfig.supportsReasoning;
 ```
 
 This ensures:
-- Reasoning models (o3, o4-mini) always use the new Responses API
+- Reasoning models (o3, o3-pro, o4-mini) always use the new Responses API
 - Extensions work seamlessly with the Responses API
 - RAG and multimodal scenarios use Chat Completions API for non-reasoning models
 - No breaking changes for existing functionality
@@ -95,7 +95,7 @@ This ensures:
 
 #### Simple Reasoning Query
 ```typescript
-// Automatically uses Responses API for o3/o4-mini models
+// Automatically uses Responses API for o3/o3-pro/o4-mini models
 const response = await ChatAPIEntry({
   id: threadId,
   message: "Explain quantum computing step by step",

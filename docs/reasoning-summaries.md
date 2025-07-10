@@ -4,14 +4,15 @@ This document describes the implementation of OpenAI's reasoning summaries featu
 
 ## Overview
 
-Reasoning summaries provide access to the model's reasoning process for OpenAI's reasoning models (o1, o3, o3-mini, o4-mini). The implementation uses the `summary: "auto"` parameter to automatically get the best available summary format.
+Reasoning summaries provide access to the model's reasoning process for OpenAI's reasoning models (o1, o3, o3-pro, o3-mini, o4-mini). The implementation uses the `summary: "auto"` parameter to automatically get the best available summary format.
 
 ## Supported Models
 
 The following models support reasoning summaries:
 
 - **o1**: Advanced reasoning model with detailed and concise summarizers
-- **o3**: Latest reasoning model with detailed and concise summarizers  
+- **o3**: Latest reasoning model with detailed and concise summarizers
+- **o3-pro**: Premium reasoning model with enhanced capabilities and detailed analysis
 - **o3-mini**: Efficient reasoning model with detailed and concise summarizers
 - **o4-mini**: Latest mini reasoning model with detailed summarizer support
 

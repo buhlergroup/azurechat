@@ -20,6 +20,7 @@ export type ChatModel =
   | "gpt-4.1-nano" 
   | "gpt-image-1"
   | "o3" 
+  | "o3-pro"
   | "o4-mini"
   | "computer-use-preview";
 
@@ -101,6 +102,16 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O3_DEPLOYMENT_NAME
+  },
+  "o3-pro": {
+    id: "o3-pro",
+    name: "o3-Pro",
+    description: "Premium reasoning model with enhanced capabilities and detailed analysis",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    supportedSummarizers: ["detailed", "concise", "auto"],
+    deploymentName: process.env.AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME
   },
   "o4-mini": {
     id: "o4-mini",
