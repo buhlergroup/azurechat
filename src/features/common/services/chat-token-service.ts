@@ -1,5 +1,13 @@
 import { Tiktoken, TiktokenModel, encodingForModel } from "js-tiktoken";
+import { logWarn } from "./logger";
 
+/**
+ * ChatTokenService provides token counting capabilities using js-tiktoken.
+ * 
+ * Note: This service is primarily used as a fallback for manual token calculation.
+ * The preferred method is to use actual token usage data from the OpenAI API
+ * response.completed event, which provides more accurate token counts.
+ */
 export class ChatTokenService{
 
 
@@ -12,13 +20,27 @@ export class ChatTokenService{
             this.encoder = encodingForModel(tiktokenModel);  // js-tiktoken
         } catch (error) {
             // console.log("Error getting model name from environment variable AZURE_OPENAI_API_DEPLOYMENT_NAME", error);
-            console.log("Model was not parsable from environment variable -> falling back to gpt-4 model for tokencount")
+            logWarn("Model was not parsable from environment variable, falling back to gpt-4 model for token count", {
+                requestedModel: model,
+                error: error instanceof Error ? error.message : String(error)
+            });
             this.encoder = encodingForModel("gpt-4");  // js-tiktoken
         }
-    }
-
-    public getTokenCountFromMessage(message: any){
-        const tokenList = this.encoder.encode(message.content || "");
+    }    public getTokenCountFromMessage(message: any){
+        let content = "";
+        
+        // Handle multimodal content (array) vs text content (string)
+        if (Array.isArray(message.content)) {
+            // Extract text content from multimodal message
+            content = message.content
+                .filter((item: any) => item.type === "text")
+                .map((item: any) => item.text)
+                .join(" ");
+        } else {
+            content = message.content || "";
+        }
+        
+        const tokenList = this.encoder.encode(content);
         return tokenList.length;
     }
 
@@ -26,7 +48,20 @@ export class ChatTokenService{
         let promptTokens = [];
 
         for (const message of topHistory) {
-            const tokenList = this.encoder.encode(message.content || "");
+            let content = "";
+            
+            // Handle multimodal content (array) vs text content (string)
+            if (Array.isArray(message.content)) {
+                // Extract text content from multimodal message
+                content = message.content
+                    .filter((item: any) => item.type === "text")
+                    .map((item: any) => item.text)
+                    .join(" ");
+            } else {
+                content = message.content || "";
+            }
+            
+            const tokenList = this.encoder.encode(content);
             promptTokens.push({ role: <string>message.role, tokens: <number>tokenList.length });
         }
 

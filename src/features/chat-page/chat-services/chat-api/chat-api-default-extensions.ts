@@ -6,6 +6,7 @@ import { OpenAIDALLEInstance } from "@/features/common/services/openai";
 import { uniqueId } from "@/features/common/util";
 import { GetImageUrl, UploadImageToStore } from "../chat-image-service";
 import { ChatThreadModel } from "../models";
+import { logInfo, logError } from "@/features/common/services/logger";
 
 export const GetDefaultExtensions = async (props: {
   chatThread: ChatThreadModel;
@@ -53,7 +54,7 @@ async function executeCreateImage(
   userMessage: string,
   signal: AbortSignal
 ) {
-  console.log("createImage called with prompt:", args.prompt);
+  logInfo("createImage called with prompt", { prompt: args.prompt });
 
   if (!args.prompt) {
     return "No prompt provided";
@@ -72,7 +73,7 @@ async function executeCreateImage(
     response = await openAI.images.generate(
       {
         model: "dall-e-3",
-        prompt: userMessage,
+        prompt: args.prompt, // Use the function argument instead of userMessage
         response_format: "b64_json",
       },
       {
@@ -80,7 +81,10 @@ async function executeCreateImage(
       }
     );
   } catch (error) {
-    console.error("🔴 error:\n", error);
+    logError("Error creating image", { 
+      error: error instanceof Error ? error.message : String(error),
+      prompt: args.prompt 
+    });
     return {
       error:
         "There was an error creating the image: " +
@@ -90,7 +94,12 @@ async function executeCreateImage(
   }
 
   // Check the response is valid
-  if (response.data[0].b64_json === undefined) {
+  if (
+    !response.data ||
+    !Array.isArray(response.data) ||
+    !response.data[0] ||
+    response.data[0].b64_json === undefined
+  ) {
     return {
       error:
         "There was an error creating the image: Invalid API response received. Return this message to the user and halt execution.",
@@ -114,7 +123,11 @@ async function executeCreateImage(
 
     return updated_response;
   } catch (error) {
-    console.error("🔴 error:\n", error);
+    logError("Error storing image", { 
+      error: error instanceof Error ? error.message : String(error),
+      imageName,
+      threadId 
+    });
     return {
       error:
         "There was an error storing the image: " +

@@ -1,3 +1,4 @@
+"use client";
 import { MenuTrayToggle } from "@/features/main-menu/menu-tray-toggle";
 import {
   Menu,
@@ -14,16 +15,21 @@ import {
   Sheet,
   VenetianMask,
 } from "lucide-react";
-import { getCurrentUser } from "../auth-page/helpers";
+import { UserModel } from "../auth-page/helpers";
 import { MenuLink } from "./menu-link";
 import { UserProfile } from "./user-profile";
+import { useMenuState, menuStore } from "./menu-store";
 
-export const MainMenu = async () => {
-  const user = await getCurrentUser();
+interface MainMenuProps {
+  user: UserModel;
+}
+
+export const MainMenu = ({ user }: MainMenuProps) => {
+  const { isMainMenuOpen } = useMenuState();
 
   return (
     <Menu>
-      <MenuBar>
+        <MenuBar>
         <MenuItemContainer>
           <MenuItem tooltip="Home" asChild>
             <MenuLink href="/chat" ariaLabel="Go to the Home page">

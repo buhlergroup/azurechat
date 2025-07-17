@@ -54,6 +54,7 @@ class ExtensionState {
   private createDefaultFunction(): ExtensionFunctionModel {
     const defaultFunction: ExtensionFunctionModel = {
       id: uniqueId(),
+      functionName: "NewFunction",
       code: exampleFunction,
       endpoint: "",
       endpointType: "GET",
@@ -114,6 +115,30 @@ class ExtensionState {
     const functionToUpdate = this.extension.functions.find((f) => f.id === id);
     if (functionToUpdate) {
       functionToUpdate.code = value;
+      // Also update the functionName from the JSON code to keep them in sync
+      try {
+        const functionSchema = JSON.parse(value);
+        if (functionSchema.name) {
+          functionToUpdate.functionName = functionSchema.name;
+        }
+      } catch (e) {
+        // If JSON parsing fails, don't update the functionName
+      }
+    }
+  }
+
+  public updateFunctionName(id: string, value: string) {
+    const functionToUpdate = this.extension.functions.find((f) => f.id === id);
+    if (functionToUpdate) {
+      functionToUpdate.functionName = value;
+      // Also update the name in the JSON code to keep them in sync
+      try {
+        const functionSchema = JSON.parse(functionToUpdate.code);
+        functionSchema.name = value;
+        functionToUpdate.code = JSON.stringify(functionSchema, null, 2);
+      } catch (e) {
+        // If JSON parsing fails, don't update the code
+      }
     }
   }
 
@@ -135,6 +160,15 @@ class ExtensionState {
   public openAndUpdate(models: ExtensionModel) {
     models.functions.forEach((f) => {
       f.isOpen = false;
+      // Handle migration: if functionName doesn't exist, extract from JSON code
+      if (!f.functionName) {
+        try {
+          const functionSchema = JSON.parse(f.code);
+          f.functionName = functionSchema.name || "Unknown";
+        } catch (e) {
+          f.functionName = "Unknown";
+        }
+      }
     });
 
     this.extension = {
@@ -205,10 +239,12 @@ export const FormToExtensionModel = (formData: FormData): ExtensionModel => {
   const endpointTypes = formData.getAll("endpoint-type[]");
   const endpoints = formData.getAll("endpoint[]");
   const codes = formData.getAll("code[]");
+  const functionNames = formData.getAll("function-name[]");
   const functions: Array<ExtensionFunctionModel> = endpointTypes.map(
     (endpointType, index) => {
       return {
         id: uniqueId(),
+        functionName: functionNames[index] as string,
         endpointType: endpointType as EndpointType,
         endpoint: endpoints[index] as string,
         code: codes[index] as string,
@@ -248,41 +284,10 @@ export const exampleFunction = `{
         },
         "example": {
           "ISSUE_NUMBER": "123"
-        },
-        "required": ["ISSUE_NUMBER"]
-      },
-      "body": {
-        "type": "object",
-        "description": "Body of the GitHub issue",
-        "properties": {
-          "title": {
-            "type": "string",
-            "description": "Title of the issue",
-            "example": "I'm having a problem with this."
-          },
-          "body": {
-            "type": "string",
-            "description": "Body of the issue",
-            "example": "I'm having a problem with this."
-          },
-          "labels": {
-            "type": "array",
-            "description": "Labels to add to the issue",
-            "items": {
-              "type": "string",
-              "example": "bug"
-            }
-          }
-        },
-        "example": {
-          "title": "I'm having a problem with this.",
-          "body": "I'm having a problem with this.",
-          "labels": ["bug"]
-        },
-        "required": ["title"]
+        }
       }
     },
-    "required": ["body", "query"]
+    "required": ["query"]
   },
-  "description": "You must use this to only update an existing GitHub issue"
+  "description": "Update a GitHub issue with new information"
 }`;

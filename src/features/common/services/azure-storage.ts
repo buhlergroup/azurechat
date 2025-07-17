@@ -1,5 +1,6 @@
 import { BlobServiceClient, RestError } from "@azure/storage-blob";
 import { ServerActionResponse } from "../server-action-response";
+import { logInfo, logError } from "./logger";
 
 // initialize the blobServiceClient
 const InitBlobServiceClient = () => {
@@ -34,7 +35,11 @@ export const UploadBlob = async (
 
   // Check for upload success
   if (response.errorCode !== undefined) {
-    console.error(response);
+    logError("Azure Storage upload failed", { 
+      errorCode: response.errorCode,
+      blobName: blobName,
+      containerName: containerName 
+    });
     return {
       status: "ERROR",
       errors: [
@@ -45,7 +50,11 @@ export const UploadBlob = async (
     };
   }
 
-  console.log("Upload of generated image was successfull");
+  logInfo("Azure Storage upload successful", { 
+    blobName, 
+    containerName,
+    url: blockBlobClient.url 
+  });
 
   return {
     status: "OK",
@@ -53,7 +62,11 @@ export const UploadBlob = async (
   };
   
   } catch (error){
-    console.error(error);
+    logError("Azure Storage upload error", { 
+      error: error instanceof Error ? error.message : String(error),
+      blobName,
+      containerName 
+    });
     throw error;
   }
 };

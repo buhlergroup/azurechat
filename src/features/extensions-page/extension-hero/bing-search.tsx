@@ -21,7 +21,7 @@ export const BingSearch = () => {
   "properties": {
     "query": {
       "type": "object",
-      "description": "Ues this as the search query parameters",
+      "description": "Use this as the search query parameters",
       "properties": {
         "BING_SEARCH_QUERY": {
           "type": "string",
@@ -29,17 +29,17 @@ export const BingSearch = () => {
           "example": "What is the current weather in Sydney, Australia?"
         }
       },
-      "example": {
-        "BING_SEARCH_QUERY": "What is the current weather in Sydney, Australia?"
-      },
-      "required": ["BING_SEARCH_QUERY"]
+      "required": ["BING_SEARCH_QUERY"],
+      "additionalProperties": false
     }
   },
-  "required": ["query"]
+  "required": ["query"],
+  "additionalProperties": false
 },
 "description": "Use BingSearch to search for information on the web to bring up to date information"
 }
           `,
+          functionName: "BingSearch",
           endpoint:
             "https://api.bing.microsoft.com/v7.0/search?q=BING_SEARCH_QUERY",
           id: uniqueId(),

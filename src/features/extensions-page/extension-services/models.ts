@@ -35,6 +35,12 @@ export const EndpointTypeSchema = z.enum([
 
 export const ExtensionFunctionSchema = z.object({
   id: z.string({ required_error: "Function ID is required" }),
+  functionName: z
+    .string()
+    .min(1, {
+      message: "Function name cannot be empty",
+    })
+    .refine(refineFromEmpty, "Function name cannot be empty"),
   code: z
     .string()
     .min(1, {

@@ -3,9 +3,12 @@ import { CHAT_DEFAULT_PERSONA } from "@/features/theme/theme-config";
 import { VenetianMask } from "lucide-react";
 import { FC } from "react";
 import { ChatDocumentModel, ChatThreadModel } from "../chat-services/models";
+import { chatStore, useChat } from "../chat-store";
 import { DocumentDetail } from "./document-detail";
 import { ExtensionDetail } from "./extension-detail";
+import { ModelSelector } from "./model-selector";
 import { PersonaDetail } from "./persona-detail";
+import { MobileHeader } from "@/features/ui/mobile-header";
 
 interface Props {
   chatThread: ChatThreadModel;
@@ -14,6 +17,7 @@ interface Props {
 }
 
 export const ChatHeader: FC<Props> = (props) => {
+  const chat = useChat();
   const persona =
     props.chatThread.personaMessageTitle === "" ||
     props.chatThread.personaMessageTitle === undefined
@@ -21,18 +25,27 @@ export const ChatHeader: FC<Props> = (props) => {
       : props.chatThread.personaMessageTitle;
 
   return (
-    <div className="bg-background border-b flex items-center py-2">
-      <div className="container max-w-3xl flex justify-between items-center">
-        <div className="flex flex-col">
-          <span className="max-w-96 break-words">{props.chatThread.name}</span>
-          <span className="text-sm text-muted-foreground flex gap-1 items-center">
-            <VenetianMask size={18} />
-            {persona}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <PersonaDetail chatThread={props.chatThread}/>
-          <DocumentDetail chatDocuments={props.chatDocuments} />
+    <>
+      {/* Mobile header with hamburger menu */}
+      <MobileHeader>
+        <div className="flex flex-wrap items-center min-w-0 flex-1 gap-2">
+          {/* Model selector */}
+          <div className="shrink-0">
+            <ModelSelector
+              selectedModel={chat.selectedModel}
+              onModelChange={async (model) => await chatStore.updateSelectedModel(model)}
+              disabled={chat.loading !== "idle"}
+            />
+          </div>
+          
+          {/* Chat thread info - can shrink */}
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="truncate text-sm">
+              {props.chatThread.name}
+            </span>
+          </div>
+          
+          {/* Extension detail - always visible on mobile */}
           <ExtensionDetail
             disabled={props.chatDocuments.length !== 0}
             extensions={props.extensions}
@@ -41,7 +54,52 @@ export const ChatHeader: FC<Props> = (props) => {
             parent={"chat"}
           />
         </div>
+      </MobileHeader>
+
+      {/* Desktop header */}
+      <div className="bg-background border-b hidden md:flex items-center py-2 px-3">
+        <div className="flex items-center min-w-0 w-full max-w-3xl mx-auto">
+          {/* Main content area that can wrap */}
+          <div className="flex flex-wrap items-center min-w-0 flex-1 gap-2">
+            {/* Model selector */}
+            <div className="shrink-0">
+              <ModelSelector
+                selectedModel={chat.selectedModel}
+                onModelChange={async (model) => await chatStore.updateSelectedModel(model)}
+                disabled={chat.loading !== "idle"}
+              />
+            </div>
+            
+            {/* Chat thread info - can shrink */}
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="truncate text-base">
+                {props.chatThread.name}
+              </span>
+              <span className="text-sm text-muted-foreground flex gap-1 items-center">
+                <VenetianMask size={14} className="shrink-0" />
+                <span className="truncate">{persona}</span>
+              </span>
+            </div>
+            
+            {/* Action buttons */}
+            <div className="flex gap-1 shrink-0">
+              {/* Hide persona and document details on smaller screens */}
+              <div className="hidden lg:flex gap-1">
+                <PersonaDetail chatThread={props.chatThread}/>
+                <DocumentDetail chatDocuments={props.chatDocuments} />
+              </div>
+              {/* Extension detail - always visible */}
+              <ExtensionDetail
+                disabled={props.chatDocuments.length !== 0}
+                extensions={props.extensions}
+                installedExtensionIds={props.chatThread.extension}
+                chatThreadId={props.chatThread.id}
+                parent={"chat"}
+              />
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };

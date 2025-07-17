@@ -7,6 +7,7 @@ import { Badge } from "@/features/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/features/ui/card"
 import { PlusCircle, WrenchIcon, RefreshCw, Trash2 } from "lucide-react"
 import Loading from "@/app/(authenticated)/chat/loading"
+import { logError } from "@/features/common/services/logger"
 
 type ChangelogEntry = {
   version: string
@@ -32,7 +33,7 @@ export function Changelog() {
         setError(null)
       } catch (err) {
         setError("Failed to load changelog. Please try again later.")
-        console.error(err)
+        logError("Failed to load changelog", { error: err instanceof Error ? err.message : String(err) })
       } finally {
         setLoading(false)
       }

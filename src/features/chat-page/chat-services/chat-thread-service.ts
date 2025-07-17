@@ -384,6 +384,26 @@ export const UpdateChatTitle = async (
   }
 };
 
+export const UpdateChatThreadSelectedModel = async (
+  chatThreadId: string,
+  selectedModel: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const response = await FindChatThreadForCurrentUser(chatThreadId);
+    if (response.status === "OK") {
+      const chatThread = response.response;
+      chatThread.selectedModel = selectedModel as any;
+      return await UpsertChatThread(chatThread);
+    }
+    return response;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
 export const CreateChatAndRedirect = async () => {
   const response = await CreateChatThread();
   if (response.status === "OK") {

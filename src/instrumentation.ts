@@ -1,4 +1,5 @@
 import { RequestOptions } from "https";
+import { logInfo, logDebug } from "./features/common/services/logger";
 
 export function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
@@ -44,8 +45,10 @@ export function register() {
       },
     });
 
-    console.log(metrics.getMeterProvider());
+    logDebug("Meter provider initialized", { hasMeterProvider: !!metrics.getMeterProvider() });
 
-    console.log("Application Insights Connection String: ", process.env.APPLICATIONINSIGHTS_CONNECTION_STRING)
+    logInfo("Application Insights Connection String configured", { 
+      hasConnectionString: !!process.env.APPLICATIONINSIGHTS_CONNECTION_STRING 
+    });
   }
 }

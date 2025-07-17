@@ -1,35 +1,48 @@
+"use client";
 import * as React from "react";
 
 import { cn } from "@/ui/lib";
 import { LucideProps } from "lucide-react";
 import { Button, ButtonLinkVariant, ButtonProps } from "./button";
 import { TooltipProvider } from "./tooltip";
+import { useMenuState, menuStore } from "@/features/main-menu/menu-store";
 
 const Menu = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("flex h-full", className)} {...props}>
-    <TooltipProvider>{props.children}</TooltipProvider>
-  </div>
-));
+>(({ className, ...props }, ref) => {
+  return (
+    <div ref={ref} className={cn("flex h-full", className)} {...props}>
+      <TooltipProvider>{props.children}</TooltipProvider>
+    </div>
+  );
+});
 Menu.displayName = "Menu";
 
 const MenuBar = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "bg-background z-10 p-2 w-16 flex flex-col justify-between h-full items-stretch border-r",
-      className
-    )}
-    {...props}
-  >
-    <TooltipProvider>{props.children}</TooltipProvider>
-  </div>
-));
+>(({ className, ...props }, ref) => {
+  const { isMainMenuOpen } = useMenuState();
+  
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "bg-background z-10 p-2 w-16 flex flex-col justify-between h-full items-stretch border-r",
+        // Desktop: always show, Mobile: show only when isMainMenuOpen is true
+        "md:flex",
+        isMainMenuOpen ? "flex" : "hidden md:flex",
+        // Keep relative positioning to maintain document flow
+        "relative",
+        className
+      )}
+      {...props}
+    >
+      <TooltipProvider>{props.children}</TooltipProvider>
+    </div>
+  );
+});
 MenuBar.displayName = "MenuBar";
 
 type AnchorProps = ButtonProps & {
