@@ -1,11 +1,12 @@
 import { LoadingIndicator } from "../../loading";
 import { useCurrentToolCall } from "@/features/chat-page/chat-store";
 import { Wrench } from "lucide-react";
+import { logDebug } from "@/features/common/services/logger";
 
 export const ChatLoading = () => {
   const currentToolCall = useCurrentToolCall();
 
-  console.debug("🔧 ChatLoading: Current tool call", {
+  logDebug("ChatLoading: Current tool call", {
     hasToolCall: !!currentToolCall,
     toolCallName: currentToolCall?.name,
     toolCallArgs: currentToolCall?.arguments,

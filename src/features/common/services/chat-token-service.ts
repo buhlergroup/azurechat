@@ -1,4 +1,5 @@
 import { Tiktoken, TiktokenModel, encodingForModel } from "js-tiktoken";
+import { logWarn } from "./logger";
 
 /**
  * ChatTokenService provides token counting capabilities using js-tiktoken.
@@ -19,7 +20,10 @@ export class ChatTokenService{
             this.encoder = encodingForModel(tiktokenModel);  // js-tiktoken
         } catch (error) {
             // console.log("Error getting model name from environment variable AZURE_OPENAI_API_DEPLOYMENT_NAME", error);
-            console.log("Model was not parsable from environment variable -> falling back to gpt-4 model for tokencount")
+            logWarn("Model was not parsable from environment variable, falling back to gpt-4 model for token count", {
+                requestedModel: model,
+                error: error instanceof Error ? error.message : String(error)
+            });
             this.encoder = encodingForModel("gpt-4");  // js-tiktoken
         }
     }    public getTokenCountFromMessage(message: any){

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MODEL_CONFIGS, ChatModel, ModelConfig } from "@/features/chat-page/chat-services/models";
+import { logError } from "@/features/common/services/logger";
 
 /**
  * API endpoint to get available models based on environment variables
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
       defaultModel: availableModelIds.length > 0 ? availableModelIds[0] : "gpt-4.1"
     });
   } catch (error) {
-    console.error("Error getting available models:", error);
+    logError("Error getting available models", { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: "Failed to get available models" },
       { status: 500 }

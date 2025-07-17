@@ -13,6 +13,7 @@ import { RevalidateCache } from "../common/navigation-helpers";
 import { InputImageStore } from "../ui/chat/chat-input-area/input-image-store";
 import { textToSpeechStore } from "./chat-input/speech/use-text-to-speech";
 import { ResetInputRows } from "./chat-input/use-chat-input-dynamic-height";
+import { logDebug, logInfo, logWarn, logError } from "../common/services/logger";
 import {
   AddExtensionToChatThread,
   RemoveExtensionFromChatThread,
@@ -231,14 +232,14 @@ class ChatState {
           done = doneReading;
 
                   const chunkValue = decoder.decode(value);
-        console.debug("🔍 Chat Store: Processing chunk", { 
+        logDebug("Chat Store: Processing chunk", { 
           chunkLength: chunkValue.length,
           chunkPreview: chunkValue.substring(0, 200) + "...",
           isDone: doneReading
         });
         parser.feed(chunkValue);
         }
-        console.debug("🔍 Chat Store: Stream ended", {
+        logDebug("Chat Store: Stream ended", {
           timestamp: new Date().toISOString(),
           lastMessageLength: this.lastMessage?.length || 0,
           currentAssistantMessageId: this.currentAssistantMessageId,
@@ -248,7 +249,7 @@ class ChatState {
         // If we have a last message but no finalContent event was received, 
         // treat this as completion
         if (this.lastMessage && this.currentAssistantMessageId && this.loading === "loading") {
-          console.info("🎯 Chat Store: Stream ended without finalContent event, treating as completion");
+          logInfo("Chat Store: Stream ended without finalContent event, treating as completion");
           
           // Find the existing assistant message and ensure it has the final content
           const existingMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
@@ -287,7 +288,7 @@ class ChatState {
             type: "layout",
           });
         } catch (error) {
-          console.error("Failed to update chat title:", error);
+          logError("Failed to update chat title", { error: error instanceof Error ? error.message : String(error) });
           // Don't show error to user since this is non-critical
         }
       }, 0);
@@ -320,14 +321,14 @@ class ChatState {
 
   private createStreamParser(newUserMessage: ChatMessageModel) {
     return createParser((event: ParsedEvent | ReconnectInterval) => {
-      console.debug("🔍 Chat Store: Parser received event", {
+      logDebug("Chat Store: Parser received event", {
         eventType: event.type,
         eventName: event.type === "event" ? event.event : undefined,
         dataLength: event.type === "event" ? event.data?.length || 0 : 0
       });
       
       if (event.type === "event") {
-        console.debug("🔍 Chat Store: Received event", { 
+        logDebug("Chat Store: Received event", { 
           dataLength: event.data?.length || 0,
           eventType: event.type,
           eventName: event.event,
@@ -336,7 +337,7 @@ class ChatState {
         try {
           const responseType = JSON.parse(event.data) as AzureChatCompletion;
           
-          console.debug("🔍 Chat Store: Parsed response", { 
+          logDebug("Chat Store: Parsed response", { 
             type: responseType.type,
             hasContent: !!responseType.response,
             responseType: typeof responseType.type,
@@ -348,7 +349,7 @@ class ChatState {
             case "content":
               const contentChunk = responseType.response.choices?.[0]?.message?.content || "";
               
-              console.info("📝 Chat Store: Received content event", {
+              logInfo("Chat Store: Received content event", {
                 contentLength: contentChunk.length,
                 messageId: this.currentAssistantMessageId,
                 tempReasoningContentLength: this.tempReasoningContent?.length || 0,
@@ -358,7 +359,7 @@ class ChatState {
               // Use consistent message ID for all chunks of the same response
               if (!this.currentAssistantMessageId) {
                 this.currentAssistantMessageId = responseType.response.id || uniqueId();
-                console.debug("📝 Chat Store: Created new assistant message ID", {
+                logDebug("Chat Store: Created new assistant message ID", {
                   messageId: this.currentAssistantMessageId
                 });
               }
@@ -408,7 +409,7 @@ class ChatState {
               this.loading = "idle";
               break;
             case "reasoning":
-              console.info("🧠 Chat Store: Received reasoning event", { 
+              logInfo("Chat Store: Received reasoning event", { 
                 contentLength: responseType.response?.length || 0,
                 messageId: this.currentAssistantMessageId,
                 tempReasoningContentLength: this.tempReasoningContent?.length || 0
@@ -423,7 +424,7 @@ class ChatState {
               const targetMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
               
               if (targetMessageIndex !== -1) {
-                console.debug("🧠 Chat Store: Updating existing assistant message with reasoning");
+                logDebug("Chat Store: Updating existing assistant message with reasoning");
                 // Update the message in a way that triggers Valtio reactivity
                 const targetMessage = this.messages[targetMessageIndex];
                 const updatedReasoningContent = (targetMessage.reasoningContent || "") + responseType.response;
@@ -434,7 +435,7 @@ class ChatState {
                   reasoningContent: updatedReasoningContent
                 };
               } else {
-                console.debug("🧠 Chat Store: Creating assistant message for reasoning display");
+                logDebug("Chat Store: Creating assistant message for reasoning display");
                 // Create an assistant message immediately to show reasoning in real-time
                 const reasoningMessage: ChatMessageModel = {
                   id: this.currentAssistantMessageId,
@@ -457,7 +458,7 @@ class ChatState {
               }
               break;
             case "functionCall":
-              console.info("🔧 Chat Store: Received function call event", {
+              logInfo("Chat Store: Received function call event", {
                 functionName: (responseType as any).response?.name,
                 arguments: (responseType as any).response?.arguments,
                 messageId: this.currentAssistantMessageId,
@@ -486,13 +487,13 @@ class ChatState {
                 arguments: (responseType as any).response.arguments
               };
               
-              console.info("🔧 Chat Store: Set current tool call", {
+              logInfo("Chat Store: Set current tool call", {
                 name: this.currentToolCall.name,
                 arguments: this.currentToolCall.arguments
               });
               break;
             case "functionCallResult":
-              console.info("✅ Chat Store: Received function call result", {
+              logInfo("Chat Store: Received function call result", {
                 resultLength: responseType.response?.length || 0,
                 messageId: this.currentAssistantMessageId,
                 responseType: responseType.type,
@@ -511,11 +512,11 @@ class ChatState {
               // Clear current tool call for loading overlay
               this.currentToolCall = null;
               
-              console.info("🔧 Chat Store: Cleared current tool call");
+              logInfo("Chat Store: Cleared current tool call");
               break;
             case "finalContent":
               // The finalContent event signals that streaming is complete
-              console.info("🎯 Chat Store: Processing finalContent event", {
+              logInfo("Chat Store: Processing finalContent event", {
                 lastMessageLength: this.lastMessage?.length || 0,
                 currentAssistantMessageId: this.currentAssistantMessageId,
                 messagesCount: this.messages.length,
@@ -530,7 +531,7 @@ class ChatState {
                 // Find the existing assistant message and ensure it has the final content
                 const existingMessageIndex = this.messages.findIndex(m => m.id === this.currentAssistantMessageId && m.role === "assistant");
                 
-                console.debug("🎯 Chat Store: Looking for existing assistant message", {
+                logDebug("Chat Store: Looking for existing assistant message", {
                   messageId: this.currentAssistantMessageId,
                   existingMessageIndex,
                   totalMessages: this.messages.length
@@ -545,26 +546,26 @@ class ChatState {
                     ...existingMessage,
                     content: finalContent
                   };
-                  console.debug("🎯 Chat Store: Updated final message content", {
+                  logDebug("Chat Store: Updated final message content", {
                     messageId: this.currentAssistantMessageId,
                     contentLength: finalContent.length,
                     toolCallCount: this.toolCallHistory[this.currentAssistantMessageId]?.length || 0
                   });
                 } else {
-                  console.warn("🎯 Chat Store: No existing assistant message found for final content", {
+                  logWarn("Chat Store: No existing assistant message found for final content", {
                     messageId: this.currentAssistantMessageId,
                     availableMessageIds: this.messages.map(m => ({ id: m.id, role: m.role }))
                   });
                 }
               } else {
-                console.warn("🎯 Chat Store: Missing lastMessage or currentAssistantMessageId", {
+                logWarn("Chat Store: Missing lastMessage or currentAssistantMessageId", {
                   hasLastMessage: !!this.lastMessage,
                   hasCurrentAssistantMessageId: !!this.currentAssistantMessageId
                 });
               }
               
               // Set loading to idle and complete the conversation
-              console.info("🎯 Chat Store: Setting loading to idle and completing conversation");
+              logInfo("Chat Store: Setting loading to idle and completing conversation");
               this.loading = "idle";
               this.completed(this.lastMessage);
               
@@ -573,7 +574,7 @@ class ChatState {
               
               // Reset the current assistant message ID for the next conversation
               // Do this last to avoid any race conditions
-              console.info("🎯 Chat Store: Resetting currentAssistantMessageId for next conversation");
+              logInfo("Chat Store: Resetting currentAssistantMessageId for next conversation");
               this.currentAssistantMessageId = "";
               this.currentToolCall = null;
               break;
@@ -587,7 +588,7 @@ class ChatState {
                   eventType === "response.content_part.added" ||
                   eventType === "response.output_text.done" ||
                   eventType === "response.content_part.done") {
-                console.debug("ℹ️ Chat Store: Received informational event", {
+                logDebug("Chat Store: Received informational event", {
                   eventType: eventType,
                   hasResponse: !!(responseType as any).response
                 });
@@ -596,7 +597,7 @@ class ChatState {
                 break;
               }
               
-              console.log("❓ Chat Store: Unhandled response type", {
+              logWarn("Chat Store: Unhandled response type", {
                 type: eventType,
                 hasResponse: !!(responseType as any).response,
                 responseData: (responseType as any).response
@@ -604,7 +605,7 @@ class ChatState {
               break;
           }
         } catch (error) {
-          console.error("🔴 Chat Store: Error parsing event data:", { 
+          logError("Chat Store: Error parsing event data", { 
             error: error instanceof Error ? error.message : String(error),
             eventDataLength: event.data?.length || 0 
           });

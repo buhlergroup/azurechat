@@ -19,6 +19,7 @@ import { createConversationState, startConversation, continueConversation, Conve
 import { FindAllExtensionForCurrentUserAndIds, FindSecureHeaderValue } from "@/features/extensions-page/extension-services/extension-service";
 import { reportUserChatMessage } from "@/features/common/services/chat-metrics-service";
 import { FindAllChatDocuments } from "../chat-document-service";
+import { logDebug, logInfo, logError } from "@/features/common/services/logger";
 
 export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) => {
   // Get current chat thread
@@ -34,7 +35,7 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
 
   // Validate model configuration
   if (!modelConfig?.deploymentName) {
-    console.error("🔴 Missing deployment configuration", { 
+    logError("Missing deployment configuration", { 
       selectedModel, 
       availableModels: Object.keys(MODEL_CONFIGS) 
     });
@@ -46,7 +47,7 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
   try {
     openaiInstance = modelConfig.getInstance();
   } catch (error) {
-    console.error("🔴 Failed to create OpenAI instance", { 
+    logError("Failed to create OpenAI instance", { 
       selectedModel, 
       error: error instanceof Error ? error.message : String(error) 
     });
@@ -90,16 +91,16 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
       effort: reasoningEffort,
       summary: "auto"
     };
-    console.info("🧠 Using reasoning model", { selectedModel, reasoningEffort });
+    logInfo("Using reasoning model", { selectedModel, reasoningEffort });
   }
 
-  console.info("🚀 Starting chat with streaming function calling", {
+  logInfo("Starting chat with streaming function calling", {
     model: selectedModel,
     toolsCount: tools.length,
     hasReasoning: !!requestOptions.reasoning,
     messageLength: props.message.length
   });
-  console.debug("🚀 User message preview:", props.message.substring(0, 200) + "...");
+  logDebug("User message preview", { preview: props.message.substring(0, 200) + "..." });
 
   // Create conversation manager with context
   const conversationContext = {
@@ -155,18 +156,18 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
       
       while (!isFinished) {
         try {
-          console.debug("🔄 Processing conversation stream...");
+          logDebug("Processing conversation stream");
           
           const responseStream = OpenAIResponsesStream({
             stream: currentStream,
             chatThread: currentChatThread,
             conversationState: currentState,
             onContinue: async (updatedState: ConversationState) => {
-              console.debug("🔄 Function calls complete, will continue conversation");
+              logDebug("Function calls complete, will continue conversation");
               currentState = updatedState;
             },
             onComplete: async () => {
-              console.info("✅ Conversation completed");
+              logInfo("Conversation completed");
               isFinished = true;
             }
           });
@@ -188,12 +189,12 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
           
           // If not finished but stream ended, it means we need to continue
           if (!isFinished && streamEnded) {
-            console.debug("🔄 Starting continuation stream...");
+            logDebug("Starting continuation stream");
             currentStream = await continueConversation(currentState);
           }
           
         } catch (error) {
-          console.error("🔴 Stream processing error:", { 
+          logError("Stream processing error", { 
             error: error instanceof Error ? error.message : String(error),
             isFinished
           });
@@ -202,7 +203,7 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
         }
       }
       
-      console.debug("✅ All streams completed, closing controller");
+      logDebug("All streams completed, closing controller");
       controller.close();
     }
   });
@@ -230,7 +231,7 @@ async function _getHistory(chatThread: ChatThreadModel) {
     return mapOpenAIChatMessages(historyResults).reverse();
   }
 
-  console.error("🔴 Error getting history:", historyResponse.errors);
+  logError("Error getting history", { errors: historyResponse.errors });
   return [];
 }
 
@@ -238,14 +239,14 @@ async function _getHistory(chatThread: ChatThreadModel) {
 async function _getAvailableTools(chatThread: ChatThreadModel) {
   const tools = [];
   
-  console.log(`🔧 Chat thread extensions: ${chatThread.extension?.join(", ") || "none"}`);
+  logInfo("Chat thread extensions", { extensions: chatThread.extension?.join(", ") || "none" });
   
   // Always add create_image function (core feature) - only this specific function
   const builtInFunctions = await getAvailableFunctions();
   const createImageFunction = builtInFunctions.find(f => f.name === "create_image");
   if (createImageFunction) {
     tools.push(createImageFunction);
-    console.log(`🎨 Added create_image function (core feature)`);
+    logInfo("Added create_image function (core feature)");
   }
   
   // Add dynamic extensions ONLY if they are configured for this chat thread
@@ -264,31 +265,36 @@ async function _getAvailableTools(chatThread: ChatThreadModel) {
               const headerValueResponse = await FindSecureHeaderValue(header.id);
               if (headerValueResponse.status === "OK") {
                 resolvedHeaders[header.key] = headerValueResponse.response;
-              } else {
-                console.error(`🔴 Failed to resolve header ${header.key}:`, headerValueResponse.errors);
-              }
+                          } else {
+              logError("Failed to resolve header", { 
+                headerKey: header.key, 
+                errors: headerValueResponse.errors 
+              });
             }
-            
-            // Register the dynamic function
-            const dynamicFunction = await registerDynamicFunction(
-              parsedFunction.name,
-              parsedFunction.description,
-              parsedFunction.parameters,
-              functionDef.endpoint,
-              functionDef.endpointType,
-              resolvedHeaders
-            );
-            
-            tools.push(dynamicFunction);
-            console.log(`📁 Registered dynamic function: ${parsedFunction.name}`);
-          } catch (error) {
-            console.error(`🔴 Failed to register extension function:`, error);
           }
+          
+          // Register the dynamic function
+          const dynamicFunction = await registerDynamicFunction(
+            parsedFunction.name,
+            parsedFunction.description,
+            parsedFunction.parameters,
+            functionDef.endpoint,
+            functionDef.endpointType,
+            resolvedHeaders
+          );
+          
+          tools.push(dynamicFunction);
+          logInfo("Registered dynamic function", { functionName: parsedFunction.name });
+        } catch (error) {
+          logError("Failed to register extension function", { 
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
         }
       }
     }
   }
 
-  console.log(`🔧 Available tools: ${tools.map(t => t.name).join(", ")}`);
+  logInfo("Available tools", { toolNames: tools.map(t => t.name).join(", ") });
   return tools;
 }

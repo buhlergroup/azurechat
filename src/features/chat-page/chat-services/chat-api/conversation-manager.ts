@@ -3,6 +3,7 @@ import "server-only";
 
 import { uniqueId } from "@/features/common/util";
 import { executeFunction, FunctionCall } from "./function-registry";
+import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 
 export interface ConversationContext {
   threadId: string;
@@ -46,7 +47,7 @@ export async function createConversationState(
  * Start the initial conversation stream
  */
 export async function startConversation(state: ConversationState) {
-  console.info("🚀 Starting initial conversation", {
+  logInfo("Starting initial conversation", {
     model: state.context.requestOptions.model,
     toolsCount: state.context.requestOptions.tools?.length || 0,
     hasStream: true
@@ -77,12 +78,12 @@ export async function processFunctionCall(
   updatedState: ConversationState;
 }> {
   try {
-    console.info("🔧 Executing function", { 
+    logInfo("Executing function", { 
       name: functionCall.name,
       callId: functionCall.call_id,
       argsLength: functionCall.arguments?.length || 0
     });
-    console.debug("🔧 Function arguments:", functionCall.arguments);
+    logDebug("Function arguments", { arguments: functionCall.arguments });
 
     const parsedFunctionCall: FunctionCall = {
       name: functionCall.name,
@@ -96,12 +97,12 @@ export async function processFunctionCall(
       signal: state.context.signal,
     });
 
-    console.info("✅ Function execution completed", { 
+    logInfo("Function execution completed", { 
       name: functionCall.name,
       success: true,
       outputLength: result.output?.length || 0
     });
-    console.debug("✅ Function result preview:", result.output.substring(0, 200) + "...");
+    logDebug("Function result preview", { preview: result.output.substring(0, 200) + "..." });
 
     // Create updated conversation input
     const updatedConversationInput = [
@@ -126,7 +127,7 @@ export async function processFunctionCall(
 
     return { success: true, result: result.output, updatedState };
   } catch (error) {
-    console.error("🔴 Function execution failed", { 
+    logError("Function execution failed", { 
       functionName: functionCall.name,
       callId: functionCall.call_id,
       error: error instanceof Error ? error.message : String(error)
@@ -163,7 +164,7 @@ export async function processFunctionCall(
  * Continue the conversation with function results
  */
 export async function continueConversation(state: ConversationState) {
-  console.info("🔄 Continuing conversation with function results", {
+  logInfo("Continuing conversation with function results", {
     inputLength: state.conversationInput?.length || 0,
     model: state.context.requestOptions.model
   });

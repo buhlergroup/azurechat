@@ -6,6 +6,7 @@ import {
   SpeechConfig,
   SpeechSynthesizer,
 } from "microsoft-cognitiveservices-speech-sdk";
+import { logError } from "@/features/common/services/logger";
 import { proxy, useSnapshot } from "valtio";
 import { GetSpeechToken } from "./speech-service";
 import { speechToTextStore } from "./use-speech-to-text";
@@ -60,7 +61,7 @@ class TextToSpeech {
         synthesizer.close();
       },
       function (err) {
-        console.error("err - " + err);
+        logError("Text-to-speech error", { error: err });
         synthesizer.close();
       }
     );

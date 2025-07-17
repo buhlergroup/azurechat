@@ -1,6 +1,7 @@
 import { AI_NAME } from "@/features/theme/theme-config";
 import { uniqueId } from "@/features/common/util";
 import { CreateChatMessage, UpsertChatMessage } from "../chat-message-service";
+import { logDebug, logInfo, logError, logWarn } from "@/features/common/services/logger";
 import {
   AzureChatCompletion,
   AzureChatCompletionAbort,
@@ -51,7 +52,7 @@ export const OpenAIResponsesStream = (props: {
     };
     
     await UpsertChatMessage(messageToSave);
-    console.debug("💾 Message saved", { 
+    logDebug("Message saved", { 
       messageId, 
       contentLength: content.length,
       threadId: chatThread.id 
@@ -69,7 +70,7 @@ export const OpenAIResponsesStream = (props: {
     controller: ReadableStreamDefaultController, 
     streamResponse: (event: string, value: string) => void
   ) => {
-    console.info("🎯 Response completion handler called", { 
+    logInfo("Response completion handler called", { 
       eventType: event.type,
       messageLength: lastMessage?.length || 0,
       hasReasoning: !!reasoningContent
@@ -90,7 +91,11 @@ export const OpenAIResponsesStream = (props: {
     // Report token usage
     if (event.response?.usage) {
       const { input_tokens, output_tokens, total_tokens } = event.response.usage;
-      console.log(`📊 Token usage: ${input_tokens}+${output_tokens}=${total_tokens}`);
+      logInfo("Token usage", { 
+        inputTokens: input_tokens,
+        outputTokens: output_tokens,
+        totalTokens: total_tokens
+      });
       
       await reportCompletionTokens(output_tokens, chatThread.selectedModel || "gpt-4o", {
         personaMessageTitle: chatThread.personaMessageTitle,
@@ -112,7 +117,7 @@ export const OpenAIResponsesStream = (props: {
       type: "finalContent",
       response: lastMessage,
     };
-    console.log("🎯 Sending finalContent event to frontend", {
+    logInfo("Sending finalContent event to frontend", {
       messageLength: lastMessage.length,
       responseType: finalResponse.type,
       responseData: JSON.stringify(finalResponse)
@@ -123,7 +128,7 @@ export const OpenAIResponsesStream = (props: {
     await Promise.resolve();
     
     // Add a longer delay to ensure the frontend has time to process the finalContent event
-    console.log("⏳ Waiting for frontend to process finalContent event...");
+    logDebug("Waiting for frontend to process finalContent event");
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // Signal completion
@@ -132,10 +137,10 @@ export const OpenAIResponsesStream = (props: {
     }
     
     // Ensure the stream is fully flushed before closing
-    console.log("🔒 Flushing stream before closing...");
+    logDebug("Flushing stream before closing");
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log("🔒 Closing stream controller");
+    logDebug("Closing stream controller");
     controller.close();
   };
 
@@ -146,7 +151,7 @@ export const OpenAIResponsesStream = (props: {
         if (controller.desiredSize !== null) {
           const eventData = `event: ${event} \n`;
           const dataData = `data: ${value} \n\n`;
-          console.debug("🔍 Backend: Sending SSE event", {
+          logDebug("Backend: Sending SSE event", {
             eventType: event,
             dataLength: value.length,
             dataPreview: value.substring(0, 200) + "..."
@@ -164,7 +169,7 @@ export const OpenAIResponsesStream = (props: {
       let currentConversationState = conversationState; // Use passed conversation state
       // Use a consistent message ID across the entire conversation
       const messageId = conversationState?.messageId || uniqueId();
-      console.debug("🔄 OpenAI Responses Stream: Using message ID", {
+      logDebug("OpenAI Responses Stream: Using message ID", {
         messageId,
         hasConversationState: !!conversationState,
         conversationStateMessageId: conversationState?.messageId
@@ -173,11 +178,11 @@ export const OpenAIResponsesStream = (props: {
       try {
         for await (const event of stream) {
           // Log event type and basic info
-          console.log(`🔍 SSE event: ${event.type}`);
+          logDebug("SSE event", { eventType: event.type });
 
           switch (event.type) {
             case "response.created":
-              console.log("📨 Response created");
+              logDebug("Response created");
               break;
 
             case "response.output_text.delta":
@@ -205,7 +210,7 @@ export const OpenAIResponsesStream = (props: {
             case "response.output_item.added":
               // Function call started
               if (event.item?.type === "function_call") {
-                console.log(`🔧 Function call started: ${event.item.name}`);
+                logInfo("Function call started", { functionName: event.item.name });
                 functionCalls[event.output_index] = {
                   ...event.item,
                   arguments: ""
@@ -271,11 +276,11 @@ export const OpenAIResponsesStream = (props: {
             case "response.output_item.done":
               // Check if this was a function call completion
               if (event.item?.type === "function_call") {
-                console.log(`🔧 Function call completed: ${event.item.name}`);
+                logInfo("Function call completed", { functionName: event.item.name });
                 
                 // If we have conversation state and function calls, signal continuation
                 if (currentConversationState && Object.keys(functionCalls).length > 0) {
-                  console.log("🔄 Function calls complete, signaling for conversation continuation");
+                  logInfo("Function calls complete, signaling for conversation continuation");
                   
                   // Signal that conversation should continue with updated state
                   if (onContinue) {
@@ -305,12 +310,14 @@ export const OpenAIResponsesStream = (props: {
               break;
 
             case "response.completed":
-              console.log("🎯 Received response.completed event");
+              logInfo("Received response.completed event");
               await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse);
               return;
 
             case "error":
-              console.log("🔴 Stream error:", (event as any).error?.message || "Unknown error");
+              logError("Stream error", { 
+                errorMessage: (event as any).error?.message || "Unknown error" 
+              });
               const errorResponse: AzureChatCompletion = {
                 type: "error",
                 response: (event as any).error?.message || "Unknown error occurred",
@@ -332,21 +339,21 @@ export const OpenAIResponsesStream = (props: {
             default:
               // Log unknown events for debugging but don't treat them as errors
               // These might be informational events that don't need processing
-              console.log(`ℹ️ Unhandled event: ${event.type}`);
+              logDebug("Unhandled event", { eventType: event.type });
               break;
           }
         }
 
         // Stream ended without completion event - send final content if available
         if (lastMessage && !messageSaved) {
-          console.log("🔄 Stream ended without completion event - sending final content");
+          logInfo("Stream ended without completion event - sending final content");
           await saveMessage(messageId, lastMessage, reasoningContent, chatThread);
           
           const finalResponse: AzureChatCompletion = {
             type: "finalContent",
             response: lastMessage,
           };
-          console.log("🎯 Sending finalContent event (fallback)", {
+          logInfo("Sending finalContent event (fallback)", {
             messageLength: lastMessage.length,
             responseType: finalResponse.type
           });
@@ -356,12 +363,14 @@ export const OpenAIResponsesStream = (props: {
           await Promise.resolve();
           
           // Add a small delay to ensure the frontend has time to process the finalContent event
-          console.log("⏳ Waiting for frontend to process finalContent event (fallback)...");
+          logDebug("Waiting for frontend to process finalContent event (fallback)");
           await new Promise(resolve => setTimeout(resolve, 100));
         }
         controller.close();
       } catch (error) {
-        console.log("🔴 Stream processing error:", error);
+        logError("Stream processing error", { 
+          error: error instanceof Error ? error.message : String(error) 
+        });
         
         if (lastMessage && !messageSaved) {
           await saveMessage(messageId, lastMessage, reasoningContent, chatThread);

@@ -9,6 +9,7 @@ import {
 import { ChevronDown, Cpu, Zap } from "lucide-react";
 import { FC, useEffect, useState } from "react";
 import { ChatModel, MODEL_CONFIGS, getAvailableModels, ModelConfig } from "../chat-services/models";
+import { logError } from "@/features/common/services/logger";
 
 interface ModelSelectorProps {
   selectedModel: ChatModel;
@@ -30,7 +31,7 @@ export const ModelSelector: FC<ModelSelectorProps> = ({
         const models = await getAvailableModels();
         setAvailableModels(models);
       } catch (error) {
-        console.error('Error fetching available models:', error);
+        logError('Error fetching available models', { error: error instanceof Error ? error.message : String(error) });
         // Fallback to all models if API fails
         setAvailableModels(MODEL_CONFIGS);
       } finally {

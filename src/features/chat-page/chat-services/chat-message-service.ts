@@ -7,6 +7,7 @@ import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
 import { HistoryContainer } from "../../common/services/cosmos";
 import { ChatMessageModel, ChatRole, MESSAGE_ATTRIBUTE } from "./models";
+import { logDebug } from "@/features/common/services/logger";
 
 export const FindTopChatMessagesForCurrentUser = async (
   chatThreadID: string,
@@ -91,7 +92,7 @@ export const FindAllChatMessagesForCurrentUser = async (
       .items.query<ChatMessageModel>(querySpec)
       .fetchAll();
 
-    console.debug("🔍 Chat Messages Loaded", {
+    logDebug("Chat Messages Loaded", {
       threadId: chatThreadID,
       count: resources.length,
       userId: userHashedId
@@ -158,7 +159,7 @@ export const UpsertChatMessage = async (
       isDeleted: false,
     };
 
-    console.debug("💾 Upserting chat message", {
+    logDebug("Upserting chat message", {
       id: modelToSave.id,
       role: modelToSave.role,
       contentLength: modelToSave.content?.length || 0,
@@ -246,8 +247,9 @@ export const UpdateChatMessage = async (
       isDeleted: false,
     };
 
-    console.debug("🔄 Updating chat message", {
+    logDebug("Updating chat message", {
       id: updatedMessage.id,
+      messageId,
       role: updatedMessage.role,
       contentLength: updatedMessage.content?.length || 0,
       hasReasoningContent: !!updatedMessage.reasoningContent,

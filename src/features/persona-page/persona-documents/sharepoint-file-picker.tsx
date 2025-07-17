@@ -17,6 +17,7 @@ import {
   SupportedFileExtensionsDocumentIntellicence,
   SupportedFileExtensionsTextFiles,
 } from "@/features/chat-page/chat-services/models";
+import { logInfo } from "@/features/common/services/logger";
 
 interface SharePointFilePickerSelectorProps {
   tenantUrl: string;
@@ -73,7 +74,7 @@ export function SharePointFilePicker({
         const notification = payload.data;
 
         if (notification.notification === "page-loaded") {
-          console.log("Picker page loaded and ready");
+          logInfo("Picker page loaded and ready");
         }
 
         break;

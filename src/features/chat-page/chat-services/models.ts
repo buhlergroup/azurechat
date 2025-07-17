@@ -6,6 +6,7 @@ import {
   OpenAIV1ReasoningInstance,
   OpenAIV1ImageInstance 
 } from "@/features/common/services/openai";
+import { logError } from "@/features/common/services/logger";
 
 export const CHAT_DOCUMENT_ATTRIBUTE = "CHAT_DOCUMENT";
 export const CHAT_THREAD_ATTRIBUTE = "CHAT_THREAD";
@@ -148,7 +149,7 @@ export async function getAvailableModels(): Promise<Record<ChatModel, ModelConfi
     const data = await response.json();
     return data.availableModels;
   } catch (error) {
-    console.error("🔴 Error fetching available models:", { 
+    logError("Error fetching available models", { 
       error: error instanceof Error ? error.message : String(error) 
     });
     // Fallback to all models if API fails
@@ -168,7 +169,7 @@ export async function getAvailableModelIds(): Promise<ChatModel[]> {
     const data = await response.json();
     return data.availableModelIds;
   } catch (error) {
-    console.error("🔴 Error fetching available model IDs:", { 
+    logError("Error fetching available model IDs", { 
       error: error instanceof Error ? error.message : String(error) 
     });
     // Fallback to all model IDs if API fails
@@ -188,7 +189,7 @@ export async function getDefaultModel(): Promise<ChatModel> {
     const data = await response.json();
     return data.defaultModel;
   } catch (error) {
-    console.error("🔴 Error fetching default model:", { 
+    logError("Error fetching default model", { 
       error: error instanceof Error ? error.message : String(error) 
     });
     // Fallback to gpt-4.1 if API fails
@@ -204,7 +205,7 @@ export async function isModelAvailable(modelId: ChatModel): Promise<boolean> {
     const availableModels = await getAvailableModels();
     return !!availableModels[modelId];
   } catch (error) {
-    console.error("🔴 Error checking model availability:", { 
+    logError("Error checking model availability", { 
       modelId,
       error: error instanceof Error ? error.message : String(error) 
     });

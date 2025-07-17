@@ -8,6 +8,7 @@ import { SimilaritySearch } from "../azure-ai-search/azure-ai-search";
 import { CreateCitations, FormatCitations } from "../citation-service";
 import { userHashedId } from "@/features/auth-page/helpers";
 import { skip } from "node:test";
+import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 
 // Type definitions for function calling
 export interface FunctionDefinition {
@@ -80,11 +81,11 @@ async function createImage(
   args: { prompt: string }, 
   context: { threadId: string; userMessage: string; signal: AbortSignal }
 ) {
-  console.info("🎨 Creating image with DALL-E", { 
+  logInfo("Creating image with DALL-E", { 
     promptLength: args.prompt?.length || 0,
     threadId: context.threadId 
   });
-  console.debug("🎨 Image prompt:", args.prompt);
+  logDebug("Image prompt", { prompt: args.prompt });
 
   if (!args.prompt) {
     throw new Error("No prompt provided");
@@ -135,13 +136,13 @@ async function searchDocuments(
   args: { query: string; limit?: number, skip?: number }, 
   context: { threadId: string; userMessage: string; signal: AbortSignal }
 ) {
-  console.info("🔍 Searching documents", { 
+  logInfo("Searching documents", { 
     queryLength: args.query?.length || 0,
     limit: args.limit || 10,
     skip: args.skip || 0,
     threadId: context.threadId 
   });
-  console.debug("🔍 Search query:", args.query);
+  logDebug("Search query", { query: args.query });
 
   const limit = args.limit || 10;
   const skip = args.skip || 0;
@@ -156,7 +157,7 @@ async function searchDocuments(
   );
 
   if (documentResponse.status !== "OK") {
-    console.error("🔴 Document search failed:", documentResponse.errors);
+    logError("Document search failed", { errors: documentResponse.errors });
     return {
       query: args.query,
       documents: [],
@@ -165,7 +166,7 @@ async function searchDocuments(
     };
   }
   
-  console.info("✅ Document search completed", { 
+  logInfo("Document search completed", { 
     resultCount: documentResponse.response?.length || 0 
   });
 
@@ -316,7 +317,7 @@ export async function registerDynamicFunction(
   // Validate and fix the parameters schema to ensure it meets Azure OpenAI strict mode requirements
   const validatedParameters = validateAndFixSchema(parameters);
   
-  console.debug("🔧 Registering dynamic function", { 
+  logDebug("Registering dynamic function", { 
     name, 
     method, 
     endpoint: endpoint.substring(0, 50) + "...",
@@ -324,7 +325,7 @@ export async function registerDynamicFunction(
   });
   
   const implementation = async (args: any, context: any) => {
-    console.debug("🔧 Calling dynamic function", { 
+    logDebug("Calling dynamic function", { 
       name, 
       argsKeys: Object.keys(args || {}),
       contextKeys: Object.keys(context || {}) 
