@@ -42,7 +42,28 @@ class Logger {
 
   private formatMessage(level: LogLevelType, message: string, context?: LogContext): string {
     const timestamp = new Date().toISOString();
-    const contextStr = context ? ` ${JSON.stringify(context)}` : '';
+    let contextStr = '';
+    
+    if (context) {
+      try {
+        // Try to stringify with circular reference handling
+        const seen = new WeakSet();
+        contextStr = ` ${JSON.stringify(context, (key, value) => {
+          // Handle circular references by replacing them with a placeholder
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+              return '[Circular Reference]';
+            }
+            seen.add(value);
+          }
+          return value;
+        }, 2)}`;
+      } catch (error) {
+        // Fallback for objects that can't be stringified
+        contextStr = ` [Context could not be serialized: ${error instanceof Error ? error.message : 'Unknown error'}]`;
+      }
+    }
+    
     return `[${timestamp}] [${level.toUpperCase()}] ${message}${contextStr}`;
   }
 

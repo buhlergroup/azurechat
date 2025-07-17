@@ -4,40 +4,55 @@ import {
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
 import { ChatMessageModel } from "./models";
+import { processMessageForImageResolution } from "./chat-image-persistence-service";
 
-export const mapOpenAIChatMessages = (
+export const mapOpenAIChatMessages = async (
   messages: ChatMessageModel[]
-): ChatCompletionMessageParam[] => {
-  return messages.map((message) => {
+): Promise<ChatCompletionMessageParam[]> => {
+  const mappedMessages: ChatCompletionMessageParam[] = [];
+  
+  for (const message of messages) {
+    // Resolve image references before mapping
+    const resolvedMessage = await processMessageForImageResolution(
+      message.content,
+      message.multiModalImage
+    );
+
     // Handle multimodal content for user messages with images
-    if (message.role === "user" && message.multiModalImage) {
-      return {
+    if (message.role === "user" && resolvedMessage.multiModalImage) {
+      mappedMessages.push({
         role: message.role,
         content: [
-          { type: "text", text: message.content },
-          { type: "image_url", image_url: { url: message.multiModalImage } }
+          { type: "text", text: resolvedMessage.content },
+          { type: "image_url", image_url: { url: resolvedMessage.multiModalImage } }
         ]
-      };
+      });
+      continue;
     }
     
     // Handle other message types...
     switch (message.role) {
       case "function":
-        return {
+        mappedMessages.push({
           role: message.role,
           name: message.name,
-          content: message.content,
-        } as ChatCompletionFunctionMessageParam;
+          content: resolvedMessage.content,
+        } as ChatCompletionFunctionMessageParam);
+        break;
       case "assistant":
-        return {
+        mappedMessages.push({
           role: message.role,
-          content: message.content,
-        } as ChatCompletionAssistantMessageParam;
+          content: resolvedMessage.content,
+        } as ChatCompletionAssistantMessageParam);
+        break;
       default:
-        return {
+        mappedMessages.push({
           role: message.role,
-          content: message.content,
-        } as ChatCompletionMessageParam;
+          content: resolvedMessage.content,
+        } as ChatCompletionMessageParam);
+        break;
     }
-  });
+  }
+  
+  return mappedMessages;
 };

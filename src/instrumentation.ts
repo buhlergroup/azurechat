@@ -45,7 +45,7 @@ export function register() {
       },
     });
 
-    logDebug("Meter provider initialized", { meterProvider: metrics.getMeterProvider() });
+    logDebug("Meter provider initialized", { hasMeterProvider: !!metrics.getMeterProvider() });
 
     logInfo("Application Insights Connection String configured", { 
       hasConnectionString: !!process.env.APPLICATIONINSIGHTS_CONNECTION_STRING 

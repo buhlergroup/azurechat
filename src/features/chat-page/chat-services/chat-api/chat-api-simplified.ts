@@ -12,7 +12,8 @@ import {
   getAvailableFunctions, 
   executeFunction, 
   registerDynamicFunction, 
-  FunctionCall 
+  FunctionCall,
+  getToolByName
 } from "./function-registry";
 import { OpenAIResponsesStream } from "./openai-responses-stream";
 import { createConversationState, startConversation, continueConversation, ConversationState } from "./conversation-manager";
@@ -60,8 +61,19 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
     _getHistory(currentChatThread),
   ]);
 
-  // Update system prompt with current date
-  currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\nToday's Date: ${new Date().toLocaleString()}\n\n${currentChatThread.personaMessage}`;
+  // Check if documents are attached to this chat thread
+  const documentsResponse = await FindAllChatDocuments(currentChatThread.id);
+  const hasDocuments = documentsResponse.status === "OK" && documentsResponse.response.length > 0;
+  
+  // Build document hint if documents are attached
+  let documentHint = "";
+  if (hasDocuments) {
+    const documentNames = documentsResponse.response.map(doc => doc.name).join(", ");
+    documentHint = `\n\nDOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}. You can search and reference this document content using the search_documents function when the user asks questions about the document or its content.`;
+  }
+
+  // Update system prompt with current date and document hint
+  currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\nToday's Date: ${new Date().toLocaleString()}${documentHint}\n\n - Use multiple tool calls with top and skip if you need to search for more documents. \n\n${currentChatThread.personaMessage}`;
 
   // Save user message
   await CreateChatMessage({
@@ -74,6 +86,15 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
 
   // Get available functions (built-in + dynamic extensions)
   const tools = await _getAvailableTools(currentChatThread);
+  
+  // Add search_documents tool if documents are attached
+  if (hasDocuments) {
+    const searchDocumentsTool = await getToolByName("search_documents");
+    if (searchDocumentsTool) {
+      tools.push(searchDocumentsTool);
+      logDebug("Added search_documents function (document search)");
+    }
+  }
 
   // Create request options for Responses API
   const requestOptions: any = {
@@ -121,7 +142,7 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
     ...history.map((msg: any) => ({
       type: "message" as const,
       role: msg.role,
-      content: msg.content,
+      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
     })),
   ];
 
@@ -228,7 +249,8 @@ async function _getHistory(chatThread: ChatThreadModel) {
   
   if (historyResponse.status === "OK") {
     const historyResults = historyResponse.response;
-    return mapOpenAIChatMessages(historyResults).reverse();
+    const mappedHistory = await mapOpenAIChatMessages(historyResults);
+    return mappedHistory.reverse();
   }
 
   logError("Error getting history", { errors: historyResponse.errors });

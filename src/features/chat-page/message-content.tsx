@@ -12,6 +12,7 @@ import { CitationAction } from "./citation/citation-action";
 import { useToolCallHistory } from "./chat-store";
 import { chatStore } from "./chat-store";
 import ToolCallHistoryDialog from "./tool-call-history-dialog";
+import { ChatImageDisplay } from "./chat-image-display";
 
 interface MessageContentProps {
   message: {
@@ -72,7 +73,13 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
           content={message.content}
           onCitationClick={CitationAction}
         ></Markdown>
-        {message.multiModalImage && <img src={message.multiModalImage} />}
+        {message.multiModalImage && (
+          <ChatImageDisplay 
+            imageUrl={message.multiModalImage} 
+            alt="Chat image"
+            className="mt-2"
+          />
+        )}
         {/* Tool call history dialog */}
         <ToolCallHistoryDialog
           open={sidebarOpen}

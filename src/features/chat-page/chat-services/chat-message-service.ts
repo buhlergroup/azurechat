@@ -8,6 +8,7 @@ import { SqlQuerySpec } from "@azure/cosmos";
 import { HistoryContainer } from "../../common/services/cosmos";
 import { ChatMessageModel, ChatRole, MESSAGE_ATTRIBUTE } from "./models";
 import { logDebug } from "@/features/common/services/logger";
+import { processMessageForImagePersistence, processMessageForImageResolution } from "./chat-image-persistence-service";
 
 export const FindTopChatMessagesForCurrentUser = async (
   chatThreadID: string,
@@ -131,17 +132,24 @@ export const CreateChatMessage = async ({
 }): Promise<ServerActionResponse<ChatMessageModel>> => {
   const userId = await userHashedId();
 
+  // Process images for persistence before saving
+  const processedMessage = await processMessageForImagePersistence(
+    chatThreadId,
+    content,
+    multiModalImage
+  );
+
   const modelToSave: ChatMessageModel = {
     id: uniqueId(),
     createdAt: new Date(),
     type: MESSAGE_ATTRIBUTE,
     isDeleted: false,
-    content: content,
+    content: processedMessage.content,
     name: name,
     role: role,
     threadId: chatThreadId,
     userId: userId,
-    multiModalImage: multiModalImage,
+    multiModalImage: processedMessage.multiModalImage,
     reasoningContent: reasoningContent,
   };
   return await UpsertChatMessage(modelToSave);
@@ -151,12 +159,21 @@ export const UpsertChatMessage = async (
   chatModel: ChatMessageModel
 ): Promise<ServerActionResponse<ChatMessageModel>> => {
   try {
+    // Process images for persistence before saving
+    const processedMessage = await processMessageForImagePersistence(
+      chatModel.threadId,
+      chatModel.content,
+      chatModel.multiModalImage
+    );
+
     const modelToSave: ChatMessageModel = {
       ...chatModel,
       id: chatModel.id || uniqueId(), // Use existing ID if provided, otherwise generate new one
       createdAt: chatModel.createdAt || new Date(), // Use existing createdAt if provided
       type: MESSAGE_ATTRIBUTE,
       isDeleted: false,
+      content: processedMessage.content,
+      multiModalImage: processedMessage.multiModalImage,
     };
 
     logDebug("Upserting chat message", {

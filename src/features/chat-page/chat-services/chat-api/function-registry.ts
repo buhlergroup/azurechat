@@ -237,6 +237,37 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
         }
       },
       strict: true as const
+    }
+  ];
+
+  // Apply schema validation to all built-in functions
+  return builtInFunctions.map(func => ({
+    ...func,
+    parameters: validateAndFixSchema(func.parameters)
+  }));
+}
+
+// Get a specific tool by name
+export async function getToolByName(toolName: string): Promise<FunctionDefinition | null> {
+  // Ensure built-in functions are registered
+  await ensureBuiltInFunctionsRegistered();
+  
+  // Define all available tools (including those not in getAvailableFunctions)
+  const allTools = [
+    {
+      type: "function" as const,
+      name: "create_image",
+      description: "Create an image using DALL-E 3. Only use this when the user explicitly asks to create, generate, or make an image.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description: "A detailed description of the image to create. Be descriptive and specific."
+          }
+        }
+      },
+      strict: true as const
     },
     {
       type: "function" as const, 
@@ -263,11 +294,15 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
     }
   ];
 
-  // Apply schema validation to all built-in functions
-  return builtInFunctions.map(func => ({
-    ...func,
-    parameters: validateAndFixSchema(func.parameters)
-  }));
+  const tool = allTools.find(t => t.name === toolName);
+  if (tool) {
+    return {
+      ...tool,
+      parameters: validateAndFixSchema(tool.parameters)
+    };
+  }
+  
+  return null;
 }
 
 // Helper function to validate and fix function schemas for Azure OpenAI strict mode

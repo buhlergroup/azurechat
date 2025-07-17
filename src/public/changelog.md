@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Logging Improvements
+- **Enhanced:** Replaced console.log statements with centralized logging utility across the entire codebase
+- **Added:** Structured logging with context support for better debugging
+- **Added:** Azure Application Insights integration for production monitoring
+- **Added:** Environment-aware logging with cost optimization (errors only in production by default)
+- **Added:** Configurable log levels via `LOG_LEVEL` or `NEXT_PUBLIC_LOG_LEVEL` environment variables
+- **Improved:** Model selector error handling with proper logging instead of console.error
+- **Improved:** API route error handling with structured logging for better observability
+
 ## [v2.3.0] – 2025-04-11
 
 - Added: Add SharePoint Files to Persona
