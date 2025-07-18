@@ -11,6 +11,7 @@ export interface ConversationContext {
   signal: AbortSignal;
   openaiInstance: any;
   requestOptions: any;
+  headers?: Record<string, string>;
 }
 
 export interface ConversationMessage {
@@ -95,6 +96,7 @@ export async function processFunctionCall(
       threadId: state.context.threadId,
       userMessage: state.context.userMessage,
       signal: state.context.signal,
+      headers: state.context.headers,
     });
 
     logInfo("Function execution completed", { 

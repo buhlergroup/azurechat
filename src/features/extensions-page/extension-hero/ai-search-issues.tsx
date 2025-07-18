@@ -63,6 +63,11 @@ export const AISearch = () => {
           key: "indexName",
           value: "NAME OF THE SEARCH INDEX",
         },
+        {
+          id: uniqueId(),
+          key: "x-create-embedding",
+          value: "true",
+        },
       ],
       isPublished: false,
       type: "EXTENSION",

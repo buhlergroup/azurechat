@@ -66,22 +66,31 @@ export const SimilaritySearch = async (
   searchText: string,
   k: number,
   filter?: string,
-  skip: number = 0
+  skip: number = 0,
+  shouldCreateEmbedding: boolean = true
 ): Promise<ServerActionResponse<Array<DocumentSearchResponse>>> => {
   try {
-    const openai = OpenAIEmbeddingInstance();
-    const embeddings = await openai.embeddings.create({
-      input: searchText,
-      model: "",
-    });
+    let embeddings;
+    
+    if (shouldCreateEmbedding) {
+      const openai = OpenAIEmbeddingInstance();
+      embeddings = await openai.embeddings.create({
+        input: searchText,
+        model: "",
+      });
+    }
 
     const searchClient = AzureAISearchInstance<AzureSearchDocumentIndex>();
 
-    const searchResults = await searchClient.search(searchText, {
+    const searchOptions: any = {
       top: k,
       filter: filter,
       skip: skip,
-      vectorSearchOptions: {
+    };
+
+    // Only add vector search if embeddings were created
+    if (shouldCreateEmbedding && embeddings) {
+      searchOptions.vectorSearchOptions = {
         queries: [
           {
             vector: embeddings.data[0].embedding,
@@ -90,8 +99,10 @@ export const SimilaritySearch = async (
             kNearestNeighborsCount: k
           },
         ],
-      },
-    });
+      };
+    }
+
+    const searchResults = await searchClient.search(searchText, searchOptions);
 
     const results: Array<DocumentSearchResponse> = [];
     for await (const result of searchResults.results) {
@@ -160,15 +171,19 @@ export const ExtensionSimilaritySearch = async (props: {
   apiKey: string;
   searchName: string;
   indexName: string;
+  shouldCreateEmbedding?: boolean;
 }): Promise<ServerActionResponse<Array<DocumentSearchResponse>>> => {
   try {
-    const openai = OpenAIEmbeddingInstance();
-    const { searchText, vectors, apiKey, searchName, indexName } = props;
+    const { searchText, vectors, apiKey, searchName, indexName, shouldCreateEmbedding = true } = props;
 
-    const embeddings = await openai.embeddings.create({
-      input: searchText,
-      model: "",
-    });
+    let embeddings;
+    if (shouldCreateEmbedding) {
+      const openai = OpenAIEmbeddingInstance();
+      embeddings = await openai.embeddings.create({
+        input: searchText,
+        model: "",
+      });
+    }
 
     const endpoint = `https://${searchName}.search.windows.net`;
 
@@ -178,11 +193,13 @@ export const ExtensionSimilaritySearch = async (props: {
       new AzureKeyCredential(apiKey)
     );
 
-    const searchResults = await searchClient.search(searchText, {
+    const searchOptions: any = {
       top: 3,
+    };
 
-      // filter: filter,
-      vectorSearchOptions: {
+    // Only add vector search if embeddings were created
+    if (shouldCreateEmbedding && embeddings) {
+      searchOptions.vectorSearchOptions = {
         queries: [
           {
             vector: embeddings.data[0].embedding,
@@ -191,8 +208,10 @@ export const ExtensionSimilaritySearch = async (props: {
             kNearestNeighborsCount: 10,
           },
         ],
-      },
-    });
+      };
+    }
+
+    const searchResults = await searchClient.search(searchText, searchOptions);
 
     const results: Array<any> = [];
     for await (const result of searchResults.results) {

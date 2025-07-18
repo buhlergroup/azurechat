@@ -49,7 +49,7 @@ export async function registerFunction(
 // Helper function to execute a function call
 export async function executeFunction(
   functionCall: FunctionCall, 
-  context: { threadId: string; userMessage: string; signal: AbortSignal }
+  context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
 ): Promise<FunctionResult> {
   const implementation = functionRegistry.get(functionCall.name);
   
@@ -79,7 +79,7 @@ export async function executeFunction(
 // Image creation function
 async function createImage(
   args: { prompt: string }, 
-  context: { threadId: string; userMessage: string; signal: AbortSignal }
+  context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
 ) {
   logInfo("Creating image with DALL-E", { 
     promptLength: args.prompt?.length || 0,
@@ -134,7 +134,7 @@ async function createImage(
 // RAG search function
 async function searchDocuments(
   args: { query: string; limit?: number, skip?: number }, 
-  context: { threadId: string; userMessage: string; signal: AbortSignal }
+  context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
 ) {
   logInfo("Searching documents", { 
     queryLength: args.query?.length || 0,
@@ -148,12 +148,16 @@ async function searchDocuments(
   const skip = args.skip || 0;
   const userId = await userHashedId();
 
+  // Check if we should create embeddings (default to true for backward compatibility)
+  const shouldCreateEmbedding = context.headers?.['x-create-embedding'] !== 'false';
+
   // Perform similarity search across user's documents and thread-specific documents
   const documentResponse = await SimilaritySearch(
     args.query,
     limit,
     `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`,
-    skip
+    skip,
+    shouldCreateEmbedding
   );
 
   if (documentResponse.status !== "OK") {
@@ -366,12 +370,18 @@ export async function registerDynamicFunction(
       contextKeys: Object.keys(context || {}) 
     });
 
+    // Merge headers from context with the function's headers
+    const mergedHeaders = {
+      ...headers,
+      ...context.headers,
+    };
+
     let url = endpoint;
     const requestInit: RequestInit = {
       method: method,
       headers: {
         'Content-Type': 'application/json',
-        ...headers,
+        ...mergedHeaders,
         'authorization': await userHashedId(), // Add user context
       },
       cache: "no-store",

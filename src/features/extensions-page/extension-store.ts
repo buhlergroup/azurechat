@@ -46,6 +46,11 @@ class ExtensionState {
           key: "Content-Type",
           value: "application/json",
         },
+        {
+          id: uniqueId(),
+          key: "x-create-embedding",
+          value: "true",
+        },
       ],
       userId: "",
     };

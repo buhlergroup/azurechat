@@ -16,12 +16,17 @@ export const SearchAzureAISimilarDocuments = async (req: Request) => {
     const indexName = req.headers.get("indexName") as string;
     const userId = req.headers.get("authorization") as string;
     
+    // Check if we should create embeddings (default to true for Bühler Chat GPT)
+    const createEmbeddingHeader = req.headers.get("x-create-embedding");
+    const shouldCreateEmbedding = createEmbeddingHeader !== "false";
+    
     logDebug("Search parameters", { 
       searchName, 
       indexName, 
       vectorCount: vectors?.split(",").length || 0,
       hasApiKey: !!apiKey,
-      hasUserId: !!userId 
+      hasUserId: !!userId,
+      shouldCreateEmbedding
     });
 
     logInfo("Executing similarity search via ExtensionSimilaritySearch");
@@ -31,6 +36,7 @@ export const SearchAzureAISimilarDocuments = async (req: Request) => {
       indexName,
       vectors: vectors.split(","),
       searchText: search,
+      shouldCreateEmbedding,
     });
 
     if (result.status !== "OK") {

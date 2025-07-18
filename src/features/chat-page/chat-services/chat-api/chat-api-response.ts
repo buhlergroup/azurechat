@@ -85,7 +85,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   });
 
   // Get available functions (built-in + dynamic extensions)
-  const tools = await _getAvailableTools(currentChatThread);
+  const { tools, extensionHeaders } = await _getAvailableTools(currentChatThread);
   
   // Add search_documents tool if documents are attached
   if (hasDocuments) {
@@ -130,6 +130,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     signal: signal,
     openaiInstance: openaiInstance,
     requestOptions: requestOptions,
+    headers: extensionHeaders, // Pass extension headers to conversation context
   };
 
   // Build initial conversation input
@@ -262,6 +263,7 @@ async function _getHistory(chatThread: ChatThreadModel) {
 // Helper function to get available tools
 async function _getAvailableTools(chatThread: ChatThreadModel) {
   const tools = [];
+  const extensionHeaders: Record<string, string> = {};
   
   logInfo("Chat thread extensions", { extensions: chatThread.extension?.join(", ") || "none" });
   
@@ -299,6 +301,8 @@ async function _getAvailableTools(chatThread: ChatThreadModel) {
               const headerValueResponse = await FindSecureHeaderValue(header.id);
               if (headerValueResponse.status === "OK") {
                 resolvedHeaders[header.key] = headerValueResponse.response;
+                // Store headers for later use in conversation context
+                extensionHeaders[header.key] = headerValueResponse.response;
               } else {
                 logError("Failed to resolve header", { 
                   headerKey: header.key, 
@@ -330,5 +334,5 @@ async function _getAvailableTools(chatThread: ChatThreadModel) {
   }
 
   logInfo("Available tools", { toolNames: tools.map(t => t.name).join(", ") });
-  return tools;
+  return { tools, extensionHeaders };
 }
