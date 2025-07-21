@@ -391,7 +391,11 @@ export async function registerDynamicFunction(
     if (args.query) {
       const queryParams = new URLSearchParams();
       for (const [key, value] of Object.entries(args.query)) {
-        queryParams.append(key, String(value));
+        if(url.includes(key)) {
+          url = url.replace(key, String(value));
+        } else {
+          queryParams.append(key, String(value));
+        }
       }
       url += (url.includes('?') ? '&' : '?') + queryParams.toString();
     }
