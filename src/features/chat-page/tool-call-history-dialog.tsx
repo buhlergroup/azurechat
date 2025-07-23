@@ -16,9 +16,6 @@ const ToolCallHistoryDialog: React.FC<ToolCallHistoryDialogProps> = ({ open, onC
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Tool Call History</span>
-            <button onClick={onClose} className="p-1 rounded hover:bg-accent">
-              <X size={20} />
-            </button>
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
@@ -39,8 +36,8 @@ const ToolCallHistoryDialog: React.FC<ToolCallHistoryDialogProps> = ({ open, onC
                 {toolCall.result && (
                   <div className="text-xs text-gray-500 mt-2">
                     <strong>Result:</strong>
-                    <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs overflow-x-auto">
-                      {toolCall.result.substring(0, 500)}...
+                    <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-wrap">
+                      {toolCall.result}
                     </pre>
                   </div>
                 )}
