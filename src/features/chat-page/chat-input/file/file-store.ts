@@ -29,7 +29,8 @@ class FileStore {
       const file: File | null = formData.get("file") as unknown as File;
       
       if(file.size > Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_DOCUMENT_SIZE)){
-        showError("File size is too large. Please upload a file less than 3MB.");
+        const maxSizeMB = Math.round(Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_DOCUMENT_SIZE) / (1024 * 1024));
+        showError(`File size is too large. Please upload a file less than ${maxSizeMB}MB.`);
         return;
       }
 
