@@ -40,7 +40,7 @@ class ChatState {
   public autoScroll: boolean = false;
   public userName: string = "";
   public chatThreadId: string = "";
-  public selectedModel: ChatModel = "gpt-4.1"; // Will be updated when available models are fetched
+  public selectedModel: ChatModel = "gpt-5"; // Will be updated when available models are fetched
   public reasoningEffort: ReasoningEffort = "medium";
 
   private chatThread: ChatThreadModel | undefined;
@@ -89,7 +89,7 @@ class ChatState {
     this.chatThreadId = chatThread.id;
     this.messages = messages;
     this.userName = userName;
-    this.selectedModel = chatThread.selectedModel || "gpt-4.1";
+    this.selectedModel = chatThread.selectedModel || "gpt-5";
     this.tempReasoningContent = "";
     this.currentAssistantMessageId = "";
     this.toolCallHistory = {};

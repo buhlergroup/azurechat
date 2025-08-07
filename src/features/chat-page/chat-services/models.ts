@@ -14,6 +14,7 @@ export const MESSAGE_ATTRIBUTE = "CHAT_MESSAGE";
 export const CHAT_CITATION_ATTRIBUTE = "CHAT_CITATION";
 
 export type ChatModel = 
+  | "gpt-5"
   | "gpt-4o" 
   | "gpt-4o-mini" 
   | "gpt-4.1" 
@@ -39,6 +40,15 @@ export interface ModelConfig {
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
+  "gpt-5": {
+    id: "gpt-5",
+    name: "GPT-5",
+    description: "Most advanced model with superior reasoning and capabilities",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME
+  },
   "gpt-4o": {
     id: "gpt-4o",
     name: "GPT-4o",
@@ -192,8 +202,8 @@ export async function getDefaultModel(): Promise<ChatModel> {
     logError("Error fetching default model", { 
       error: error instanceof Error ? error.message : String(error) 
     });
-    // Fallback to gpt-4.1 if API fails
-    return "gpt-4.1";
+    // Fallback to gpt-5 if API fails
+    return "gpt-5";
   }
 }
 
