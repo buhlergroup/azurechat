@@ -1,5 +1,5 @@
 import { Markdown } from "@/features/ui/markdown/markdown";
-import { FunctionSquare, Brain, Wrench } from "lucide-react";
+import { FunctionSquare, Brain } from "lucide-react";
 import React, { useState } from "react";
 import {
   Accordion,
@@ -9,9 +9,7 @@ import {
 } from "../ui/accordion";
 import { RecursiveUI } from "../ui/recursive-ui";
 import { CitationAction } from "./citation/citation-action";
-import { useToolCallHistory } from "./chat-store";
 import { chatStore } from "./chat-store";
-import ToolCallHistoryDialog from "./tool-call-history-dialog";
 import { ChatImageDisplay } from "./chat-image-display";
 
 interface MessageContentProps {
@@ -27,21 +25,10 @@ interface MessageContentProps {
 
 const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const toolCallHistory = useToolCallHistory(message.id);
 
   if (message.role === "assistant" || message.role === "user") {
     return (
       <>
-        {/* Tool call history icon for assistant messages */}
-        {message.role === "assistant" && (
-          <button
-            className="absolute top-2 right-2 p-1 rounded hover:bg-accent"
-            title="Show tool call history"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Wrench size={18} className="text-muted-foreground" />
-          </button>
-        )}
         {message.reasoningContent && message.role === "assistant" && (
           <div className="mb-4">
             <Accordion
@@ -80,13 +67,6 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
             className="mt-2"
           />
         )}
-        {/* Tool call history dialog */}
-        <ToolCallHistoryDialog
-          open={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          toolCallHistory={toolCallHistory}
-          messageId={message.id}
-        />
       </>
     );
   }

@@ -36,8 +36,14 @@ export const OpenAIResponsesStream = (props: {
   const encoder = new TextEncoder();
   const { stream, chatThread, conversationState, onComplete, onContinue } = props;
 
-  // Helper function to save message
-  const saveMessage = async (messageId: string, content: string, reasoningContent: string, chatThread: ChatThreadModel) => {
+  // Helper function to save message (including tool call history)
+  const saveMessage = async (
+    messageId: string,
+    content: string,
+    reasoningContent: string,
+    chatThread: ChatThreadModel,
+    toolCallHistory?: Array<{ name: string; arguments: string; result?: string; timestamp: Date }>
+  ) => {
     const messageToSave: ChatMessageModel = {
       id: messageId,
       name: AI_NAME,
@@ -49,6 +55,7 @@ export const OpenAIResponsesStream = (props: {
       isDeleted: false,
       userId: await userHashedId(),
       type: MESSAGE_ATTRIBUTE,
+      toolCallHistory: toolCallHistory && toolCallHistory.length > 0 ? toolCallHistory : undefined,
     };
     
     await UpsertChatMessage(messageToSave);
@@ -165,7 +172,8 @@ export const OpenAIResponsesStream = (props: {
       let reasoningContent = "";
       let reasoningSummaries: Record<number, string> = {};
       let messageSaved = false;
-      let functionCalls: Record<number, any> = {}; // Track function calls
+      let functionCalls: Record<number, any> = {}; // Track function calls per output index
+      let toolCallHistory: Array<{ name: string; arguments: string; result?: string; timestamp: Date; call_id?: string }> = [];
       let currentConversationState = conversationState; // Use passed conversation state
       // Use a consistent message ID across the entire conversation
       const messageId = conversationState?.messageId || uniqueId();
@@ -215,6 +223,13 @@ export const OpenAIResponsesStream = (props: {
                   ...event.item,
                   arguments: ""
                 };
+                // Record a started tool call entry (without result yet)
+                toolCallHistory.push({
+                  name: event.item.name || "",
+                  arguments: "",
+                  timestamp: new Date(),
+                  call_id: event.item.call_id
+                });
                 
                 // Don't stream function call start - wait for completion
               }
@@ -235,12 +250,20 @@ export const OpenAIResponsesStream = (props: {
               if (currentConversationState) {
                 const completedCall = functionCalls[event.output_index];
                 if (completedCall) {
+                  // Update the last matching tool call entry with the final arguments
+                  for (let i = toolCallHistory.length - 1; i >= 0; i--) {
+                    if (!toolCallHistory[i].result && (!toolCallHistory[i].call_id || toolCallHistory[i].call_id === completedCall.call_id)) {
+                      toolCallHistory[i].arguments = completedCall.arguments;
+                      break;
+                    }
+                  }
                   // Stream function call info now that it's complete
                   const functionCallResponse: AzureChatCompletionFunctionCall = {
                     type: "functionCall",
                     response: {
                       name: completedCall.name,
                       arguments: completedCall.arguments,
+                      call_id: completedCall.call_id,
                     } as any,
                   };
                   streamResponse(functionCallResponse.type, JSON.stringify(functionCallResponse));
@@ -259,8 +282,44 @@ export const OpenAIResponsesStream = (props: {
                     const functionResultResponse: AzureChatCompletionFunctionCallResult = {
                       type: "functionCallResult",
                       response: result.result!,
+                      // include call_id for client-side matching if needed
+                      // @ts-ignore
+                      call_id: completedCall.call_id,
                     };
                     streamResponse(functionResultResponse.type, JSON.stringify(functionResultResponse));
+
+                    // Attach result to the last matching tool call entry
+                    for (let i = toolCallHistory.length - 1; i >= 0; i--) {
+                      if (!toolCallHistory[i].result && (!toolCallHistory[i].call_id || toolCallHistory[i].call_id === completedCall.call_id)) {
+                        toolCallHistory[i].result = result.result!;
+                        break;
+                      }
+                    }
+
+                    // Persist tool call as a separate tool message for refresh resilience
+                    try {
+                      const toolMessage: ChatMessageModel = {
+                        id: uniqueId(),
+                        name: completedCall.name || "tool",
+                        content: JSON.stringify({
+                          name: completedCall.name,
+                          arguments: completedCall.arguments,
+                          result: result.result!,
+                          call_id: completedCall.call_id,
+                          parentAssistantMessageId: messageId,
+                          timestamp: new Date().toISOString(),
+                        }),
+                        role: "tool",
+                        threadId: chatThread.id,
+                        createdAt: new Date(),
+                        isDeleted: false,
+                        userId: await userHashedId(),
+                        type: MESSAGE_ATTRIBUTE,
+                      };
+                      await UpsertChatMessage(toolMessage);
+                    } catch (persistError) {
+                      logWarn("Failed to persist tool call message", { error: persistError instanceof Error ? persistError.message : String(persistError) });
+                    }
                   } else {
                     // Stream function error
                     const functionErrorResponse: AzureChatCompletion = {
@@ -311,7 +370,7 @@ export const OpenAIResponsesStream = (props: {
 
             case "response.completed":
               logInfo("Received response.completed event");
-              await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse);
+              await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse, toolCallHistory);
               return;
 
             case "error":
@@ -347,7 +406,7 @@ export const OpenAIResponsesStream = (props: {
         // Stream ended without completion event - send final content if available
         if (lastMessage && !messageSaved) {
           logInfo("Stream ended without completion event - sending final content");
-          await saveMessage(messageId, lastMessage, reasoningContent, chatThread);
+          await saveMessage(messageId, lastMessage, reasoningContent, chatThread, toolCallHistory);
           
           const finalResponse: AzureChatCompletion = {
             type: "finalContent",
@@ -373,7 +432,7 @@ export const OpenAIResponsesStream = (props: {
         });
         
         if (lastMessage && !messageSaved) {
-          await saveMessage(messageId, lastMessage, reasoningContent, chatThread);
+          await saveMessage(messageId, lastMessage, reasoningContent, chatThread, toolCallHistory);
         }
 
         const errorResponse: AzureChatCompletion = {
