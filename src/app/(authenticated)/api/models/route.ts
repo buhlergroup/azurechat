@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       availableModels,
       availableModelIds,
-      defaultModel: availableModelIds.length > 0 ? availableModelIds[0] : "gpt-4.1"
+      defaultModel: availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5"
     });
   } catch (error) {
     logError("Error getting available models", { error: error instanceof Error ? error.message : String(error) });
