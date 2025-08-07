@@ -10,7 +10,7 @@ const nextConfig = {
   ],
   experimental: {
     serverActions: {
-      bodySizeLimit: "3mb", // default is "1mb" 
+      bodySizeLimit: "10mb", // increased from 3mb to support larger file uploads
     },
   },
   turbopack: {
