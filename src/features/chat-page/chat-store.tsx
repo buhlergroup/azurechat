@@ -29,6 +29,7 @@ import {
   getDefaultModel as getDefaultModelFromAPI,
   MODEL_CONFIGS,
 } from "./chat-services/models";
+import { UpsertChatMessage } from "./chat-services/chat-message-service";
 let abortController: AbortController = new AbortController();
 
 type chatStatus = "idle" | "loading" | "file upload";
@@ -47,9 +48,8 @@ class ChatState {
   private chatThread: ChatThreadModel | undefined;
   private tempReasoningContent: string = "";
   private currentAssistantMessageId: string = "";
-  public toolCallHistory: Record<string, Array<{ name: string; arguments: string; result?: string; timestamp: Date }>> = {};
+  public toolCallHistory: Record<string, Array<{ name: string; arguments: string; result?: string; timestamp: Date; callId?: string }>> = {};
   public toolCallInProgress: Record<string, string | null> = {};
-  public currentToolCall: { name: string; arguments: string } | null = null;
 
   private addToMessages(message: ChatMessageModel) {
     const currentMessageIndex = this.messages.findIndex((el) => el.id === message.id);
@@ -77,7 +77,7 @@ class ChatState {
     this.loading = value;
   }
 
-  public initChatSession({
+  public   initChatSession({
     userName,
     messages,
     chatThread,
@@ -98,8 +98,25 @@ class ChatState {
     }
     this.tempReasoningContent = "";
     this.currentAssistantMessageId = "";
-    this.toolCallHistory = {};
-    this.toolCallInProgress = {};
+    // Preserve tool call history across messages; do not reset here
+
+    // Restore tool call history from loaded messages
+    messages.forEach(message => {
+      if (message.toolCallHistory && message.toolCallHistory.length > 0) {
+        this.toolCallHistory[message.id] = message.toolCallHistory;
+        logDebug("Chat Store: Restored tool call history", {
+          messageId: message.id,
+          toolCallCount: message.toolCallHistory.length,
+          toolNames: message.toolCallHistory.map(tc => tc.name)
+        });
+      }
+    });
+    
+    logDebug("Chat Store: Initialization complete", {
+      totalMessages: messages.length,
+      messagesWithToolCalls: Object.keys(this.toolCallHistory).length,
+      toolCallHistory: this.toolCallHistory
+    });
   }
 
   public async updateSelectedModel(model: ChatModel) {
@@ -471,6 +488,7 @@ class ChatState {
               logInfo("Chat Store: Received function call event", {
                 functionName: (responseType as any).response?.name,
                 arguments: (responseType as any).response?.arguments,
+                callId: (responseType as any).response?.call_id,
                 messageId: this.currentAssistantMessageId,
                 responseType: responseType.type,
                 hasResponse: !!(responseType as any).response
@@ -485,22 +503,14 @@ class ChatState {
               this.addToolCall(
                 this.currentAssistantMessageId,
                 (responseType as any).response.name,
-                (responseType as any).response.arguments
+                (responseType as any).response.arguments,
+                (responseType as any).response.call_id
               );
               
               // Mark tool call as in progress
               this.toolCallInProgress[this.currentAssistantMessageId] = (responseType as any).response.name;
               
-              // Set current tool call for loading overlay
-              this.currentToolCall = {
-                name: (responseType as any).response.name,
-                arguments: (responseType as any).response.arguments
-              };
-              
-              logInfo("Chat Store: Set current tool call", {
-                name: this.currentToolCall.name,
-                arguments: this.currentToolCall.arguments
-              });
+              // Note: currentToolCall UI removed
               break;
             case "functionCallResult":
               logInfo("Chat Store: Received function call result", {
@@ -513,16 +523,42 @@ class ChatState {
               // Complete the tool call
               this.completeToolCall(
                 this.currentAssistantMessageId,
-                responseType.response
+                responseType.response,
+                (responseType as any).call_id
               );
               
+              // Create a visible tool message in the chat timeline
+              try {
+                const calls = this.toolCallHistory[this.currentAssistantMessageId] || [];
+                const callId = (responseType as any).call_id as string | undefined;
+                let matched = calls.length > 0 ? calls[calls.length - 1] : undefined;
+                if (callId) {
+                  const idx = calls.findIndex(c => c.callId === callId);
+                  if (idx !== -1) matched = calls[idx];
+                }
+                const toolName = matched?.name || "tool";
+                const toolArgs = matched?.arguments || "";
+                const toolContent = JSON.stringify({ name: toolName, arguments: toolArgs, result: responseType.response });
+                const toolMessage: ChatMessageModel = {
+                  id: uniqueId(),
+                  content: toolContent,
+                  name: toolName,
+                  role: "tool",
+                  createdAt: new Date(),
+                  isDeleted: false,
+                  threadId: this.chatThreadId,
+                  type: "CHAT_MESSAGE",
+                  userId: "",
+                };
+                this.addToMessages(toolMessage);
+              } catch (e) {
+                logWarn("Chat Store: Failed to append tool message", { error: e instanceof Error ? e.message : String(e) });
+              }
+
               // Clear in-progress indicator
               this.toolCallInProgress[this.currentAssistantMessageId] = null;
               
-              // Clear current tool call for loading overlay
-              this.currentToolCall = null;
-              
-              logInfo("Chat Store: Cleared current tool call");
+              // Note: currentToolCall UI removed
               break;
             case "finalContent":
               // The finalContent event signals that streaming is complete
@@ -552,14 +588,47 @@ class ChatState {
                   const existingMessage = this.messages[existingMessageIndex];
                   // Clean up any remaining tool call progress indicators
                   const finalContent = this.lastMessage.replace(/🔧 \*\*Tool Call\*\*: [^\n]*\n\n\*\*Arguments\*\*:\n\`\`\`json\n[\s\S]*?\n\`\`\`\n\n⏳ Executing\.\.\./g, "").replace(/✅ \*\*Completed\*\*/g, "");
-                  this.messages[existingMessageIndex] = {
+                  
+                  // Get tool call history for this message
+                  const toolCallHistory = this.toolCallHistory[this.currentAssistantMessageId] || [];
+                  
+                  logDebug("Chat Store: Preparing to save tool call history", {
+                    messageId: this.currentAssistantMessageId,
+                    toolCallCount: toolCallHistory.length,
+                    hasToolCalls: toolCallHistory.length > 0,
+                    toolCallHistory: toolCallHistory
+                  });
+                  
+                  const updatedMessage = {
                     ...existingMessage,
-                    content: finalContent
+                    content: finalContent,
+                    toolCallHistory: toolCallHistory.length > 0 ? toolCallHistory : undefined
                   };
+                  
+                  this.messages[existingMessageIndex] = updatedMessage;
+                  
+                  // Save to database with tool call history
+                  if (toolCallHistory.length > 0) {
+                    logInfo("Chat Store: Saving tool call history to database", {
+                      messageId: this.currentAssistantMessageId,
+                      toolCallCount: toolCallHistory.length
+                    });
+                    UpsertChatMessage(updatedMessage).catch(error => {
+                      logError("Failed to save tool call history", { 
+                        messageId: this.currentAssistantMessageId,
+                        error: error.message 
+                      });
+                    });
+                  } else {
+                    logDebug("Chat Store: No tool calls to save", {
+                      messageId: this.currentAssistantMessageId
+                    });
+                  }
+                  
                   logDebug("Chat Store: Updated final message content", {
                     messageId: this.currentAssistantMessageId,
                     contentLength: finalContent.length,
-                    toolCallCount: this.toolCallHistory[this.currentAssistantMessageId]?.length || 0
+                    toolCallCount: toolCallHistory.length
                   });
                 } else {
                   logWarn("Chat Store: No existing assistant message found for final content", {
@@ -586,7 +655,7 @@ class ChatState {
               // Do this last to avoid any race conditions
               logInfo("Chat Store: Resetting currentAssistantMessageId for next conversation");
               this.currentAssistantMessageId = "";
-              this.currentToolCall = null;
+              // Note: currentToolCall UI removed
               break;
             default:
               // Handle informational events that don't require UI updates
@@ -626,15 +695,39 @@ class ChatState {
   }
 
   // --- Tool call tracking methods ---
-  public addToolCall(messageId: string, name: string, args: string) {
+  public addToolCall(messageId: string, name: string, args: string, callId?: string) {
     if (!this.toolCallHistory[messageId]) this.toolCallHistory[messageId] = [];
-    this.toolCallHistory[messageId].push({ name, arguments: args, timestamp: new Date() });
+    this.toolCallHistory[messageId].push({ name, arguments: args, timestamp: new Date(), callId });
     this.toolCallInProgress[messageId] = name;
+    
+    logDebug("Chat Store: Added tool call", {
+      messageId,
+      toolName: name,
+      totalToolCalls: this.toolCallHistory[messageId].length,
+      args: args.substring(0, 100) + "..."
+    });
   }
-  public completeToolCall(messageId: string, result: string) {
+  public completeToolCall(messageId: string, result: string, callId?: string) {
     const calls = this.toolCallHistory[messageId];
-    if (calls && calls.length > 0) calls[calls.length - 1].result = result;
+    if (calls && calls.length > 0) {
+      if (callId) {
+        const idx = calls.findIndex(c => c.callId === callId && c.result === undefined);
+        if (idx !== -1) {
+          calls[idx].result = result;
+        } else {
+          calls[calls.length - 1].result = result;
+        }
+      } else {
+        calls[calls.length - 1].result = result;
+      }
+    }
     this.toolCallInProgress[messageId] = null;
+    
+    logDebug("Chat Store: Completed tool call", {
+      messageId,
+      totalToolCalls: calls?.length || 0,
+      resultLength: result?.length || 0
+    });
   }
   public getToolCallHistoryForMessage(messageId: string) {
     return this.toolCallHistory[messageId] || [];
@@ -652,11 +745,17 @@ export const useChat = () => {
 
 // Debug hook to access tool call history
 export const useToolCallHistory = (messageId: string) => {
-  return chatStore.getToolCallHistoryForMessage(messageId);
+  const snapshot = useSnapshot(chatStore, { sync: true });
+  const toolCallHistory = snapshot.toolCallHistory[messageId] || [];
+  
+  logDebug("useToolCallHistory called", {
+    messageId,
+    toolCallCount: toolCallHistory.length,
+    toolCallHistory: toolCallHistory,
+    allToolCallHistory: snapshot.toolCallHistory
+  });
+  
+  return toolCallHistory;
 };
 
-// Hook to access current tool call for loading overlay
-export const useCurrentToolCall = () => {
-  const snapshot = useSnapshot(chatStore, { sync: true });
-  return snapshot.currentToolCall;
-};
+// Hook removed: current tool call overlay no longer used

@@ -65,11 +65,11 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   const documentsResponse = await FindAllChatDocuments(currentChatThread.id);
   const hasDocuments = documentsResponse.status === "OK" && documentsResponse.response.length > 0;
   
-  // Build document hint if documents are attached
+  // Build document hint if documents are attached and enforce search usage
   let documentHint = "";
   if (hasDocuments) {
     const documentNames = documentsResponse.response.map(doc => doc.name).join(", ");
-    documentHint = `\n\nDOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}. You can search and reference this document content using the search_documents function when the user asks questions about the document or its content.`;
+    documentHint = `\n\nDOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}.\n\nMANDsearcATORY BEHAVIOR WHEN DOCUMENTS ARE PRESENT:\n- You MUST first call the h_documents tool with the user's question as the query before composing an answer.\n- If the first page is insufficient, iterate using top (max results, default 10) and skip (offset) to gather more context (e.g., top=10, skip=10 for page 2).\n- Ground your answer in the retrieved content and cite filenames when relevant.\n- Do not answer purely from prior knowledge when documents are attached.`;
   }
 
   // Update system prompt with current date and document hint
@@ -105,6 +105,18 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls
   };
+  // Add a strong hint to prefer using available tools/extensions
+  try {
+    const preferredToolNames = tools
+      .map((t: any) => t?.name)
+      .filter((n: string | undefined) => !!n && n !== "create_image");
+
+    if (preferredToolNames.length > 0) {
+      const toolsList = preferredToolNames.join(", ");
+      const toolsHint = `\n\nTOOLS AVAILABLE: ${toolsList}.\nGUIDANCE: Prefer using the available tools to retrieve, search, or fetch authoritative information before answering. Do not rely on internal knowledge if a tool can provide the required data. If a user request maps to one of these tools, call it first, then answer based on the tool response.`;
+      currentChatThread.personaMessage = `${currentChatThread.personaMessage}${toolsHint}`;
+    }
+  } catch {}
 
   // Add reasoning configuration for reasoning models
   if (modelConfig?.supportsReasoning) {

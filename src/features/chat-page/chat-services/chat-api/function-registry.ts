@@ -133,18 +133,18 @@ async function createImage(
 
 // RAG search function
 async function searchDocuments(
-  args: { query: string; limit?: number, skip?: number }, 
+  args: { query: string; top?: number; skip?: number }, 
   context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
 ) {
   logInfo("Searching documents", { 
     queryLength: args.query?.length || 0,
-    limit: args.limit || 10,
+    top: args.top || 10,
     skip: args.skip || 0,
     threadId: context.threadId 
   });
   logDebug("Search query", { query: args.query });
 
-  const limit = args.limit || 10;
+  const top = args.top || 10;
   const skip = args.skip || 0;
   const userId = await userHashedId();
 
@@ -154,7 +154,7 @@ async function searchDocuments(
   // Perform similarity search across user's documents and thread-specific documents
   const documentResponse = await SimilaritySearch(
     args.query,
-    limit,
+    top,
     `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`,
     skip,
     shouldCreateEmbedding
@@ -203,7 +203,8 @@ async function searchDocuments(
     .join('\n---\n');
 
   return {
-    query: args.query,    documents: documents,
+    query: args.query,
+    documents: documents,
     contextText: contextText,
     summary: `Found ${documents.length} relevant documents for: "${args.query}". Use the document content to provide detailed answers.`,
     documentCount: documents.length
@@ -276,7 +277,7 @@ export async function getToolByName(toolName: string): Promise<FunctionDefinitio
     {
       type: "function" as const, 
       name: "search_documents",
-      description: "Search through attached documents to the chat thread to find relevant information. Use this when the user asks questions that might be answered by their documents. Use multiple iterations in combination with limit and skip parameters to find the best answer if required.",
+      description: "Search through documents attached to the current chat to find relevant information. Use this when the user asks questions that might be answered by their documents. Iterate using top (max results) and skip (offset) to paginate until you gather enough context.",
       parameters: {
         type: "object",
         properties: {
@@ -284,13 +285,13 @@ export async function getToolByName(toolName: string): Promise<FunctionDefinitio
             type: "string",
             description: "The search query to find relevant documents and information. Should be the raw question or a summarized version which is used for semantic search."
           },
-          limit: {
+          top: {
             type: ["number", "null"],
-            description: "Maximum number of documents to return (default: 10)"
+            description: "Maximum number of documents to return (default: 10). Use a higher number if the first page lacks sufficient context."
           },
           skip: {
             type: ["number", "null"],
-            description: "Number of documents to skip (default: 0). This is useful for pagination if the question cannot be answered with the first batch of documents."
+            description: "Number of documents to skip (default: 0). Use to paginate (e.g., skip=10 with top=10 for the second page)."
           }  
         }
       },

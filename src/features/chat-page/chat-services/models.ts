@@ -247,6 +247,7 @@ export interface ChatMessageModel {
   name: string;
   multiModalImage?: string;
   reasoningContent?: string;
+  toolCallHistory?: Array<{ name: string; arguments: string; result?: string; timestamp: Date }>;
   type: typeof MESSAGE_ATTRIBUTE;
 }
 

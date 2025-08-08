@@ -12,6 +12,11 @@ export const mapOpenAIChatMessages = async (
   const mappedMessages: ChatCompletionMessageParam[] = [];
   
   for (const message of messages) {
+    // Skip roles not supported by the Responses API history (e.g., tool/function)
+    if (message.role === "tool" || message.role === "function") {
+      continue;
+    }
+
     // Resolve image references before mapping
     const resolvedMessage = await processMessageForImageResolution(
       message.content,
@@ -32,13 +37,6 @@ export const mapOpenAIChatMessages = async (
     
     // Handle other message types...
     switch (message.role) {
-      case "function":
-        mappedMessages.push({
-          role: message.role,
-          name: message.name,
-          content: resolvedMessage.content,
-        } as ChatCompletionFunctionMessageParam);
-        break;
       case "assistant":
         mappedMessages.push({
           role: message.role,
