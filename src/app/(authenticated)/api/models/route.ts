@@ -19,10 +19,12 @@ export async function GET(request: NextRequest) {
     
     const availableModelIds = Object.keys(availableModels) as ChatModel[];
     
+    const defaultModel = availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5";
     return NextResponse.json({
       availableModels,
       availableModelIds,
-      defaultModel: availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5"
+      defaultModel,
+      defaultReasoningEffort: MODEL_CONFIGS[defaultModel as ChatModel]?.defaultReasoningEffort || "minimal"
     });
   } catch (error) {
     logError("Error getting available models", { error: error instanceof Error ? error.message : String(error) });

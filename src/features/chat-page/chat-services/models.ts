@@ -37,6 +37,7 @@ export interface ModelConfig {
   supportsImageGeneration?: boolean;
   supportsComputerUse?: boolean;
   deploymentName?: string;
+  defaultReasoningEffort?: ReasoningEffort;
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
@@ -44,10 +45,11 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     id: "gpt-5",
     name: "GPT-5",
     description: "Most advanced model with superior reasoning and capabilities",
-    getInstance: () => OpenAIV1Instance(),
-    supportsReasoning: false,
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
     supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "minimal"
   },
   "gpt-4o": {
     id: "gpt-4o",
@@ -56,7 +58,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1Instance(),
     supportsReasoning: false,
     supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "gpt-4o-mini": {
     id: "gpt-4o-mini",
@@ -65,7 +68,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1Instance(),
     supportsReasoning: false,
     supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "gpt-4.1": {
     id: "gpt-4.1",
@@ -74,7 +78,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1Instance(),
     supportsReasoning: false,
     supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_GPT41_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_GPT41_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "gpt-4.1-mini": {
     id: "gpt-4.1-mini",
@@ -83,7 +88,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1Instance(),
     supportsReasoning: false,
     supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_GPT41_MINI_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_GPT41_MINI_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "gpt-4.1-nano": {
     id: "gpt-4.1-nano",
@@ -92,7 +98,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1Instance(),
     supportsReasoning: false,
     supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_GPT41_NANO_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_GPT41_NANO_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "gpt-image-1": {
     id: "gpt-image-1",
@@ -102,7 +109,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: false,
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
-    deploymentName: process.env.AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "o3": {
     id: "o3",
@@ -112,7 +120,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
-    deploymentName: process.env.AZURE_OPENAI_API_O3_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_O3_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "o3-pro": {
     id: "o3-pro",
@@ -122,7 +131,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
-    deploymentName: process.env.AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "o4-mini": {
     id: "o4-mini",
@@ -132,7 +142,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
-    deploymentName: process.env.AZURE_OPENAI_API_O4_MINI_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_O4_MINI_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   },
   "computer-use-preview": {
     id: "computer-use-preview",
@@ -142,7 +153,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: false,
     supportsResponsesAPI: true,
     supportsComputerUse: true,
-    deploymentName: process.env.AZURE_OPENAI_API_COMPUTER_USE_DEPLOYMENT_NAME
+    deploymentName: process.env.AZURE_OPENAI_API_COMPUTER_USE_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium"
   }
 };
 
@@ -265,7 +277,7 @@ export interface UserPrompt {
   reasoningEffort?: ReasoningEffort;
 }
 
-export type ReasoningEffort = "low" | "medium" | "high";
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 export interface ChatDocumentModel {
   id: string;

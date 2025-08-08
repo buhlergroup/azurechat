@@ -32,7 +32,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   const currentChatThread = currentChatThreadResponse.response;
   const selectedModel = props.selectedModel || "gpt-5";
   const modelConfig = MODEL_CONFIGS[selectedModel];
-  const reasoningEffort = props.reasoningEffort || "medium";
+  const reasoningEffort = props.reasoningEffort || modelConfig?.defaultReasoningEffort || "minimal";
 
   // Validate model configuration
   if (!modelConfig?.deploymentName) {

@@ -31,6 +31,11 @@ export const ReasoningEffortSelector: React.FC<ReasoningEffortSelectorProps> = (
 
   const effortOptions = [
     {
+      value: "minimal" as ReasoningEffort,
+      label: "Minimal",
+      description: "Fastest, minimal reasoning",
+    },
+    {
       value: "low" as ReasoningEffort,
       label: "Low",
       description: "Quick responses, basic reasoning",

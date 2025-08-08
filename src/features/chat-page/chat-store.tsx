@@ -27,6 +27,7 @@ import {
   ChatModel,
   ReasoningEffort,
   getDefaultModel as getDefaultModelFromAPI,
+  MODEL_CONFIGS,
 } from "./chat-services/models";
 let abortController: AbortController = new AbortController();
 
@@ -41,7 +42,7 @@ class ChatState {
   public userName: string = "";
   public chatThreadId: string = "";
   public selectedModel: ChatModel = "gpt-5"; // Will be updated when available models are fetched
-  public reasoningEffort: ReasoningEffort = "medium";
+  public reasoningEffort: ReasoningEffort = "minimal";
 
   private chatThread: ChatThreadModel | undefined;
   private tempReasoningContent: string = "";
@@ -90,6 +91,11 @@ class ChatState {
     this.messages = messages;
     this.userName = userName;
     this.selectedModel = chatThread.selectedModel || "gpt-5";
+    // Set default reasoning effort per model if available
+    const defaultEffort = (MODEL_CONFIGS as any)[this.selectedModel]?.defaultReasoningEffort;
+    if (defaultEffort) {
+      this.reasoningEffort = defaultEffort;
+    }
     this.tempReasoningContent = "";
     this.currentAssistantMessageId = "";
     this.toolCallHistory = {};
@@ -98,6 +104,10 @@ class ChatState {
 
   public async updateSelectedModel(model: ChatModel) {
     this.selectedModel = model;
+    const defaultEffort = MODEL_CONFIGS[model]?.defaultReasoningEffort;
+    if (defaultEffort) {
+      this.reasoningEffort = defaultEffort;
+    }
     
     // Persist model selection to thread
     if (this.chatThreadId) {
