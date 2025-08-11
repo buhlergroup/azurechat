@@ -61,15 +61,24 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
     _getHistory(currentChatThread),
   ]);
 
-  // Check if documents are attached to this chat thread
+  // Check if documents are attached to this chat thread or via persona
   const documentsResponse = await FindAllChatDocuments(currentChatThread.id);
-  const hasDocuments = documentsResponse.status === "OK" && documentsResponse.response.length > 0;
+  const hasChatDocuments =
+    documentsResponse.status === "OK" && documentsResponse.response.length > 0;
+  const hasPersonaDocuments =
+    (currentChatThread.personaDocumentIds?.length || 0) > 0;
+  const hasAnyDocuments = hasChatDocuments || hasPersonaDocuments;
   
   // Build document hint if documents are attached and enforce search usage
   let documentHint = "";
-  if (hasDocuments) {
-    const documentNames = documentsResponse.response.map(doc => doc.name).join(", ");
-    documentHint = `\n\nDOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}.\n\nMANDATORY BEHAVIOR WHEN DOCUMENTS ARE PRESENT:\n- You MUST first call the search_documents tool with the user's question as the query before composing an answer.\n- If the first page is insufficient, iterate using top (max results, default 10) and skip (offset) to gather more context (e.g., top=10, skip=10 for page 2).\n- Ground your answer in the retrieved content and cite filenames when relevant.\n- Do not answer purely from prior knowledge when documents are attached.`;
+  if (hasAnyDocuments) {
+    const contextLine = hasChatDocuments
+      ? `DOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentsResponse.response
+          .map((doc) => doc.name)
+          .join(", ")}.`
+      : `DOCUMENT CONTEXT: The user has persona-linked document(s) available for this conversation.`;
+
+    documentHint = `\n\n${contextLine}\n\nMANDATORY BEHAVIOR WHEN DOCUMENTS ARE PRESENT:\n- You MUST first call the search_documents tool with the user's question as the query before composing an answer.\n- If the first page is insufficient, iterate using top (max results, default 10) and skip (offset) to gather more context (e.g., top=10, skip=10 for page 2).\n- Ground your answer in the retrieved content and cite filenames when relevant.\n- Do not answer purely from prior knowledge when documents are attached.`;
   }
 
   // Update system prompt with current date and document hint
@@ -87,8 +96,8 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
   // Get available functions (built-in + dynamic extensions)
   const tools = await _getAvailableTools(currentChatThread);
   
-  // Add search_documents tool if documents are attached
-  if (hasDocuments) {
+  // Add search_documents tool if any documents are available (chat or persona)
+  if (hasAnyDocuments) {
     const searchDocumentsTool = await getToolByName("search_documents");
     if (searchDocumentsTool) {
       tools.push(searchDocumentsTool);
