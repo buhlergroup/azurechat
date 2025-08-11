@@ -370,7 +370,7 @@ export const OpenAIResponsesStream = (props: {
 
             case "response.completed":
               logInfo("Received response.completed event");
-              await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse, toolCallHistory);
+              await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse);
               return;
 
             case "error":
