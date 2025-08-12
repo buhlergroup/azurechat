@@ -15,6 +15,7 @@ import {
   PersonaDocumentSchema,
   SharePointFile,
   SharePointFileContent,
+  convertPersonaDocumentToSharePointDocument,
 } from "./models";
 import { uniqueId } from "@/features/common/util";
 import { HistoryContainer } from "@/features/common/services/cosmos";
@@ -342,6 +343,37 @@ export const AuthorizedDocuments = async (
 
     return allowed;
   } catch (error) {
+    return [];
+  }
+};
+
+// Compute persona document IDs that the current user can access
+export const AllowedPersonaDocumentIds = async (
+  personaDocumentIds: string[]
+): Promise<string[]> => {
+  try {
+    if (!personaDocumentIds || personaDocumentIds.length === 0) return [];
+
+    const personaDocumentsResponses = await Promise.all(
+      personaDocumentIds.map(async (id) => {
+        try {
+          return await PersonaDocumentById(id);
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const okPersonaDocs = personaDocumentsResponses.filter(
+      (response) => response !== null && (response as any).status === "OK"
+    ) as Array<{ status: "OK"; response: PersonaDocument }>;
+
+    const allowed = await AuthorizedDocuments(
+      okPersonaDocs.map((e) => convertPersonaDocumentToSharePointDocument(e.response))
+    );
+
+    return allowed || [];
+  } catch {
     return [];
   }
 };

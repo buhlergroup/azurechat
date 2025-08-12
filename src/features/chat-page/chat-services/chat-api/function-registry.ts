@@ -9,6 +9,7 @@ import { CreateCitations, FormatCitations } from "../citation-service";
 import { userHashedId } from "@/features/auth-page/helpers";
 import { skip } from "node:test";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
+import { AllowedPersonaDocumentIds } from "@/features/persona-page/persona-services/persona-documents-service";
 
 // Type definitions for function calling
 export interface FunctionDefinition {
@@ -134,7 +135,7 @@ async function createImage(
 // RAG search function
 async function searchDocuments(
   args: { query: string; top?: number; skip?: number }, 
-  context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
+  context: { threadId: string; userMessage: string; documentIds?: string[]; signal: AbortSignal; headers?: Record<string, string> }
 ) {
   logInfo("Searching documents", { 
     queryLength: args.query?.length || 0,
@@ -151,11 +152,19 @@ async function searchDocuments(
   // Check if we should create embeddings (default to true for backward compatibility)
   const shouldCreateEmbedding = context.headers?.['x-create-embedding'] !== 'false';
 
-  // Perform similarity search across user's documents and thread-specific documents
+  const allowedPersonaDocumentIds = await AllowedPersonaDocumentIds(context.documentIds || []) || [];
+
+  // Build filter: user's thread docs OR user-global docs, plus allowed persona docs if provided via headers
+  const baseFilter = `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`;
+  const personaClause = allowedPersonaDocumentIds.length > 0
+    ? ` or search.in(personaDocumentId, '${allowedPersonaDocumentIds.join(',')}', ',')`
+    : '';
+  const filter = `${baseFilter}${personaClause}`;
+
   const documentResponse = await SimilaritySearch(
     args.query,
     top,
-    `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`,
+    filter,
     skip,
     shouldCreateEmbedding
   );
