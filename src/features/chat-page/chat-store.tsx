@@ -305,7 +305,12 @@ class ChatState {
   }
 
   private async updateTitle() {
-    if (this.chatThread && this.chatThread.name === NEW_CHAT_NAME) {
+    const shouldUpdateTitle = this.chatThread && (
+      this.chatThread.name === NEW_CHAT_NAME ||
+      (this.chatThread.personaMessageTitle && this.chatThread.name === this.chatThread.personaMessageTitle)
+    );
+
+    if (shouldUpdateTitle) {
       // Fire-and-forget: update title asynchronously without blocking the UI
       setTimeout(async () => {
         try {
