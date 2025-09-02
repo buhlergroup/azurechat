@@ -42,8 +42,10 @@ export const OpenAIResponsesStream = (props: {
     content: string,
     reasoningContent: string,
     chatThread: ChatThreadModel,
-    toolCallHistory?: Array<{ name: string; arguments: string; result?: string; timestamp: Date }>
+    toolCallHistory?: Array<{ name: string; arguments: string; result?: string; timestamp: Date }>,
+    reasoningState?: any
   ) => {
+    
     const messageToSave: ChatMessageModel = {
       id: messageId,
       name: AI_NAME,
@@ -56,6 +58,7 @@ export const OpenAIResponsesStream = (props: {
       userId: await userHashedId(),
       type: MESSAGE_ATTRIBUTE,
       toolCallHistory: toolCallHistory && toolCallHistory.length > 0 ? toolCallHistory : undefined,
+      reasoningState: reasoningState || undefined,
     };
     
     await UpsertChatMessage(messageToSave);
@@ -86,14 +89,17 @@ export const OpenAIResponsesStream = (props: {
     // For response.completed events, the final content is already accumulated in lastMessage
     // The event.response.output contains the final structured output, but we've been
     // building the text content incrementally through delta events
-    
-    // Use event-based reasoning summaries if available
+    const encryptedReasoning = event.response?.output
+      ?.find((item: any) => item.type === "reasoning");
+    const messageOutput = event.response?.output?.find((item: any) => item.type === "message");
+    const originalMessageId = messageOutput?.id || messageId;
+
     const finalReasoningContent = Object.keys(reasoningSummaries).length > 0 
       ? Object.values(reasoningSummaries).join('\n\n') 
       : reasoningContent;
 
     // Save message to database
-    await saveMessage(messageId, lastMessage, finalReasoningContent, chatThread);
+    await saveMessage(originalMessageId, lastMessage, finalReasoningContent, chatThread, undefined, encryptedReasoning);
 
     // Report token usage
     if (event.response?.usage) {
@@ -107,7 +113,7 @@ export const OpenAIResponsesStream = (props: {
       await reportCompletionTokens(output_tokens, chatThread.selectedModel || "gpt-4o", {
         personaMessageTitle: chatThread.personaMessageTitle,
         threadId: chatThread.id,
-        messageId: messageId,
+        messageId: originalMessageId,
         totalTokens: total_tokens,
         inputTokens: input_tokens
       });
@@ -115,7 +121,7 @@ export const OpenAIResponsesStream = (props: {
       await reportPromptTokens(input_tokens, chatThread.selectedModel || "gpt-4o", "user", {
         personaMessageTitle: chatThread.personaMessageTitle,
         threadId: chatThread.id,
-        messageId: messageId,
+        messageId: originalMessageId
       });
     }
 

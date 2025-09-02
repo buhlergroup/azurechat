@@ -10,9 +10,7 @@ import { mapOpenAIChatMessages } from "../utils";
 import { FindTopChatMessagesForCurrentUser } from "../chat-message-service";
 import { 
   getAvailableFunctions, 
-  executeFunction, 
   registerDynamicFunction, 
-  FunctionCall,
   getToolByName
 } from "./function-registry";
 import { OpenAIResponsesStream } from "./openai-responses-stream";
@@ -125,6 +123,7 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
     store: false,
     tools: tools,
     tool_choice: "auto", // Let the model decide when to use tools
+    include: ["reasoning.encrypted_content"],
     parallel_tool_calls: true, // Allow parallel tool calls
   };
 
@@ -154,18 +153,17 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
     requestOptions: requestOptions,
   };
 
-  // Build initial conversation input
-  const initialInput = [
+  // Build initial conversation input (preserve mapped history items as-is)
+  const initialInput: any[] = [
     {
       type: "message" as const,
       role: "system" as const,
       content: currentChatThread.personaMessage,
     },
-    ...history.map((msg: any) => ({
-      type: "message" as const,
-      role: msg.role,
-      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-    })),
+    // 'history' already contains properly mapped ResponseInputItems including
+    // reasoning entries (type: "reasoning") and multimodal content arrays.
+    // Do not re-map, otherwise we lose reasoning state and modalities.
+    ...history,
   ];
 
   // Handle multimodal input for the user message

@@ -1,15 +1,11 @@
-import {
-  ChatCompletionAssistantMessageParam,
-  ChatCompletionFunctionMessageParam,
-  ChatCompletionMessageParam,
-} from "openai/resources/chat/completions";
+import { ResponseInputItem } from "openai/resources/responses/responses"
 import { ChatMessageModel } from "./models";
 import { processMessageForImageResolution } from "./chat-image-persistence-service";
 
 export const mapOpenAIChatMessages = async (
   messages: ChatMessageModel[]
-): Promise<ChatCompletionMessageParam[]> => {
-  const mappedMessages: ChatCompletionMessageParam[] = [];
+): Promise<ResponseInputItem[]> => {
+  const mappedMessages: ResponseInputItem[] = [];
   
   for (const message of messages) {
     // Skip roles not supported by the Responses API history (e.g., tool/function)
@@ -21,17 +17,17 @@ export const mapOpenAIChatMessages = async (
     const resolvedMessage = await processMessageForImageResolution(
       message.content,
       message.multiModalImage
-    );
+    )
 
-    // Handle multimodal content for user messages with images
-    if (message.role === "user" && resolvedMessage.multiModalImage) {
+  if (message.role === "user" && resolvedMessage.multiModalImage) {
       mappedMessages.push({
-        role: message.role,
+        type: "message",
+        role: message.role as any,
         content: [
-          { type: "text", text: resolvedMessage.content },
-          { type: "image_url", image_url: { url: resolvedMessage.multiModalImage } }
-        ]
-      });
+          { type: "input_text", text: resolvedMessage.content },
+          { type: "input_image", image_url: resolvedMessage.multiModalImage },
+        ] as any,
+      } as ResponseInputItem);
       continue;
     }
     
@@ -39,16 +35,24 @@ export const mapOpenAIChatMessages = async (
     switch (message.role) {
       case "assistant":
         mappedMessages.push({
-          role: message.role,
+          type: "message",
+          role: message.role as any,
           content: resolvedMessage.content,
-        } as ChatCompletionAssistantMessageParam);
+        } as ResponseInputItem);
         break;
       default:
         mappedMessages.push({
+          type: "message",
           role: message.role,
           content: resolvedMessage.content,
-        } as ChatCompletionMessageParam);
+        } as ResponseInputItem);
         break;
+    }
+    
+    if (message.role === "assistant" && message.reasoningState) {
+      mappedMessages.push(
+        message.reasoningState
+      );
     }
   }
   

@@ -15,8 +15,9 @@ export interface ConversationContext {
 }
 
 export interface ConversationMessage {
-  type: "message" | "function_call" | "function_call_output";
+  type: "message" | "function_call" | "function_call_output" | "reasoning";
   role?: "system" | "user" | "assistant";
+  encrypted_content?: string;
   content?: string;
   name?: string;
   arguments?: string;

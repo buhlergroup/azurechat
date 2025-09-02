@@ -113,6 +113,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     tools: tools,
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls
+    include: ["reasoning.encrypted_content"]
   };
   // Add a strong hint to prefer using available tools/extensions
   try {
@@ -161,11 +162,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
       role: "system" as const,
       content: currentChatThread.personaMessage,
     },
-    ...history.map((msg: any) => ({
-      type: "message" as const,
-      role: msg.role,
-      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-    })),
+    ...history,
   ];
 
   // Handle multimodal input for the user message
