@@ -51,7 +51,7 @@ export const mapOpenAIChatMessages = async (
     
     if (message.role === "assistant" && message.reasoningState) {
       mappedMessages.push(
-        message.reasoningState
+        message.reasoningState as ResponseInputItem
       );
     }
   }

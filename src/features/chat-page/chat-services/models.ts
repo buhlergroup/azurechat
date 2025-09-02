@@ -249,7 +249,7 @@ export interface ChatMessageModel {
   reasoningContent?: string;
   toolCallHistory?: Array<{ name: string; arguments: string; result?: string; timestamp: Date }>;
   type: typeof MESSAGE_ATTRIBUTE;
-  reasoningState?: string;
+  reasoningState?: any;
 }
 
 export type ChatRole = "system" | "user" | "assistant" | "function" | "tool" | "reasoning";
