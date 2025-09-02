@@ -4,6 +4,7 @@ import "server-only";
 import { uniqueId } from "@/features/common/util";
 import { executeFunction, FunctionCall } from "./function-registry";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
+import { ResponseInputItem } from "openai/resources/responses/responses";
 
 export interface ConversationContext {
   threadId: string;
@@ -14,19 +15,8 @@ export interface ConversationContext {
   headers?: Record<string, string>;
 }
 
-export interface ConversationMessage {
-  type: "message" | "function_call" | "function_call_output" | "reasoning";
-  role?: "system" | "user" | "assistant";
-  encrypted_content?: string;
-  content?: string;
-  name?: string;
-  arguments?: string;
-  call_id?: string;
-  output?: string;
-}
-
 export interface ConversationState {
-  conversationInput: ConversationMessage[];
+  conversationInput: ResponseInputItem[];
   context: ConversationContext;
   messageId?: string; // Consistent message ID across the entire conversation
 }
@@ -36,7 +26,7 @@ export interface ConversationState {
  */
 export async function createConversationState(
   context: ConversationContext, 
-  initialInput: ConversationMessage[]
+  initialInput: ResponseInputItem[]
 ): Promise<ConversationState> {
   return {
     conversationInput: [...initialInput],
@@ -108,7 +98,7 @@ export async function processFunctionCall(
     logDebug("Function result preview", { preview: result.output.substring(0, 200) + "..." });
 
     // Create updated conversation input
-    const updatedConversationInput = [
+    const updatedConversationInput: ResponseInputItem[] = [
       ...state.conversationInput,
       {
         type: "function_call" as const,
@@ -139,7 +129,7 @@ export async function processFunctionCall(
     const errorMessage = `Function execution failed: ${error}`;
     
     // Create updated conversation input with error
-    const updatedConversationInput = [
+    const updatedConversationInput: ResponseInputItem[] = [
       ...state.conversationInput,
       {
         type: "function_call" as const,
@@ -183,6 +173,6 @@ export async function continueConversation(state: ConversationState) {
 /**
  * Get current conversation input
  */
-export async function getConversationInput(state: ConversationState): Promise<ConversationMessage[]> {
+export async function getConversationInput(state: ConversationState): Promise<ResponseInputItem[]> {
   return [...state.conversationInput];
 }
