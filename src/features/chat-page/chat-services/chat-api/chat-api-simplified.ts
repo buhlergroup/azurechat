@@ -160,9 +160,6 @@ export const ChatAPISimplified = async (props: UserPrompt, signal: AbortSignal) 
       role: "system" as const,
       content: currentChatThread.personaMessage,
     },
-    // 'history' already contains properly mapped ResponseInputItems including
-    // reasoning entries (type: "reasoning") and multimodal content arrays.
-    // Do not re-map, otherwise we lose reasoning state and modalities.
     ...history,
   ];
 

@@ -428,7 +428,10 @@ class ChatState {
               }
               break;
             case "abort":
-              this.removeMessage(newUserMessage.id);
+              // Show the reason to the user and stop loading
+              if ((responseType as any)?.response) {
+                showError((responseType as any).response);
+              }
               this.loading = "idle";
               break;
             case "error":

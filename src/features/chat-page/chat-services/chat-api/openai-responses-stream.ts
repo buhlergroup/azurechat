@@ -199,6 +199,49 @@ export const OpenAIResponsesStream = (props: {
               logDebug("Response created");
               break;
 
+            case "response.incomplete": {
+              // The model ended the response early; capture the reason and surface to UI
+              const reason = (event as any)?.response?.incomplete_details?.reason || (event as any)?.incomplete_details?.reason || "unknown";
+              logWarn("Received response.incomplete", { reason });
+
+              // Save any partial content we have so far
+              if (lastMessage && !messageSaved) {
+                try {
+                  await saveMessage(messageId, lastMessage, reasoningContent, chatThread, toolCallHistory);
+                  messageSaved = true;
+                } catch (persistError) {
+                  logWarn("Failed to persist partial message on incomplete", { error: persistError instanceof Error ? persistError.message : String(persistError) });
+                }
+              }
+
+              // Map the reason to a short, user-friendly message
+              const reasonMessageMap: Record<string, string> = {
+                max_output_tokens: "The model reached the maximum output tokens limit.",
+                content_filter: "The response was stopped by a content filter.",
+                server_error: "The server encountered an error while generating the response.",
+                rate_limit: "The request hit a rate limit.",
+              };
+              const userMessage = reasonMessageMap[reason] || `The response ended early (${reason}).`;
+
+              const abortEvent: AzureChatCompletionAbort = {
+                type: "abort",
+                response: userMessage,
+              };
+
+              // Notify frontend and close the stream
+              streamResponse(abortEvent.type, JSON.stringify(abortEvent));
+
+              // Mark conversation as finished
+              if (onComplete) {
+                await onComplete();
+              }
+
+              // Ensure the stream is flushed before closing by yielding to the event loop
+              await Promise.resolve();
+              controller.close();
+              return;
+            }
+
             case "response.output_text.delta":
               // Handle text delta events
               if (event.delta) {
