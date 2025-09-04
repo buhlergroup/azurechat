@@ -14,9 +14,8 @@ export type MessageProps = HTMLAttributes<HTMLDivElement> & {
 export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
     className={cn(
-      'group flex w-full items-end justify-end gap-2 py-4',
-      from === 'user' ? 'is-user' : 'is-assistant flex-row-reverse justify-end',
-      '[&>div]:max-w-[80%]',
+  'group flex w-full items-end justify-end gap-2 py-4',
+  from === 'user' ? 'is-user' : 'is-assistant flex-row-reverse justify-end',
       className
     )}
     {...props}
@@ -32,11 +31,9 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-  // Base layout (no bubble styling so assistant stays on plain canvas)
   'flex flex-col gap-2 overflow-hidden text-foreground text-sm',
-  // User bubble styling (background, padding, rounding, contrast text)
-  'group-[.is-user]:rounded-lg group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
-  // Assistant: remove padding & rounding so it blends with page background
+  'group-[.is-user]:w-fit group-[.is-user]:max-w-[75%] group-[.is-user]:break-words group-[.is-user]:whitespace-pre-wrap group-[.is-user]:ml-auto',
+  'group-[.is-user]:rounded-xl group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
   'group-[.is-assistant]:px-0 group-[.is-assistant]:py-0',
   'is-user:dark',
       className

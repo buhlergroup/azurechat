@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import { useSession } from "next-auth/react";
 import { chatStore, useChat } from "@/features/chat-page/chat-store";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
@@ -35,9 +35,104 @@ interface ChatPageNewProps {
 // Derive a coarse chat status for PromptInputSubmit icon mapping
 // Status directly from chatStore.phase once available.
 
+// Message list isolated to avoid re-render on every input keystroke
+const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePicture?: string | null }) {
+  const { messages, loading } = useChat();
+  const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
+  return (
+    <Conversation>
+      <ConversationContent>
+        {messages.map(m => {
+          const role = (m.role === 'user' || m.role === 'assistant' || m.role === 'system') ? m.role : 'assistant';
+          const avatarSrc = role === 'user'
+            ? (profilePicture || '/user-icon.png')
+            : '/ai-icon.png';
+          const reasoningMeta = chatStore.reasoningMeta[m.id] || { isStreaming: false } as any;
+          const toolHistory = chatStore.toolCallHistory[m.id] || [];
+          return (
+            <Message key={m.id} from={role}>
+              <div className="flex flex-col gap-0.5 w-full">
+                <MessageContent>
+                {m.reasoningContent && m.role === 'assistant' && (
+                  <Reasoning isStreaming={reasoningMeta.isStreaming} defaultOpen>
+                    <ReasoningTrigger>
+                      {reasoningMeta.isStreaming ? 'Thinking...' : reasoningMeta.elapsed ? `Thought for ${reasoningMeta.elapsed}s` : 'Reasoning'}
+                    </ReasoningTrigger>
+                    <ReasoningContent>{m.reasoningContent}</ReasoningContent>
+                  </Reasoning>
+                )}
+                {toolHistory.length > 0 && m.role === 'assistant' && (
+                  <div className="space-y-3 mb-4">
+                    {toolHistory.map((tc, i) => {
+                      let parsedArgs: any = undefined;
+                      try { parsedArgs = JSON.parse(tc.arguments); } catch { parsedArgs = tc.arguments; }
+                      const state = tc.result ? 'output-available' : (chatStore.toolCallInProgress[m.id] === tc.name ? 'input-available' : 'input-streaming');
+                      return (
+                        <Tool key={i} defaultOpen={state !== 'input-streaming'}>
+                          <ToolHeader type={`tool-${tc.name}`} state={state as any} />
+                          <ToolContent>
+                            <ToolInput input={parsedArgs} />
+                            <ToolOutput output={tc.result} errorText={undefined} />
+                          </ToolContent>
+                        </Tool>
+                      );
+                    })}
+                  </div>
+                )}
+                {m.role === 'tool' && (() => {
+                  let parsed: any = null;
+                  try { parsed = JSON.parse(m.content); } catch { /* ignore */ }
+                  const toolName = parsed?.name || m.name || 'tool';
+                  const toolArgs = parsed?.arguments ? (() => { try { return JSON.parse(parsed.arguments); } catch { return parsed.arguments; } })() : undefined;
+                  const toolResult = parsed?.result;
+                  return (
+                    <Tool defaultOpen>
+                      <ToolHeader type={toolName} state={toolResult ? 'output-available' : 'input-available'} />
+                      <ToolContent>
+                        {toolArgs && <ToolInput input={toolArgs} />}
+                        <ToolOutput output={toolResult} errorText={undefined} />
+                      </ToolContent>
+                    </Tool>
+                  );
+                })()}
+                {(m.role === 'assistant' || m.role === 'user' || m.role === 'system') && (
+                  <RichResponse content={m.content} />
+                )}
+                </MessageContent>
+                {(m.role === 'assistant' || m.role === 'user') && (
+                  <div className="flex group-[.is-user]:justify-end group-[.is-assistant]:justify-start px-0.5">
+                    <Actions className="opacity-0 transition group-hover:opacity-100">
+                      <Action
+                        aria-label="Copy message"
+                        tooltip="Copy"
+                        onClick={() => {
+                          navigator.clipboard.writeText(m.content).then(() => {
+                            setCopiedMap(prev => ({ ...prev, [m.id]: true }));
+                            setTimeout(() => setCopiedMap(prev => ({ ...prev, [m.id]: false })), 1500);
+                          });
+                        }}
+                        className="size-7"
+                      >
+                        {copiedMap[m.id] ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      </Action>
+                    </Actions>
+                  </div>
+                )}
+              </div>
+            </Message>
+          );
+        })}
+        {loading === "loading" && (
+          <div className="py-4 flex"><Loader /></div>
+        )}
+      </ConversationContent>
+      <ConversationScrollButton />
+    </Conversation>
+  );
+});
+
 export const ChatPageNew = (props: ChatPageNewProps) => {
   const { data: session } = useSession();
-  const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const profilePicture = useProfilePicture(session?.user?.accessToken);
 
   useEffect(() => {
@@ -49,7 +144,8 @@ export const ChatPageNew = (props: ChatPageNewProps) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.chatThread.id, session?.user?.name]);
 
-  const { messages, loading, input, chatThreadId, selectedModel, reasoningEffort, phase } = useChat();
+  // Separate subscriptions: messages handled in ChatMessages; here only input & control state
+  const { input, chatThreadId, selectedModel, reasoningEffort, phase, loading } = useChat();
   const { uploadButtonLabel } = useFileStore();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -69,100 +165,7 @@ export const ChatPageNew = (props: ChatPageNewProps) => {
         chatDocuments={props.chatDocuments}
         extensions={props.extensions}
       />
-      <Conversation>
-        <ConversationContent>
-          {messages.map(m => {
-            const role = (m.role === 'user' || m.role === 'assistant' || m.role === 'system') ? m.role : 'assistant';
-            // Choose avatar image: user => fetched profile or user icon; assistant/system/tool => AI icon
-            const avatarSrc = role === 'user'
-              ? (profilePicture || '/user-icon.png')
-              : '/ai-icon.png';
-            const reasoningMeta = chatStore.reasoningMeta[m.id] || { isStreaming: false } as any;
-            const toolHistory = chatStore.toolCallHistory[m.id] || [];
-            return (
-              <Message key={m.id} from={role}>
-                <MessageAvatar src={avatarSrc} name={m.name} />
-                <div className="flex flex-col gap-0.5 w-full">
-                  <MessageContent>
-                  {/* Reasoning (assistant only) */}
-                  {m.reasoningContent && m.role === 'assistant' && (
-                    <Reasoning isStreaming={reasoningMeta.isStreaming} defaultOpen>
-                      <ReasoningTrigger>
-                        {reasoningMeta.isStreaming ? 'Thinking...' : reasoningMeta.elapsed ? `Thought for ${reasoningMeta.elapsed}s` : 'Reasoning'}
-                      </ReasoningTrigger>
-                      <ReasoningContent>{m.reasoningContent}</ReasoningContent>
-                    </Reasoning>
-                  )}
-                  {/* Tool calls embedded in assistant message (history) */}
-                  {toolHistory.length > 0 && m.role === 'assistant' && (
-                    <div className="space-y-3 mb-4">
-                      {toolHistory.map((tc, i) => {
-                        let parsedArgs: any = undefined;
-                        try { parsedArgs = JSON.parse(tc.arguments); } catch { parsedArgs = tc.arguments; }
-                        const state = tc.result ? 'output-available' : (chatStore.toolCallInProgress[m.id] === tc.name ? 'input-available' : 'input-streaming');
-                        return (
-                          <Tool key={i} defaultOpen={state !== 'input-streaming'}>
-                            <ToolHeader type={`tool-${tc.name}`} state={state as any} />
-                            <ToolContent>
-                              <ToolInput input={parsedArgs} />
-                              <ToolOutput output={tc.result} errorText={undefined} />
-                            </ToolContent>
-                          </Tool>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {/* Tool / function role messages displayed with Tool component */}
-                  {m.role === 'tool' && (() => {
-                    let parsed: any = null;
-                    try { parsed = JSON.parse(m.content); } catch { /* ignore */ }
-                    const toolName = parsed?.name || m.name || 'tool';
-                    const toolArgs = parsed?.arguments ? (() => { try { return JSON.parse(parsed.arguments); } catch { return parsed.arguments; } })() : undefined;
-                    const toolResult = parsed?.result;
-                    return (
-                      <Tool defaultOpen>
-                        <ToolHeader type={toolName} state={toolResult ? 'output-available' : 'input-available'} />
-                        <ToolContent>
-                          {toolArgs && <ToolInput input={toolArgs} />}
-                          <ToolOutput output={toolResult} errorText={undefined} />
-                        </ToolContent>
-                      </Tool>
-                    );
-                  })()}
-                  {/* Assistant / user textual content */}
-                  {(m.role === 'assistant' || m.role === 'user' || m.role === 'system') && (
-                    <RichResponse content={m.content} />
-                  )}
-                  </MessageContent>
-                  {(m.role === 'assistant' || m.role === 'user') && (
-                    <div className="flex group-[.is-user]:justify-end group-[.is-assistant]:justify-start px-0.5">
-                      <Actions className="opacity-0 transition group-hover:opacity-100">
-                        <Action
-                          aria-label="Copy message"
-                          tooltip="Copy"
-                          onClick={() => {
-                            navigator.clipboard.writeText(m.content).then(() => {
-                              setCopiedMap(prev => ({ ...prev, [m.id]: true }));
-                              setTimeout(() => setCopiedMap(prev => ({ ...prev, [m.id]: false })), 1500);
-                            });
-                          }}
-                          className="size-7"
-                        >
-                          {copiedMap[m.id] ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                        </Action>
-                      </Actions>
-                    </div>
-                  )}
-                </div>
-              </Message>
-            );
-          })}
-          {loading === "loading" && (
-            <div className="py-4 flex"><Loader /></div>
-          )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+  <ChatMessages profilePicture={profilePicture} />
       <div className="sticky bottom-3">
         <PromptInput
           onSubmit={(e) => {
