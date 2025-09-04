@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, memo } from "react";
 import { useSession } from "next-auth/react";
 import { chatStore, useChat } from "@/features/chat-page/chat-store";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
+import BlackHolePlaceholder from "@/components/ai-elements/black-hole-placeholder";
 import { Message, MessageAvatar, MessageContent } from "@/components/ai-elements/message";
 import { Response } from "@/components/ai-elements/response";
 import { RichResponse } from "@/components/ai-elements/rich-response";
@@ -145,7 +146,7 @@ export const ChatPageNew = (props: ChatPageNewProps) => {
   }, [props.chatThread.id, session?.user?.name]);
 
   // Separate subscriptions: messages handled in ChatMessages; here only input & control state
-  const { input, chatThreadId, selectedModel, reasoningEffort, phase, loading } = useChat();
+  const { input, chatThreadId, selectedModel, reasoningEffort, phase, loading, messages } = useChat();
   const { uploadButtonLabel } = useFileStore();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -165,7 +166,12 @@ export const ChatPageNew = (props: ChatPageNewProps) => {
         chatDocuments={props.chatDocuments}
         extensions={props.extensions}
       />
-  <ChatMessages profilePicture={profilePicture} />
+
+        {messages.length === 0 && (
+          <BlackHolePlaceholder input={input} />
+        )}
+        <ChatMessages profilePicture={profilePicture} />
+  
       <div className="sticky bottom-3">
         <PromptInput
           onSubmit={(e) => {
