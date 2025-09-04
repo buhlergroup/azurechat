@@ -3,7 +3,7 @@ import * as React from "react";
 
 import { cn } from "@/ui/lib";
 import { LucideProps } from "lucide-react";
-import { Button, ButtonLinkVariant, ButtonProps } from "./button";
+import { Button, buttonVariants, ButtonProps } from "./button";
 import { TooltipProvider } from "./tooltip";
 import { useMenuState, menuStore } from "@/features/main-menu/menu-store";
 
@@ -66,7 +66,7 @@ const MenuItem = React.forwardRef<HTMLButtonElement, AnchorProps>(
         title={props.tooltip}
         variant={variant}
         {...props}
-        className={cn(ButtonLinkVariant)}
+        className={cn(buttonVariants)}
         ref={ref}
       />
     );

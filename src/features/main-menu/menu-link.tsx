@@ -3,7 +3,7 @@ import { cn } from "@/ui/lib";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { FC } from "react";
-import { ButtonLinkVariant } from "../ui/button";
+import { buttonVariants } from "../ui/button";
 
 interface MenuLinkProps {
   href: string;
@@ -16,7 +16,7 @@ export const MenuLink: FC<MenuLinkProps> = (props) => {
   return (
     <Link
       className={cn(
-        ButtonLinkVariant,
+        buttonVariants({ variant: "ghost", size: "sm" }),
         path.startsWith(props.href) && props.href !== "/" ? "text-primary" : ""
       )}
       href={props.href}
