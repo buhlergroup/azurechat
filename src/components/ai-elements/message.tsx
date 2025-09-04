@@ -32,10 +32,13 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-      'flex flex-col gap-2 overflow-hidden rounded-lg px-4 py-3 text-foreground text-sm',
-      'group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
-      'group-[.is-assistant]:bg-secondary group-[.is-assistant]:text-foreground',
-      'is-user:dark',
+  // Base layout (no bubble styling so assistant stays on plain canvas)
+  'flex flex-col gap-2 overflow-hidden text-foreground text-sm',
+  // User bubble styling (background, padding, rounding, contrast text)
+  'group-[.is-user]:rounded-lg group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
+  // Assistant: remove padding & rounding so it blends with page background
+  'group-[.is-assistant]:px-0 group-[.is-assistant]:py-0',
+  'is-user:dark',
       className
     )}
     {...props}

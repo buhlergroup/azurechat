@@ -8,39 +8,39 @@ Legend:
 - [x] Completed  
 
 ### Core Layout & Scrolling
-- [ ] `Conversation` – Replace `ChatMessageContainer` + `ChatMessageContentArea` + custom scroll anchor logic (`useChatScrollAnchor`). Integrate `StickToBottom` behavior; remove manual ref logic in `chat-page.tsx`.
-- [ ] `ConversationContent` – Wrap mapped messages; apply padding; ensure auto-scroll works with Valtio updates.
-- [ ] `ConversationScrollButton` – Add floating scroll-to-bottom button; remove legacy auto-scroll toggle if redundant.
+- [x] `Conversation` – Replace `ChatMessageContainer` + `ChatMessageContentArea` + custom scroll anchor logic (`useChatScrollAnchor`). Integrate `StickToBottom` behavior; remove manual ref logic in `chat-page.tsx` (new impl behind flag).
+- [x] `ConversationContent` – Wrap mapped messages; apply padding; ensure auto-scroll works with Valtio updates (initial integration done).
+- [x] `ConversationScrollButton` – Add floating scroll-to-bottom button; remove legacy auto-scroll toggle if redundant (present in new impl; legacy untouched until full cutover).
 
 ### Messages
-- [ ] `Message` – Replace `ChatMessageArea` wrapper (role-based alignment & spacing).
-- [ ] `MessageContent` (component inside `ai-elements/message.tsx`) – Use for bubble styling; migrate copy button / tool actions currently handled in `ChatMessageArea` (add via `Actions`).
-- [ ] `MessageAvatar` – Replace profile picture + initials logic (use existing `useProfilePicture` hook for `src`).
-- [ ] Tool / function messages: render using `Tool` component instead of accordion in `message-content.tsx`.
+- [x] `Message` – Replace `ChatMessageArea` wrapper (role-based alignment & spacing) (in new default UI).
+- [x] `MessageContent` (component inside `ai-elements/message.tsx`) – Basic bubble styling migrated (actions & copy still pending).
+- [x] `MessageAvatar` – Integrated basic avatar (copy button + initials logic OK; advanced profile picture handling minimal).
+- [ ] Tool / function messages: render using `Tool` component instead of simple assistant fallback.
 
 ### Input Area
-- [ ] `PromptInput` – Replace `ChatInputForm`.
-- [ ] `PromptInputTextarea` – Replace `ChatTextInput` + dynamic height hook (`use-chat-input-dynamic-height`); implement auto-resize using min/max height props (remove manual row management if possible).
-- [ ] `PromptInputToolbar` – Houses secondary & primary action areas currently split across `ChatInputActionArea` sections.
-- [ ] `PromptInputTools` – Container for AttachFile, PromptSlider, InternetSearch, ReasoningEffortSelector, image input trigger, etc.
-- [ ] `PromptInputButton` – Standardize buttons (AttachFile, Prompt slider trigger, microphone (future), stop generation toggle).
-- [ ] `PromptInputSubmit` – Replace `SubmitChat` / `StopChat` switching; wire `status` to chat store states: `idle` | `loading` | `file upload` → icon mapping.
-- [ ] Model selector: use `PromptInputModelSelect*` components to replace any existing model selection UI (if/when added; currently selector is not in the chat input – integrate near toolbar).
+- [x] `PromptInput` – Replaces `ChatInputForm` (legacy removed from default path).
+- [x] `PromptInputTextarea` – Auto-resize via CSS; dynamic height hook slated for removal after validation.
+- [x] `PromptInputToolbar` – Implemented.
+- [x] `PromptInputTools` – Basic container with stub buttons (internet/file) + reasoning selector.
+- [~] `PromptInputButton` – Using for buttons; needs consolidation of file upload & search toggles with real behavior.
+- [x] `PromptInputSubmit` – Uses phase mapping; stop action aborts stream while `streaming`.
+- [x] Model selector: integrated using `PromptInputModelSelect*` in toolbar.
 
 ### Streaming / Reasoning / Sources
-- [ ] `Reasoning` – Replace custom Accordion reasoning block in `message-content.tsx`; stream partial reasoning tokens (update chat store to expose reasoning state + elapsed seconds if needed).
-- [ ] `ReasoningTrigger` – Auto open while streaming; confirm timing matches backend events (`reasoning` events in `chat-store.tsx`).
-- [ ] `ReasoningContent` – Feed concatenated reasoning markdown; remove bespoke `Markdown` wrapper for reasoning output.
+- [~] `Reasoning` – Integrated with timing foundation (reasoningMeta start/elapsed captured) – need to surface elapsed in UI & stream partial tokens separately.
+- [~] `ReasoningTrigger` – Elapsed seconds shown; verify auto-close/open with real events.
+- [~] `ReasoningContent` – Rendering reasoning markdown via `Response`; need citation adaptation later.
 - [ ] `Sources` – Replace the “Used X sources” (if present) or introduce retrieval source summary; map to citation service results.
 - [ ] `SourcesTrigger` / `SourcesContent` / `Source` – Implement collapsible list of sources (augment `citation-service.ts` to provide structured array: title, url, snippet).
 - [ ] `InlineCitation` system – Replace current `CitationAction` + inline anchor strategy inside `Markdown`; adapt markdown renderer to emit citation spans decorated with `InlineCitation*` components.
 
 ### Tool Calls / Functions
-- [ ] `Tool` – Replace Accordion for tool & function role messages in `message-content.tsx`.
-- [ ] `ToolHeader` – Show name + status (pending/running/completed/error) using chat store `toolCallHistory` + `toolCallInProgress`.
-- [ ] `ToolInput` – Pretty-print JSON arguments (parse stored arguments in history objects).
-- [ ] `ToolOutput` – Show result or error; hide when neither.
-- [ ] Persist enriched tool call history (already saved in `UpsertChatMessage` when finalContent) – ensure UI consumes from `message.toolCallHistory`.
+- [~] `Tool` – Basic replacement for tool role messages implemented.
+- [~] `ToolHeader` – Basic state mapping using `toolCallHistory` + `toolCallInProgress`; refine status transitions & error state.
+- [x] `ToolInput` – Arguments parsed and pretty-printed when available.
+- [x] `ToolOutput` – Showing result; error state not yet wired.
+- [x] Persist enriched tool call history consumption (assistant messages now render embedded tool call list when history exists).
 
 ### Branching (Optional / Future)
 - [ ] `Branch` / `BranchMessages` – Enable multi-branch response exploration (requires backend returning alternative completions; extend stream parser to collect branches).
@@ -51,13 +51,13 @@ Legend:
 - [ ] `Task` / `TaskTrigger` / `TaskContent` / `TaskItem` / `TaskItemFile` – Display retrieval / planning / file analysis steps (map to structured events if backend emits them; otherwise derive from tool calls).
 
 ### Rich Rendering
-- [ ] `Response` – Replace `Markdown` component for assistant text; evaluate feature parity (citations, code blocks, tables). Integrate custom, if needed, by customizing `streamdown` extension set.
-- [ ] `CodeBlock` / `CodeBlockCopyButton` – Replace code block rendering in `Markdown`; ensure language detection is passed from backend or parsed via fenced code blocks.
+- [x] `Response` – Now renders assistant content (basic markdown). Feature parity (citations, code blocks) pending.
+- [~] `CodeBlock` / `CodeBlockCopyButton` – Added `RichResponse` parser for fenced code; still need language inference improvements & citation integration.
 - [ ] `Image` – Replace `ChatImageDisplay` for both multimodal user inputs and generated outputs (extend if handling multiple images).
 - [ ] `web-preview` suite (optional) – Integrate for browsing results (if a web tool extension is active) or previewing fetched pages.
 
 ### Loading / Status
-- [ ] `Loader` – Replace `ChatLoading` spinner & integrate into streaming placeholder + inside `Tool` running state if desired.
+- [x] `Loader` – Replaces `ChatLoading` in new UI.
 - [ ] Tie `PromptInputSubmit` icon states to chat store: 
   - `submitted` → while initial request posted (before first chunk)  
   - `streaming` → during content events  
@@ -65,7 +65,7 @@ Legend:
   - default send icon otherwise  
 
 ### State & Store Adjustments
-- [ ] Expose a derived `chatStatus` mapping for `PromptInputSubmit`.
+- [x] Expose a derived `chatStatus` mapping for `PromptInputSubmit` (implemented `phase`).
 - [ ] Provide reasoning streaming boolean & elapsed seconds to `Reasoning` (toggle start on first reasoning token, stop on finalContent).
 - [ ] Provide tool call statuses (pending/running/completed/error) using existing `toolCallHistory` + `toolCallInProgress`.
 - [ ] Normalize message model for sources, citations, tool history arrays.
@@ -94,7 +94,7 @@ Legend:
 - [ ] Accessibility audit (axe) for new interactive elements.
 
 ### Deployment / Rollout
-- [ ] Feature flag or branch-based rollout (optional) – `NEXT_PUBLIC_NEW_CHAT_UI=1`.
+- [x] Feature flag initial rollout (removed; new UI now default).
 - [ ] Capture performance metrics (First Contentful Token, scroll performance) pre/post.
 - [ ] Update docs (`docs/6-chat-over-file.md`, `docs/reasoning-summaries.md`) referencing new UI.
 
@@ -125,7 +125,7 @@ Legend:
 
 ---
 ### Initial Execution Order (Suggested)
-1. Introduce `Conversation` + `Message` skeleton alongside existing UI (feature flag). 
+1. Introduce `Conversation` + `Message` skeleton alongside existing UI (feature flag). (DONE)
 2. Migrate input to `PromptInput` (keep store logic unchanged). 
 3. Replace message rendering with `Response` + code blocks. 
 4. Add `Reasoning` streaming integration. 
