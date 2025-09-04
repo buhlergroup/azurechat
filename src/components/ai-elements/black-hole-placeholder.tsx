@@ -123,7 +123,7 @@ export const BlackHolePlaceholder: React.FC<BlackHolePlaceholderProps> = ({ inpu
         <h2 className="text-lg md:text-2xl font-semibold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[hsl(var(--primary))] via-[hsl(var(--secondary))] to-[hsl(var(--chart-2))] drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
           Enter the Event Horizon
         </h2>
-        <p className="mt-3 max-w-md text-s md:text-sm text-[hsl(var(--secondary-foreground)/0.75)] leading-relaxed">
+        <p className="mt-3 max-w-md text-s md:text-sm text-[hsl(var(--secondary-foreground))] font-semibold leading-relaxed">
           Your conversation singularity awaits. Type to energize the accretion disk or move your cursor to bend spacetime.
         </p>
         <div className="mt-5 flex gap-2 opacity-70">
