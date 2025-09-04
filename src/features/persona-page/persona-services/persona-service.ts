@@ -27,6 +27,7 @@ import {
 } from "./persona-documents-service";
 import { AccessGroupById } from "./access-group-service";
 import { RevalidateCache } from "@/features/common/navigation-helpers";
+import { NEW_CHAT_NAME } from "@/features/theme/theme-config";
 
 interface PersonaInput {
   name: string;
@@ -400,7 +401,7 @@ export const CreatePersonaChat = async (
     }
 
     const response = await UpsertChatThread({
-      name: persona.name,
+      name: NEW_CHAT_NAME,
       useName: user.name,
       userId: await userHashedId(),
       id: "",
