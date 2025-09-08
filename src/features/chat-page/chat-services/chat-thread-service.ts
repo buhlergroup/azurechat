@@ -31,7 +31,7 @@ export const FindAllChatThreadForCurrentUser = async (): Promise<
   try {
     const querySpec: SqlQuerySpec = {
       query:
-        "SELECT * FROM root r WHERE r.type=@type AND r.userId=@userId AND r.isDeleted=@isDeleted ORDER BY r.createdAt DESC",
+        "SELECT * FROM root r WHERE r.type=@type AND r.userId=@userId AND (NOT IS_DEFINED(r.isTemporary) OR r.isTemporary=@isTemporary) AND r.isDeleted=@isDeleted ORDER BY r.createdAt DESC",
       parameters: [
         {
           name: "@type",
@@ -40,6 +40,10 @@ export const FindAllChatThreadForCurrentUser = async (): Promise<
         {
           name: "@userId",
           value: await userHashedId(),
+        },
+        {
+          name: "@isTemporary",
+          value: false,
         },
         {
           name: "@isDeleted",
@@ -115,7 +119,7 @@ export const FindChatThreadForCurrentUser = async (
   }
 };
 
-export const SoftDeleteChatThreadForCurrentUser = async (
+export const SoftDeleteChatContentsForCurrentUser = async (
   chatThreadID: string
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
@@ -158,7 +162,28 @@ export const SoftDeleteChatThreadForCurrentUser = async (
         itemToUpdate.isDeleted = true;
         await HistoryContainer().items.upsert(itemToUpdate);
       });
+    }
 
+    return chatThreadResponse;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
+export const SoftDeleteChatThreadForCurrentUser = async (
+  chatThreadID: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const chatThreadResponse = await FindChatThreadForCurrentUser(chatThreadID);
+
+    if (chatThreadResponse.status === "OK") {
+      const response = await SoftDeleteChatContentsForCurrentUser(chatThreadID);
+      if (response.status !== "OK") {
+        return response;
+      }
       chatThreadResponse.response.isDeleted = true;
       await HistoryContainer().items.upsert(chatThreadResponse.response);
     }
@@ -310,15 +335,17 @@ export const UpsertChatThread = async (
   }
 };
 
-export const CreateChatThread = async (): Promise<
-  ServerActionResponse<ChatThreadModel>
-> => {
+export const CreateChatThread = async (options?: {
+  id?: string;
+  name?: string;
+  temporary?: boolean;
+}): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
     const modelToSave: ChatThreadModel = {
-      name: NEW_CHAT_NAME,
+      name: options?.name ?? NEW_CHAT_NAME,
       useName: (await userSession())!.name,
       userId: await userHashedId(),
-      id: uniqueId(),
+      id: options?.id ?? uniqueId(),
       createdAt: new Date(),
       lastMessageAt: new Date(),
       bookmarked: false,
@@ -327,10 +354,11 @@ export const CreateChatThread = async (): Promise<
       personaMessage: "",
       personaMessageTitle: CHAT_DEFAULT_PERSONA,
       extension: [],
-      personaDocumentIds: []
+      personaDocumentIds: [],
+      isTemporary: options?.temporary ?? false,
     };
 
-    const { resource } = await HistoryContainer().items.create<ChatThreadModel>(
+    const { resource } = await HistoryContainer().items.upsert<ChatThreadModel>(
       modelToSave
     );
     if (resource) {
@@ -350,6 +378,12 @@ export const CreateChatThread = async (): Promise<
       errors: [{ message: `${error}` }],
     };
   }
+};
+
+export const ResetChatThread = async (
+  chatThreadId: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  return await SoftDeleteChatContentsForCurrentUser(chatThreadId);
 };
 
 export const UpdateChatTitle = async (
