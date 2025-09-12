@@ -30,7 +30,7 @@ export default async function Home(props: HomeParams) {
     FindAllChatDocuments(userIdAsChatThreadId),
   ]);
 
-  if (chatThreadResponse.status === "OK" && chatResponse.status === "OK" && chatResponse.response.length ) {
+  if (chatThreadResponse.status === "OK" && chatResponse.status === "OK" && chatResponse.response.length) {
     chatThreadResponse = await ResetChatThread(userIdAsChatThreadId);
   } else if (chatThreadResponse.status === "NOT_FOUND") {
     chatThreadResponse = await CreateChatThread({ id: userIdAsChatThreadId, name: TEMPORARY_CHAT_NAME, temporary: true });
