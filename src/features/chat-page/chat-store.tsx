@@ -76,8 +76,8 @@ class ChatState {
     }
   }
 
-  public removeMessagesAfter(messageId: string) {
-    const index = this.messages.findIndex((el) => el.id === messageId);
+  public removeMessages(options?: {fromMessageId?: string}) {
+    const index = options?.fromMessageId ? this.messages.findIndex((el) => el.id === options?.fromMessageId) : 0;
     if (index > -1 && index < this.messages.length - 1) {
       this.messages = this.messages.slice(0, index + 1);
     }

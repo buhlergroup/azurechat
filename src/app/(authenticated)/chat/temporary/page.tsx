@@ -10,7 +10,6 @@ import {
 import { FindAllExtensionForCurrentUserAndIds } from "@/features/extensions-page/extension-services/extension-service";
 import { AI_NAME, TEMPORARY_CHAT_NAME, TEMPORARY_CHAT_ROUTE } from "@/features/theme/theme-config";
 import { DisplayError } from "@/features/ui/error/display-error";
-import { redirect } from "next/navigation";
 
 export const metadata = {
   title: AI_NAME,
@@ -25,18 +24,16 @@ interface HomeParams {
 
 export default async function Home(props: HomeParams) {
   const userIdAsChatThreadId = await userHashedId();
-  const [chatResponse, chatThreadResponse, docsResponse] = await Promise.all([
+  let [chatResponse, chatThreadResponse, docsResponse] = await Promise.all([
     FindAllChatMessagesForCurrentUser(userIdAsChatThreadId),
     FindChatThreadForCurrentUser(userIdAsChatThreadId),
     FindAllChatDocuments(userIdAsChatThreadId),
   ]);
 
   if (chatThreadResponse.status === "OK" && chatResponse.status === "OK" && chatResponse.response.length ) {
-    await ResetChatThread(userIdAsChatThreadId);
-    redirect(TEMPORARY_CHAT_ROUTE);
+    chatThreadResponse = await ResetChatThread(userIdAsChatThreadId);
   } else if (chatThreadResponse.status === "NOT_FOUND") {
-    await CreateChatThread({ id: userIdAsChatThreadId, name: TEMPORARY_CHAT_NAME, temporary: true });
-    redirect(TEMPORARY_CHAT_ROUTE);
+    chatThreadResponse = await CreateChatThread({ id: userIdAsChatThreadId, name: TEMPORARY_CHAT_NAME, temporary: true });
   }
 
   if (docsResponse.status !== "OK") {

@@ -20,7 +20,7 @@ export const ChatMessageAction = ({
       toMessageId: chatMessage.id,
     });
     if (resetResponse.status === "OK") {
-      chatStore.removeMessagesAfter(chatMessage.id);
+      chatStore.removeMessages({fromMessageId: chatMessage.id});
     }
     setRestoring(false);
   };
