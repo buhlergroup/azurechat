@@ -77,7 +77,11 @@ class ChatState {
   }
 
   public removeMessages(options?: {fromMessageId?: string}) {
-    const index = options?.fromMessageId ? this.messages.findIndex((el) => el.id === options?.fromMessageId) : 0;
+    if (!options?.fromMessageId) {
+      this.messages = [];
+      return;
+    }
+    const index = this.messages.findIndex((el) => el.id === options.fromMessageId);
     if (index > -1 && index < this.messages.length - 1) {
       this.messages = this.messages.slice(0, index + 1);
     }
