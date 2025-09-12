@@ -120,7 +120,8 @@ export const FindChatThreadForCurrentUser = async (
 };
 
 export const SoftDeleteChatContentsForCurrentUser = async (
-  chatThreadID: string
+  chatThreadID: string,
+  options?: { untilMessageId?: string }
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
     const chatThreadResponse = await FindChatThreadForCurrentUser(chatThreadID);
@@ -135,13 +136,17 @@ export const SoftDeleteChatContentsForCurrentUser = async (
       }
       const chats = chatResponse.response;
 
-      chats.forEach(async (chat) => {
+      const startIdx = options?.untilMessageId
+        ? chats.findIndex((chat) => chat.id === options.untilMessageId) + 1
+        : 0;
+      for (let i = startIdx; i < chats.length; i++) {
+        const chat = chats[i];
         const itemToUpdate = {
           ...chat,
+          isDeleted: true,
         };
-        itemToUpdate.isDeleted = true;
         await HistoryContainer().items.upsert(itemToUpdate);
-      });
+      }
 
       const chatDocumentsResponse = await FindAllChatDocuments(chatThreadID);
 
@@ -381,9 +386,13 @@ export const CreateChatThread = async (options?: {
 };
 
 export const ResetChatThread = async (
-  chatThreadId: string
+  chatThreadId: string,
+  options?: { toMessageId?: string }
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
-  return await SoftDeleteChatContentsForCurrentUser(chatThreadId);
+  return await SoftDeleteChatContentsForCurrentUser(
+    chatThreadId,
+    { untilMessageId: options?.toMessageId }
+  );
 };
 
 export const UpdateChatTitle = async (
