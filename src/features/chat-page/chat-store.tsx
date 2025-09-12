@@ -73,6 +73,13 @@ class ChatState {
     }
   }
 
+  public removeMessagesAfter(messageId: string) {
+    const index = this.messages.findIndex((el) => el.id === messageId);
+    if (index > -1 && index < this.messages.length - 1) {
+      this.messages = this.messages.slice(0, index + 1);
+    }
+  }
+
   public updateLoading(value: chatStatus) {
     this.loading = value;
   }

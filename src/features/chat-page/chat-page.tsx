@@ -9,7 +9,7 @@ import ChatMessageContainer from "@/features/ui/chat/chat-message-area/chat-mess
 import ChatMessageContentArea from "@/features/ui/chat/chat-message-area/chat-message-content";
 import { useChatScrollAnchor } from "@/features/ui/chat/chat-message-area/use-chat-scroll-anchor";
 import { useSession } from "next-auth/react";
-import { FC, useEffect, useRef, useState } from "react";
+import { FC, useEffect, useRef } from "react";
 import { ExtensionModel } from "../extensions-page/extension-services/models";
 import { ChatHeader } from "./chat-header/chat-header";
 import {
@@ -19,6 +19,7 @@ import {
 } from "./chat-services/models";
 import MessageContent from "./message-content";
 import { useProfilePicture } from "../common/hooks/useProfilePicture";
+import { ChatMessageAction } from "../ui/chat/chat-message-area/chat-message-action";
 
 interface ChatPageProps {
   messages: Array<ChatMessageModel>;
@@ -31,13 +32,18 @@ export const ChatPage: FC<ChatPageProps> = (props) => {
   const { data: session } = useSession();
   const profilePicture = useProfilePicture(session?.user?.accessToken);
 
+  // Only initialize chatStore once on mount
+  const initializedRef = useRef(false);
   useEffect(() => {
-    chatStore.initChatSession({
-      chatThread: props.chatThread,
-      messages: props.messages,
-      userName: session?.user?.name!,
-    });
-  }, [props.messages, session?.user?.name, props.chatThread]);
+    if (!initializedRef.current && session?.user?.name) {
+      chatStore.initChatSession({
+        chatThread: props.chatThread,
+        messages: props.messages,
+        userName: session?.user?.name!,
+      });
+      initializedRef.current = true;
+    }
+  }, [session?.user?.name, props.chatThread, props.messages]);
 
   const { messages, loading } = useChat();
 
@@ -46,6 +52,11 @@ export const ChatPage: FC<ChatPageProps> = (props) => {
   const maxMessages = 15;
 
   useChatScrollAnchor({ ref: current });
+
+  const isActionable = (
+    message: ChatMessageModel,
+    messages: ChatMessageModel[]
+  ) => message.role !== "user" && message !== messages[messages.length - 1];
 
   return (
     <main className="flex flex-1 relative flex-col px-3">
@@ -71,17 +82,30 @@ export const ChatPage: FC<ChatPageProps> = (props) => {
         <ChatMessageContentArea>
           {messages.map((message) => {
             return (
-              <ChatMessageArea
-                key={message.id}
-                profileName={message.name}
-                role={message.role}
-                onCopy={() => {
-                  navigator.clipboard.writeText(message.content);
-                }}
-                profilePicture={profilePicture}
-              >
-                <MessageContent message={message} />
-              </ChatMessageArea>
+              <div className="flex flex-col gap-4" key={message.id}>
+                <ChatMessageArea
+                  key={message.id}
+                  profileName={message.name}
+                  role={message.role}
+                  onCopy={() => {
+                    navigator.clipboard.writeText(message.content);
+                  }}
+                  profilePicture={profilePicture}
+                >
+                  <MessageContent message={message} />
+                </ChatMessageArea>
+                {isActionable(
+                  message as ChatMessageModel,
+                  messages as ChatMessageModel[]
+                ) && (
+                  <span className="px-2">
+                    <ChatMessageAction
+                      chatThreadId={props.chatThread.id}
+                      chatMessage={message as ChatMessageModel}
+                    />
+                  </span>
+                )}
+              </div>
             );
           })}
           {loading === "loading" && <ChatLoading />}
