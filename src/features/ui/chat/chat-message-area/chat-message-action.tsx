@@ -40,16 +40,11 @@ export const ChatMessageAction = ({
       <Bookmark size={16} color="gray" className="self-center mr-2" />
       <ConfirmAction
         label="Restore"
+        loadingLabel="Restoring..."
         icon={undefined}
         confirmIcon={<Check size={18} color="green" />}
         cancelIcon={<X size={18} color="gray" />}
-        onConfirm={
-          restoring
-            ? () => {}
-            : () => {
-                handleRestore();
-              }
-        }
+        onConfirm={handleRestore}
         loading={restoring}
       />
     </div>

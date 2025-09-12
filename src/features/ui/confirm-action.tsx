@@ -4,6 +4,7 @@ import { Check, X } from "lucide-react";
 
 export type ConfirmActionProps = {
   label: string;
+  loadingLabel?: string;
   icon?: ReactNode;
   confirmIcon?: ReactNode;
   cancelIcon?: ReactNode;
@@ -14,6 +15,7 @@ export type ConfirmActionProps = {
 
 export const ConfirmAction: FC<ConfirmActionProps> = ({
   label,
+  loadingLabel,
   icon,
   confirmIcon,
   cancelIcon,
@@ -25,7 +27,7 @@ export const ConfirmAction: FC<ConfirmActionProps> = ({
   if (loading) {
     return (
       <span className="px-2 py-1 rounded-[6px] text-sm border border-solid border-gray inline-flex items-center justify-center">
-        Restoring...
+        {loadingLabel || "Loading..."}
       </span>
     );
   }

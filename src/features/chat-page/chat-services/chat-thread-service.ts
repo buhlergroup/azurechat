@@ -136,9 +136,14 @@ export const SoftDeleteChatContentsForCurrentUser = async (
       }
       const chats = chatResponse.response;
 
-      const startIdx = options?.untilMessageId
-        ? chats.findIndex((chat) => chat.id === options.untilMessageId) + 1
-        : 0;
+      let startIdx = 0;
+      if (options?.untilMessageId) {
+        const foundIdx = chats.findIndex((chat) => chat.id === options.untilMessageId);
+        if (foundIdx === -1) {
+          return chatThreadResponse;
+        }
+        startIdx = foundIdx + 1;
+      }
       for (let i = startIdx; i < chats.length; i++) {
         const chat = chats[i];
         const itemToUpdate = {
@@ -363,6 +368,8 @@ export const CreateChatThread = async (options?: {
       isTemporary: options?.temporary ?? false,
     };
 
+    // Use upsert to allow both creation of new chat threads and updating existing ones.
+    // This ensures that if a thread with the same ID exists, it will be updated instead of failing.
     const { resource } = await HistoryContainer().items.upsert<ChatThreadModel>(
       modelToSave
     );
