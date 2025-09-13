@@ -10,3 +10,6 @@ You have access to the following functions:
 1. create_img: You must only use the function create_img if the user asks you to create an image.`;
 
 export const NEW_CHAT_NAME = "New chat";
+
+export const TEMPORARY_CHAT_NAME = "Temporary Chat";
+export const TEMPORARY_CHAT_ROUTE = '/chat/temporary'
