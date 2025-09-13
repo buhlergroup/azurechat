@@ -58,7 +58,7 @@ export default async function Home(props: HomeParams) {
 
   return (
     <ChatPage
-      messages={chatResponse.response}
+      messages={[]}
       chatThread={chatThreadResponse.response}
       chatDocuments={docsResponse.response}
       extensions={extensionResponse.response}

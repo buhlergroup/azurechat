@@ -48,7 +48,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
   return (
     <Conversation>
       <ConversationContent>
-        {messages.map(m => {
+        {messages.map((m, mIndex) => {
           const role = (m.role === 'user' || m.role === 'assistant' || m.role === 'system') ? m.role : 'assistant';
           const avatarSrc = role === 'user'
             ? (profilePicture || '/user-icon.png')
@@ -135,6 +135,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
                     <ChatMessageAction
                       chatThreadId={chatThreadId}
                       chatMessage={m as ChatMessageModel}
+                      chatMessageIndex={mIndex}
                     />
                   </span>
                 )}

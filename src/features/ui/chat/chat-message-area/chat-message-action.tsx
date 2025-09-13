@@ -8,16 +8,18 @@ import { ConfirmAction } from "../../confirm-action";
 export const ChatMessageAction = ({
   chatThreadId,
   chatMessage,
+  chatMessageIndex
 }: {
   chatThreadId: string;
-  chatMessage: ChatMessageModel;
+  chatMessage: ChatMessageModel,
+  chatMessageIndex: number;
 }) => {
   const [restoring, setRestoring] = useState(false);
 
   const handleRestore = async () => {
     setRestoring(true);
     const resetResponse = await ResetChatThread(chatThreadId, {
-      toMessageId: chatMessage.id,
+      toMessageIndex: chatMessageIndex,
     });
     if (resetResponse.status === "OK") {
       chatStore.removeMessages({fromMessageId: chatMessage.id});
