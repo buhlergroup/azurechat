@@ -143,7 +143,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
           );
         })}
         {loading === "loading" && (
-          <div className="py-4 flex"><Loader /></div>
+          <div className="py-4 justify-self-center"><Loader /></div>
         )}
       </ConversationContent>
       <ConversationScrollButton />
