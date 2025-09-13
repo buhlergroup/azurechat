@@ -30,14 +30,14 @@ export const ChatMessageAction = ({
   return (
     <div className="relative flex items-center w-full h-[40px] group gap-1">
       <span
-        className="absolute left-0 right-0"
+        className="absolute left-6 right-0"
         style={{
           top: "50%",
           transform: "translateY(-50%)",
           zIndex: -1,
         }}
       >
-        <span className="block h-[1px] border-b border-dashed border-b-gray w-full" />
+        <span className="block h-[1px] border-b border-dashed w-full" />
       </span>
       <Bookmark size={16} color="gray" className="self-center mr-2" />
       <ConfirmAction
