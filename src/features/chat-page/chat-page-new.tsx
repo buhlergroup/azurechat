@@ -25,6 +25,7 @@ import { RevalidateCache } from "@/features/common/navigation-helpers";
 import { InternetSearch } from "@/features/ui/chat/chat-input-area/internet-search";
 import { ReasoningEffortSelector } from "./chat-input/reasoning-effort-selector";
 import { MODEL_CONFIGS } from "./chat-services/models";
+import { ChatMessageAction } from "../ui/chat/chat-message-area/chat-message-action";
 
 interface ChatPageNewProps {
   messages: Array<ChatMessageModel>;
@@ -38,12 +39,16 @@ interface ChatPageNewProps {
 
 // Message list isolated to avoid re-render on every input keystroke
 const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePicture?: string | null }) {
-  const { messages, loading } = useChat();
+  const { messages, loading, chatThreadId } = useChat();
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
+  const isActionable = (
+    message: ChatMessageModel,
+    messages: ChatMessageModel[]
+  ) => message.role !== "user" && message !== messages[messages.length - 1];
   return (
     <Conversation>
       <ConversationContent>
-        {messages.map(m => {
+        {messages.map((m, mIndex) => {
           const role = (m.role === 'user' || m.role === 'assistant' || m.role === 'system') ? m.role : 'assistant';
           const avatarSrc = role === 'user'
             ? (profilePicture || '/user-icon.png')
@@ -51,6 +56,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
           const reasoningMeta = chatStore.reasoningMeta[m.id] || { isStreaming: false } as any;
           const toolHistory = chatStore.toolCallHistory[m.id] || [];
           return (
+            <div className="flex flex-col gap-4" key={m.id}>
             <Message key={m.id} from={role}>
               <div className="flex flex-col gap-0.5 w-full">
                 <MessageContent>
@@ -121,10 +127,23 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
                 )}
               </div>
             </Message>
+            {isActionable(
+                  m as ChatMessageModel,
+                  messages as ChatMessageModel[]
+                ) && (
+                  <span className="px-2">
+                    <ChatMessageAction
+                      chatThreadId={chatThreadId}
+                      chatMessage={m as ChatMessageModel}
+                      chatMessageIndex={mIndex}
+                    />
+                  </span>
+                )}
+            </div>
           );
         })}
         {loading === "loading" && (
-          <div className="py-4 flex"><Loader /></div>
+          <div className="py-4 justify-self-center"><Loader /></div>
         )}
       </ConversationContent>
       <ConversationScrollButton />
