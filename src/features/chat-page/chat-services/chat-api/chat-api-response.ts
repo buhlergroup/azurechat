@@ -113,7 +113,6 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     tools: tools,
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls
-    include: ["reasoning.encrypted_content"]
   };
   // Add a strong hint to prefer using available tools/extensions
   try {
@@ -134,6 +133,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
       effort: reasoningEffort,
       summary: "auto"
     };
+    requestOptions.include = ["reasoning.encrypted_content"];
     logInfo("Using reasoning model", { selectedModel, reasoningEffort });
   }
 
