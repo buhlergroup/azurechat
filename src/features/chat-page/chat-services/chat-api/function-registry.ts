@@ -7,9 +7,9 @@ import { GetImageUrl, UploadImageToStore } from "../chat-image-service";
 import { SimilaritySearch } from "../azure-ai-search/azure-ai-search";
 import { CreateCitations, FormatCitations } from "../citation-service";
 import { userHashedId } from "@/features/auth-page/helpers";
-import { skip } from "node:test";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { AllowedPersonaDocumentIds } from "@/features/persona-page/persona-services/persona-documents-service";
+import { ConversationContext } from "./conversation-manager";
 
 // Type definitions for function calling
 export interface FunctionDefinition {
@@ -50,7 +50,7 @@ export async function registerFunction(
 // Helper function to execute a function call
 export async function executeFunction(
   functionCall: FunctionCall, 
-  context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
+  context: { conversationContext: ConversationContext; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
 ): Promise<FunctionResult> {
   const implementation = functionRegistry.get(functionCall.name);
   
@@ -135,13 +135,13 @@ async function createImage(
 // RAG search function
 async function searchDocuments(
   args: { query: string; top?: number; skip?: number }, 
-  context: { threadId: string; userMessage: string; documentIds?: string[]; signal: AbortSignal; headers?: Record<string, string> }
+  context: { conversationContext: ConversationContext; userMessage: string; documentIds?: string[]; signal: AbortSignal; headers?: Record<string, string> }
 ) {
   logInfo("Searching documents", { 
     queryLength: args.query?.length || 0,
     top: args.top || 10,
     skip: args.skip || 0,
-    threadId: context.threadId 
+    threadId: context.conversationContext.chatThread.id 
   });
   logDebug("Search query", { query: args.query });
 
@@ -154,8 +154,8 @@ async function searchDocuments(
 
   const allowedPersonaDocumentIds = await AllowedPersonaDocumentIds(context.documentIds || []) || [];
 
-  // Build filter: user's thread docs OR user-global docs, plus allowed persona docs if provided via headers
-  const baseFilter = `(user eq '${userId}' and chatThreadId eq '${context.threadId}') or (chatThreadId eq null and user eq '${userId}')`;
+  // Build filter: user's thread docs plus allowed persona docs
+  const baseFilter = `(user eq '${userId}' and chatThreadId eq '${context.conversationContext.chatThread.id}')`; 
   const personaClause = allowedPersonaDocumentIds.length > 0
     ? ` or search.in(personaDocumentId, '${allowedPersonaDocumentIds.join(',')}', ',')`
     : '';

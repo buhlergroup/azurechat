@@ -95,7 +95,6 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
 
   // Get available functions (built-in + dynamic extensions)
   const { tools, extensionHeaders } = await _getAvailableTools(currentChatThread);
-  
   // Add search_documents tool if any documents are available (chat or persona)
   if (hasAnyDocuments) {
     const searchDocumentsTool = await getToolByName("search_documents");
@@ -147,7 +146,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
 
   // Create conversation manager with context
   const conversationContext = {
-    threadId: currentChatThread.id,
+    chatThread: currentChatThread,
     userMessage: props.message,
     signal: signal,
     openaiInstance: openaiInstance,
@@ -185,7 +184,12 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
 
   // Create conversation state and start the conversation
   const conversationState = await createConversationState(conversationContext, initialInput);
-  const stream = await startConversation(conversationState);
+  const stream = null;
+  try{
+      const stream = await startConversation(conversationState);
+  }catch(error){
+    logError("Error starting conversation", { error: error instanceof Error ? error.message : String(error) });
+  }
 
   // Create a conversation orchestrator that handles stream continuation
   const readableStream = new ReadableStream({

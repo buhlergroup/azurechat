@@ -5,9 +5,10 @@ import { uniqueId } from "@/features/common/util";
 import { executeFunction, FunctionCall } from "./function-registry";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { ResponseInputItem } from "openai/resources/responses/responses";
+import { ChatThreadModel } from "../models";
 
 export interface ConversationContext {
-  threadId: string;
+  chatThread: ChatThreadModel;
   userMessage: string;
   signal: AbortSignal;
   openaiInstance: any;
@@ -84,7 +85,7 @@ export async function processFunctionCall(
     };
 
     const result = await executeFunction(parsedFunctionCall, {
-      threadId: state.context.threadId,
+      conversationContext: state.context,
       userMessage: state.context.userMessage,
       signal: state.context.signal,
       headers: state.context.headers,
