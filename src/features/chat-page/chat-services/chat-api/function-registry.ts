@@ -152,7 +152,7 @@ async function searchDocuments(
   // Check if we should create embeddings (default to true for backward compatibility)
   const shouldCreateEmbedding = context.headers?.['x-create-embedding'] !== 'false';
 
-  const allowedPersonaDocumentIds = await AllowedPersonaDocumentIds(context.documentIds || []) || [];
+  const allowedPersonaDocumentIds = await AllowedPersonaDocumentIds(context.conversationContext.chatThread.personaDocumentIds || []) || [];
 
   // Build filter: user's thread docs plus allowed persona docs
   const baseFilter = `(user eq '${userId}' and chatThreadId eq '${context.conversationContext.chatThread.id}')`; 
