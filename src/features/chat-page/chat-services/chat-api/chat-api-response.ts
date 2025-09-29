@@ -184,12 +184,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
 
   // Create conversation state and start the conversation
   const conversationState = await createConversationState(conversationContext, initialInput);
-  const stream = null;
-  try{
-      const stream = await startConversation(conversationState);
-  }catch(error){
-    logError("Error starting conversation", { error: error instanceof Error ? error.message : String(error) });
-  }
+  const stream = await startConversation(conversationState);
 
   // Create a conversation orchestrator that handles stream continuation
   const readableStream = new ReadableStream({
