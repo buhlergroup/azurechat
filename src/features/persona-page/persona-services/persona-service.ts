@@ -15,6 +15,7 @@ import { HistoryContainer } from "@/features/common/services/cosmos";
 import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
 import {
+  AccessGroup,
   DocumentMetadata,
   PERSONA_ATTRIBUTE,
   PersonaModel,
@@ -25,7 +26,7 @@ import {
   DeletePersonaDocumentsByPersonaId,
   UpdateOrAddPersonaDocuments as AddOrUpdatePersonaDocuments,
 } from "./persona-documents-service";
-import { AccessGroupById } from "./access-group-service";
+import { AccessGroupById, UserAccessGroups } from "./access-group-service";
 import { RevalidateCache } from "@/features/common/navigation-helpers";
 
 interface PersonaInput {
@@ -322,9 +323,15 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
   ServerActionResponse<Array<PersonaModel>>
 > => {
   try {
+    const response = await UserAccessGroups();
+    const groupIds = [];
+    if (response.status == "OK") {
+      groupIds.push(...response.response.map((g: AccessGroup) => g.id));
+    }
+    
     const querySpec: SqlQuerySpec = {
       query:
-        "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId) ORDER BY r.createdAt DESC",
+        "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId OR r.accessGroup.id IN (@groupIds)) ORDER BY r.createdAt DESC",
       parameters: [
         {
           name: "@type",
@@ -337,6 +344,10 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
         {
           name: "@userId",
           value: await userHashedId(),
+        },
+        {
+          name: "@groupIds",
+          value: groupIds,
         },
       ],
     };
