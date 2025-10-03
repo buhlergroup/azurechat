@@ -8,7 +8,7 @@ import { SqlQuerySpec } from "@azure/cosmos";
 import { HistoryContainer } from "../../common/services/cosmos";
 import { ChatMessageModel, ChatRole, MESSAGE_ATTRIBUTE } from "./models";
 import { logDebug } from "@/features/common/services/logger";
-import { processMessageForImagePersistence, processMessageForImageResolution } from "./chat-image-persistence-service";
+import { processMessageForImagePersistence } from "./chat-image-persistence-service";
 
 export const FindTopChatMessagesForCurrentUser = async (
   chatThreadID: string,

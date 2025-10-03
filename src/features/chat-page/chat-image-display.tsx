@@ -44,9 +44,7 @@ export const ChatImageDisplay: React.FC<ChatImageDisplayProps> = ({
           throw new Error("Invalid image reference format");
         }
 
-        // Construct the API URL - we'll try common extensions
-        const extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
-        const apiUrl = `/api/images?t=${threadId}&img=${imageId}.png`;
+        const apiUrl = `/api/images?t=${threadId}&img=${imageId}`;
         
         setResolvedUrl(apiUrl);
       } catch (err) {

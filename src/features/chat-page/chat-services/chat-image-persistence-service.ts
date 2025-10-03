@@ -2,7 +2,7 @@
 import "server-only";
 
 import { ServerActionResponse } from "@/features/common/server-action-response";
-import { UploadImageToStore, GetImageUrl } from "./chat-image-service";
+import { UploadImageToStore, GetImageUrl, GetImageFromStore } from "./chat-image-service";
 import { uniqueId } from "@/features/common/util";
 import { logInfo, logError, logDebug } from "@/features/common/services/logger";
 import { 
@@ -10,11 +10,9 @@ import {
   extractImageMetadata, 
   base64ToBuffer, 
   isImageReference, 
-  parseImageReference 
+  parseImageReference, 
+  getImageRefFromUrl
 } from "./chat-image-persistence-utils";
-
-// Store image metadata to map imageId to file extension
-const imageMetadataMap = new Map<string, { extension: string; mimeType: string }>();
 
 /**
  * Stores base64 image to blob storage and returns a reference
@@ -38,9 +36,6 @@ export const persistBase64Image = async (
     const imageId = uniqueId();
     const fileName = `${imageId}.${mimeType}`;
 
-    // Store metadata for later retrieval
-    imageMetadataMap.set(imageId, { extension: mimeType, mimeType: `image/${mimeType}` });
-
     logDebug("Persisting base64 image to blob storage", {
       threadId,
       imageId,
@@ -60,8 +55,8 @@ export const persistBase64Image = async (
       return uploadResult;
     }
 
-    // Create reference format: blob://threadId/imageId
-    const reference = `blob://${threadId}/${imageId}`;
+    // Create reference format: blob://threadId/fileName (with extension)
+    const reference = `blob://${threadId}/${fileName}`;
     
     logInfo("Successfully persisted base64 image", {
       threadId,
@@ -162,6 +157,59 @@ export const processMessageForImagePersistence = async (
   };
 };
 
+export const getBase64ImageReference = async (
+  ref: string
+): Promise<string> => {
+  try {
+    if (ref.startsWith("http")){
+      ref = getImageRefFromUrl(ref) || "";
+    }
+
+    const image = parseImageReference(ref || "");
+    if (!image) {
+      throw new Error("Invalid image reference format");
+    }
+    
+    // Extract mime type from fileName (already parsed in parseImageReference)
+    const { mimeType } = image;
+    
+    const response = await GetImageFromStore(image.threadId, image.fileName);
+    if (response.status !== "OK") {
+      throw new Error("Failed to retrieve image from store");
+    }
+
+    const readableStream = response.response as any; // Node.js ReadableStream from Azure SDK
+    
+    // Convert Node.js stream to Buffer
+    const chunks: Buffer[] = [];
+    
+    await new Promise<void>((resolve, reject) => {
+      readableStream.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      
+      readableStream.on('end', () => {
+        resolve();
+      });
+      
+      readableStream.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+    
+    const buffer = Buffer.concat(chunks);
+    const base64Data = buffer.toString('base64');
+    const base64Image = `data:${mimeType};base64,${base64Data}`;
+
+    return base64Image;
+  } catch (error) {
+    logError("Error retrieving base64 image from reference", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw new Error(`Failed to retrieve base64 image: ${error}`);
+  }
+};
+
 /**
  * Processes message content to resolve image references back to URLs
  */
@@ -181,7 +229,7 @@ export const processMessageForImageResolution = async (
     }
   }
 
-  // Resolve image references in multiModalImage
+    // Resolve image references in multiModalImage
   if (multiModalImage && isImageReference(multiModalImage)) {
     logDebug("Resolving image reference in multiModalImage");
     const resolveResult = await resolveImageReference(multiModalImage);
@@ -194,4 +242,4 @@ export const processMessageForImageResolution = async (
     content: resolvedContent,
     multiModalImage: resolvedMultiModalImage
   };
-}; 
+};

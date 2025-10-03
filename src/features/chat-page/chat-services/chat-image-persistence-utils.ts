@@ -38,6 +38,7 @@ export const isImageReference = (content: string): boolean => {
 
 /**
  * Parses image reference to extract threadId and imageId
+ * Reference format: blob://threadId/imageId.extension
  */
 export const parseImageReference = (reference: string): { threadId: string; imageId: string; fileName: string; mimeType: string } | null => {
   if (!isImageReference(reference)) return null;
@@ -45,12 +46,39 @@ export const parseImageReference = (reference: string): { threadId: string; imag
   const parts = reference.substring(IMAGE_REFERENCE_PREFIX.length).split('/');
   if (parts.length !== 2) return null;
   
-  const [threadId, imageId] = parts;
+  const [threadId, fileNameWithExt] = parts;
+  
+  // Extract extension from fileName (e.g., "imageId.jpeg" -> "jpeg")
+  const lastDotIndex = fileNameWithExt.lastIndexOf('.');
+  const extension = lastDotIndex !== -1 ? fileNameWithExt.substring(lastDotIndex + 1) : 'png';
+  const imageId = lastDotIndex !== -1 ? fileNameWithExt.substring(0, lastDotIndex) : fileNameWithExt;
   
   return {
     threadId,
     imageId,
-    fileName: `${imageId}.png`, // Default to PNG for now
-    mimeType: 'image/png'
+    fileName: fileNameWithExt, // Full filename with extension
+    mimeType: `image/${extension}`
   };
+};
+
+/**
+ * Converts an image URL back to a blob reference
+ * Example: 'http://localhost:3000/api/images/?t=qWUM1VB&img=sihOs3OfKkuuJQNEwJzaKuMVfHyBNhLjuEwF.png'
+ * Returns: 'blob://qWUM1VB/sihOs3OfKkuuJQNEwJzaKuMVfHyBNhLjuEwF.png'
+ */
+export const getImageRefFromUrl = (imageUrl: string): string | null => {
+  try {
+    const url = new URL(imageUrl);
+    const threadId = url.searchParams.get('t');
+    const fileName = url.searchParams.get('img');
+    
+    if (!threadId || !fileName) {
+      return null;
+    }
+    
+    return `${IMAGE_REFERENCE_PREFIX}${threadId}/${fileName}`;
+  } catch (error) {
+    // Invalid URL format
+    throw new Error("Invalid image URL format");
+  }
 }; 

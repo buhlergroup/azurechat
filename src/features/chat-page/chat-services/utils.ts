@@ -1,6 +1,6 @@
 import { ResponseInputItem } from "openai/resources/responses/responses"
 import { ChatMessageModel } from "./models";
-import { processMessageForImageResolution } from "./chat-image-persistence-service";
+import { getBase64ImageReference } from "./chat-image-persistence-service";
 
 export const mapOpenAIChatMessages = async (
   messages: ChatMessageModel[]
@@ -13,19 +13,13 @@ export const mapOpenAIChatMessages = async (
       continue;
     }
 
-    // Resolve image references before mapping
-    const resolvedMessage = await processMessageForImageResolution(
-      message.content,
-      message.multiModalImage
-    )
-
-  if (message.role === "user" && resolvedMessage.multiModalImage) {
+    if (message.role === "user" && message.multiModalImage) {
       mappedMessages.push({
         type: "message",
         role: message.role as any,
         content: [
-          { type: "input_text", text: resolvedMessage.content },
-          { type: "input_image", image_url: resolvedMessage.multiModalImage },
+          { type: "input_text", text: message.content },
+          { type: "input_image", image_url: await getBase64ImageReference(message.multiModalImage || "") },
         ] as any,
       } as ResponseInputItem);
       continue;
@@ -37,14 +31,14 @@ export const mapOpenAIChatMessages = async (
         mappedMessages.push({
           type: "message",
           role: message.role as any,
-          content: resolvedMessage.content,
+          content: message.content,
         } as ResponseInputItem);
         break;
       default:
         mappedMessages.push({
           type: "message",
           role: message.role,
-          content: resolvedMessage.content,
+          content: message.content,
         } as ResponseInputItem);
         break;
     }
