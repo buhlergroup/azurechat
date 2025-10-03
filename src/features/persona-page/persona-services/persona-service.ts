@@ -331,7 +331,7 @@ export const FindAllPersonaForCurrentUser = async (): Promise<
     
     const querySpec: SqlQuerySpec = {
       query:
-        "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId OR r.accessGroup.id IN (@groupIds)) ORDER BY r.createdAt DESC",
+        "SELECT * FROM root r WHERE r.type=@type AND (r.isPublished=@isPublished OR r.userId=@userId OR ARRAY_CONTAINS(@groupIds, r.accessGroup.id) <> true) ORDER BY r.createdAt DESC",
       parameters: [
         {
           name: "@type",
