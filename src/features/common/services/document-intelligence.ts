@@ -1,21 +1,18 @@
-import {
-  AzureKeyCredential,
-  DocumentAnalysisClient,
-} from "@azure/ai-form-recognizer";
+import { DocumentAnalysisClient } from "@azure/ai-form-recognizer";
+import { getAzureDefaultCredential } from "./azure-default-credential";
 
 export const DocumentIntelligenceInstance = () => {
   const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT;
-  const key = process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY;
 
-  if (!endpoint || !key) {
+  if (!endpoint) {
     throw new Error(
-      "One or more Document Intelligence environment variables are not set"
+      "Document Intelligence endpoint environment variable is not set"
     );
   }
 
   const client = new DocumentAnalysisClient(
     endpoint,
-    new AzureKeyCredential(key)
+    getAzureDefaultCredential()
   );
 
   return client;
