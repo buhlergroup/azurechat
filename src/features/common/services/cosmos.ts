@@ -1,4 +1,5 @@
 import { CosmosClient } from "@azure/cosmos";
+import { getAzureDefaultCredential } from "./azure-default-credential";
 
 // Read Cosmos DB_NAME and CONTAINER_NAME from .env
 const DB_NAME = process.env.AZURE_COSMOSDB_DB_NAME || "chat";
@@ -8,15 +9,17 @@ const CONFIG_CONTAINER_NAME =
 
 export const CosmosInstance = () => {
   const endpoint = process.env.AZURE_COSMOSDB_URI;
-  const key = process.env.AZURE_COSMOSDB_KEY;
 
-  if (!endpoint || !key) {
+  if (!endpoint) {
     throw new Error(
-      "Azure Cosmos DB is not configured. Please configure it in the .env file."
+      "Azure Cosmos DB endpoint is not configured. Please configure it in the .env file."
     );
   }
 
-  return new CosmosClient({ endpoint, key });
+  return new CosmosClient({
+    endpoint,
+    aadCredentials: getAzureDefaultCredential(),
+  });
 };
 
 export const ConfigContainer = () => {

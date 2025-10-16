@@ -9,11 +9,8 @@ import {
 } from "@/features/common/services/ai-search";
 import { OpenAIEmbeddingInstance } from "@/features/common/services/openai";
 import { uniqueId } from "@/features/common/util";
-import {
-  AzureKeyCredential,
-  SearchClient,
-  SearchIndex,
-} from "@azure/search-documents";
+import { AzureKeyCredential, SearchClient, SearchIndex } from "@azure/search-documents";
+import { getAzureDefaultCredential } from "@/features/common/services/azure-default-credential";
 
 export interface AzureSearchDocumentIndex {
   id: string;
@@ -168,7 +165,7 @@ export const PersonaDocumentExistsInIndex = async (
 export const ExtensionSimilaritySearch = async (props: {
   searchText: string;
   vectors: string[];
-  apiKey: string;
+  apiKey?: string;
   searchName: string;
   indexName: string;
   shouldCreateEmbedding?: boolean;
@@ -187,11 +184,11 @@ export const ExtensionSimilaritySearch = async (props: {
 
     const endpoint = `https://${searchName}.search.windows.net`;
 
-    const searchClient = new SearchClient(
-      endpoint,
-      indexName,
-      new AzureKeyCredential(apiKey)
-    );
+    const credential = apiKey
+      ? new AzureKeyCredential(apiKey)
+      : getAzureDefaultCredential();
+
+    const searchClient = new SearchClient(endpoint, indexName, credential);
 
     const searchOptions: any = {
       top: 3,

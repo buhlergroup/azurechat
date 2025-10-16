@@ -10,8 +10,9 @@ export const SearchAzureAISimilarDocuments = async (req: Request) => {
     const search = body.search as string;
     logDebug("Search query", { search });
 
-    const vectors = req.headers.get("vectors") as string;
-    const apiKey = req.headers.get("apiKey") as string;
+  const vectors = req.headers.get("vectors") as string;
+  const apiKeyHeader = req.headers.get("apiKey");
+  const apiKey = apiKeyHeader ?? undefined;
     const searchName = req.headers.get("searchName") as string;
     const indexName = req.headers.get("indexName") as string;
     const userId = req.headers.get("authorization") as string;
