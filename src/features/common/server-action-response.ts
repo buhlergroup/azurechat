@@ -2,6 +2,7 @@ import { ZodIssue } from "zod";
 
 export type ServerActionError = {
   message: string;
+  code?: string;
 };
 
 type ServerActionValidationError = {

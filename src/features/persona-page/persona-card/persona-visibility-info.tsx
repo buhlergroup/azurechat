@@ -11,6 +11,7 @@ import {
 } from "@/features/ui/tooltip";
 import { PersonaModel } from "../persona-services/models";
 import { AccessGroupById } from "../persona-services/access-group-service";
+import { logoutOnSessionExpired } from "@/features/auth-page/logout-on-session-expired";
 
 interface PersonaVisibilityInfoProps {
   persona: PersonaModel;
@@ -40,6 +41,11 @@ export const PersonaVisibilityInfo = (
     setLoadError(null);
 
     const response = await AccessGroupById(persona.accessGroup.id);
+
+    if (logoutOnSessionExpired(response)) {
+      setIsFetchingGroup(false);
+      return;
+    }
 
     if (response.status === "OK") {
       setGroupName(response.response.name);

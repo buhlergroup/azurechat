@@ -7,16 +7,20 @@ declare module "next-auth" {
     user: {
       isAdmin: boolean;
       accessToken: string;
+      authProvider: string;
+      isLocalDevUser: boolean;
     } & DefaultSession["user"];
   }
 
   interface Token {
     isAdmin: boolean;
     accessToken: string;
+    authProvider?: string;
   }
 
   interface User {
     isAdmin: boolean;
     accessToken: string;
+    authProvider?: string;
   }
 }
