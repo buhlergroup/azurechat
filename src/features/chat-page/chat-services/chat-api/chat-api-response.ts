@@ -111,8 +111,8 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     store: false,
     tools: [
       ...tools, 
-      { type: "image_generation" },
-      { type: "web_search_preview" }
+      ...(props.imageGenerationEnabled ? [{ type: "image_generation" }] : []),
+      ...(props.webSearchEnabled ? [{ type: "web_search_preview" }] : [])
     ],
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls

@@ -288,6 +288,8 @@ export interface UserPrompt {
   multimodalImage: string;
   selectedModel?: ChatModel;
   reasoningEffort?: ReasoningEffort;
+  webSearchEnabled?: boolean;
+  imageGenerationEnabled?: boolean;
 }
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";

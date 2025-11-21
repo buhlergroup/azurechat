@@ -39,6 +39,7 @@ import { ExtensionModel } from "@/features/extensions-page/extension-services/mo
 import { InternetSearch } from "@/features/ui/chat/chat-input-area/internet-search";
 import { ReasoningEffortSelector } from "./reasoning-effort-selector";
 import { MODEL_CONFIGS } from "../chat-services/models";
+import { ToolToggles } from "./tool-toggles";
 
 interface ChatInputProps {
   chatDocuments: ChatDocumentModel[];
@@ -166,6 +167,7 @@ export const ChatInput = ({
       <ChatInputActionArea>
         <ChatInputSecondaryActionArea>
           {internetSearch && threadExtensions && <InternetSearch extension={internetSearch} threadExtensions={threadExtensions}/>}
+          <ToolToggles />
           <ReasoningEffortSelector
             value={reasoningEffort}
             onChange={(effort) => chatStore.updateReasoningEffort(effort)}
@@ -181,14 +183,6 @@ export const ChatInput = ({
         </ChatInputSecondaryActionArea>
         <ChatInputPrimaryActionArea>
           <ImageInput />
-          {/* Does not work so we disable it for now */}
-          {/* <Microphone
-            startRecognition={() => speechToTextStore.startRecognition()}
-            stopRecognition={() => speechToTextStore.stopRecognition()}
-            isPlaying={isPlaying}
-            stopPlaying={() => textToSpeechStore.stopPlaying()}
-            isMicrophoneReady={isMicrophoneReady}
-          /> */}
           {loading === "loading" ? (
             <StopChat stop={() => chatStore.stopGeneratingMessages()} />
           ) : (

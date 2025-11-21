@@ -44,6 +44,8 @@ class ChatState {
   public chatThreadId: string = "";
   public selectedModel: ChatModel = "gpt-5"; // Will be updated when available models are fetched
   public reasoningEffort: ReasoningEffort = "minimal";
+  public webSearchEnabled: boolean = false;
+  public imageGenerationEnabled: boolean = false;
 
   private chatThread: ChatThreadModel | undefined;
   private tempReasoningContent: string = "";
@@ -149,6 +151,26 @@ class ChatState {
 
   public getReasoningEffort(): ReasoningEffort {
     return this.reasoningEffort;
+  }
+
+  public toggleWebSearch(enabled: boolean) {
+    this.webSearchEnabled = enabled;
+    // Auto-adjust reasoning effort: disable minimal when tools are active
+    if (enabled || this.imageGenerationEnabled) {
+      if (this.reasoningEffort === "minimal") {
+        this.reasoningEffort = "low";
+      }
+    }
+  }
+
+  public toggleImageGeneration(enabled: boolean) {
+    this.imageGenerationEnabled = enabled;
+    // Auto-adjust reasoning effort: disable minimal when tools are active
+    if (enabled || this.webSearchEnabled) {
+      if (this.reasoningEffort === "minimal") {
+        this.reasoningEffort = "low";
+      }
+    }
   }
 
   public async AddExtensionToChatThread(extensionId: string) {
@@ -340,6 +362,8 @@ class ChatState {
       message: this.input,
       selectedModel: this.selectedModel,
       reasoningEffort: this.reasoningEffort,
+      webSearchEnabled: this.webSearchEnabled,
+      imageGenerationEnabled: this.imageGenerationEnabled,
     });
     formData.append("content", body);
 
