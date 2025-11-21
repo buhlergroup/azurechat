@@ -294,13 +294,7 @@ async function _getAvailableTools(chatThread: ChatThreadModel) {
   
   logInfo("Chat thread extensions", { extensions: chatThread.extension?.join(", ") || "none" });
   
-  // Always add create_image function (core feature) - only this specific function
-  const builtInFunctions = await getAvailableFunctions();
-  const createImageFunction = builtInFunctions.find(f => f.name === "create_image");
-  if (createImageFunction) {
-    tools.push(createImageFunction);
-    logInfo("Added create_image function (core feature)");
-  }
+  await getAvailableFunctions();
   
   // Add dynamic extensions ONLY if they are configured for this chat thread
   if (chatThread.extension && chatThread.extension.length > 0) {

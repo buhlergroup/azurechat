@@ -88,16 +88,23 @@ class ChatState {
     userName: string;
     messages: Array<ChatMessageModel>;
   }) {
+    // Only initialize if this is a new chat thread
+    const isNewThread = this.chatThreadId !== chatThread.id;
+    
     this.chatThread = chatThread;
     this.chatThreadId = chatThread.id;
     this.messages = messages;
     this.userName = userName;
     this.selectedModel = chatThread.selectedModel || "gpt-5";
-    // Set default reasoning effort per model if available
-    const defaultEffort = (MODEL_CONFIGS as any)[this.selectedModel]?.defaultReasoningEffort;
-    if (defaultEffort) {
-      this.reasoningEffort = defaultEffort;
+    
+    // Only set default reasoning effort when switching to a new thread
+    if (isNewThread) {
+      const defaultEffort = (MODEL_CONFIGS as any)[this.selectedModel]?.defaultReasoningEffort;
+      if (defaultEffort) {
+        this.reasoningEffort = defaultEffort;
+      }
     }
+    
     this.tempReasoningContent = "";
     this.currentAssistantMessageId = "";
     // Preserve tool call history across messages; do not reset here
@@ -155,21 +162,13 @@ class ChatState {
 
   public toggleWebSearch(enabled: boolean) {
     this.webSearchEnabled = enabled;
-    // Auto-adjust reasoning effort: disable minimal when tools are active
-    if (enabled || this.imageGenerationEnabled) {
-      if (this.reasoningEffort === "minimal") {
-        this.reasoningEffort = "low";
-      }
-    }
   }
 
   public toggleImageGeneration(enabled: boolean) {
     this.imageGenerationEnabled = enabled;
-    // Auto-adjust reasoning effort: disable minimal when tools are active
-    if (enabled || this.webSearchEnabled) {
-      if (this.reasoningEffort === "minimal") {
-        this.reasoningEffort = "low";
-      }
+    // Switch away from minimal if image generation is enabled
+    if (enabled && this.reasoningEffort === "minimal") {
+      this.reasoningEffort = "low";
     }
   }
 
