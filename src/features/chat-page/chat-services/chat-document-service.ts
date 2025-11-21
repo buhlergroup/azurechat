@@ -10,6 +10,8 @@ import { DocumentIntelligenceInstance } from "@/features/common/services/documen
 import { uniqueId } from "@/features/common/util";
 import { SqlQuerySpec } from "@azure/cosmos";
 import { EnsureIndexIsCreated } from "./azure-ai-search/azure-ai-search";
+import { logDebug, logError } from "@/features/common/services/logger";
+import { RestError } from "@azure/storage-blob";
 import {
   CHAT_DOCUMENT_ATTRIBUTE,
   ChatDocumentModel,
@@ -53,6 +55,13 @@ export const CrackDocument = async (
       response: splitDocuments,
     };
   } catch (e) {
+    logError("CrackDocument failed", {
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+      errorType: e instanceof RestError ? "RestError" : (e as any)?.constructor?.name,
+      statusCode: e instanceof RestError ? e.statusCode : undefined,
+      code: (e as any)?.code,
+    });
     return {
       status: "ERROR",
       errors: [
@@ -79,6 +88,13 @@ const LoadFile = async (
 
     const fileExtension = file.name.split(".").pop();
 
+    logDebug("LoadFile starting", {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      fileExtension,
+    });
+
     if (!isSupportedFileType(fileExtension)) {
       throw new Error("Unsupported File Type");
     }
@@ -88,15 +104,27 @@ const LoadFile = async (
       : MAX_UPLOAD_DOCUMENT_SIZE;
 
     if (file && file.size < fileSize) {
+      logDebug("Initializing Document Intelligence client");
       const client = DocumentIntelligenceInstance();
 
       const blob = new Blob([file], { type: file.type });
+
+      logDebug("Starting Document Intelligence analysis", {
+        model: "prebuilt-read",
+        blobSize: blob.size,
+      });
 
       const poller = await client.beginAnalyzeDocument(
         "prebuilt-read",
         await blob.arrayBuffer()
       );
+      
+      logDebug("Polling Document Intelligence for completion");
       const { paragraphs } = await poller.pollUntilDone();
+      
+      logDebug("Document Intelligence analysis completed", {
+        paragraphCount: paragraphs?.length || 0,
+      });
 
       const docs: Array<string> = [];
 
@@ -121,6 +149,14 @@ const LoadFile = async (
       };
     }
   } catch (e) {
+    logError("LoadFile failed", {
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+      errorType: e instanceof RestError ? "RestError" : (e as any)?.constructor?.name,
+      statusCode: e instanceof RestError ? e.statusCode : undefined,
+      code: (e as any)?.code,
+      details: (e as any)?.details,
+    });
     return {
       status: "ERROR",
       errors: [

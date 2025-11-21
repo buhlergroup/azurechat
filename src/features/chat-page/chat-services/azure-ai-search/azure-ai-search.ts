@@ -11,6 +11,7 @@ import { OpenAIEmbeddingInstance } from "@/features/common/services/openai";
 import { uniqueId } from "@/features/common/util";
 import { AzureKeyCredential, SearchClient, SearchIndex } from "@azure/search-documents";
 import { getAzureDefaultCredential } from "@/features/common/services/azure-default-credential";
+import { logDebug, logError } from "@/features/common/services/logger";
 
 export interface AzureSearchDocumentIndex {
   id: string;
@@ -260,6 +261,13 @@ export const IndexDocuments = async (
   personaDocumentId?: string
 ): Promise<Array<ServerActionResponse<boolean>>> => {
   try {
+    logDebug("IndexDocuments starting", {
+      docCount: docs.length,
+      fileName,
+      chatThreadId,
+      personaDocumentId,
+    });
+    
     const documentsToIndex: AzureSearchDocumentIndex[] = [];
 
     for (const doc of docs) {
@@ -277,12 +285,26 @@ export const IndexDocuments = async (
     }
 
     const instance = AzureAISearchInstance();
+    
+    logDebug("Creating embeddings for documents", {
+      documentCount: documentsToIndex.length,
+    });
+    
     const embeddingsResponse = await EmbedDocuments(documentsToIndex);
 
     if (embeddingsResponse.status === "OK") {
+      logDebug("Uploading documents to Azure AI Search", {
+        documentCount: embeddingsResponse.response.length,
+      });
+      
       const uploadResponse = await instance.uploadDocuments(
         embeddingsResponse.response
       );
+      
+      logDebug("Upload response received", {
+        resultCount: uploadResponse.results.length,
+        successCount: uploadResponse.results.filter(r => r.succeeded).length,
+      });
 
       const response: ServerActionResponse<boolean>[] = [];
       uploadResponse.results.forEach((r) => {
@@ -308,6 +330,11 @@ export const IndexDocuments = async (
 
     return [embeddingsResponse];
   } catch (e) {
+    logError("IndexDocuments failed", {
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+      errorType: (e as any)?.constructor?.name,
+    });
     return [
       {
         status: "ERROR",
@@ -433,13 +460,24 @@ export const EmbedDocuments = async (
   documents: Array<AzureSearchDocumentIndex>
 ): Promise<ServerActionResponse<Array<AzureSearchDocumentIndex>>> => {
   try {
+    logDebug("EmbedDocuments starting", {
+      documentCount: documents.length,
+      model: process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME,
+    });
+    
     const openai = OpenAIEmbeddingInstance();
 
     const contentsToEmbed = documents.map((d) => d.pageContent);
 
+    logDebug("Calling OpenAI embeddings API");
+    
     const embeddings = await openai.embeddings.create({
       input: contentsToEmbed,
       model: process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME,
+    });
+    
+    logDebug("OpenAI embeddings created", {
+      embeddingCount: embeddings.data.length,
     });
 
     embeddings.data.forEach((embedding, index) => {
@@ -451,6 +489,11 @@ export const EmbedDocuments = async (
       response: documents,
     };
   } catch (e) {
+    logError("EmbedDocuments failed", {
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+      errorType: (e as any)?.constructor?.name,
+    });
     return {
       status: "ERROR",
       errors: [
