@@ -457,7 +457,6 @@ export const OpenAIResponsesStream = (props: {
               } else if (event.item?.type === "web_search_call") {
                 logInfo("Web search completed", { 
                   outputIndex: event.output_index,
-                  action: event.item?.action?.type,
                   status: event.item?.status
                 });
                 // Web search results are embedded in the message content with citations
