@@ -287,6 +287,16 @@ export const OpenAIResponsesStream = (props: {
                   type: "image_generation_call",
                   ...event.item
                 };
+              } else if (event.item?.type === "web_search_call") {
+                logInfo("Web search started", { 
+                  outputIndex: event.output_index,
+                  action: event.item?.action?.type,
+                  query: event.item?.action?.query 
+                });
+                functionCalls[event.output_index] = {
+                  type: "web_search_call",
+                  ...event.item
+                };
               }
               break;
 
@@ -448,6 +458,14 @@ export const OpenAIResponsesStream = (props: {
                     });
                   }
                 }
+              } else if (event.item?.type === "web_search_call") {
+                logInfo("Web search completed", { 
+                  outputIndex: event.output_index,
+                  action: event.item?.action?.type,
+                  status: event.item?.status
+                });
+                // Web search results are embedded in the message content with citations
+                // No additional processing needed - the model will reference the search results
               }
               break;
 
@@ -477,6 +495,19 @@ export const OpenAIResponsesStream = (props: {
             case "response.image_generation_call.partial_image":
               // Partial image data available during generation - could be used for progressive loading
               logDebug("Partial image received", { outputIndex: event.output_index });
+              break;
+
+            case "response.web_search_call.in_progress":
+              logDebug("Web search in progress", { 
+                outputIndex: event.output_index,
+                action: (event as any).action?.type
+              });
+              break;
+
+            case "response.web_search_call.completed":
+              logDebug("Web search completed", { 
+                outputIndex: event.output_index 
+              });
               break;
 
             case "response.completed":

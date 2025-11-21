@@ -109,7 +109,11 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     model: modelConfig.deploymentName,
     stream: true,
     store: false,
-    tools: [...tools, { type: "image_generation" }],
+    tools: [
+      ...tools, 
+      { type: "image_generation" },
+      { type: "web_search_preview" }
+    ],
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls
   };
