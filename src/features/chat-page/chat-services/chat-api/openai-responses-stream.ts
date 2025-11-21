@@ -281,6 +281,12 @@ export const OpenAIResponsesStream = (props: {
                 });
                 
                 // Don't stream function call start - wait for completion
+              } else if (event.item?.type === "image_generation_call") {
+                logInfo("Image generation started", { outputIndex: event.output_index });
+                functionCalls[event.output_index] = {
+                  type: "image_generation_call",
+                  ...event.item
+                };
               }
               break;
 
@@ -399,6 +405,49 @@ export const OpenAIResponsesStream = (props: {
                   controller.close();
                   return;
                 }
+              } else if (event.item?.type === "image_generation_call") {
+                logInfo("Image generation completed", { outputIndex: event.output_index });
+                // The result is in event.item.result as base64 string
+                if (event.item?.result) {
+                  try {
+                    // Decode base64 image and upload to blob storage
+                    const imageName = `${uniqueId()}.png`;
+                    const { UploadImageToStore, GetImageUrl } = await import("../chat-image-service");
+                    
+                    await UploadImageToStore(
+                      chatThread.id,
+                      imageName,
+                      Buffer.from(event.item.result, "base64")
+                    );
+                    
+                    const imageUrl = await GetImageUrl(chatThread.id, imageName);
+                    
+                    // Add image markdown to the message
+                    const imageMarkdown = `\n\n![Generated Image](${imageUrl})\n\n`;
+                    lastMessage += imageMarkdown;
+                    
+                    // Stream the image as content
+                    const response: AzureChatCompletion = {
+                      type: "content",
+                      response: {
+                        id: messageId,
+                        choices: [{
+                          message: {
+                            content: imageMarkdown,
+                            role: "assistant"
+                          }
+                        }]
+                      },
+                    };
+                    streamResponse(response.type, JSON.stringify(response));
+                    
+                    logInfo("Image uploaded and displayed", { imageName, imageUrl });
+                  } catch (error) {
+                    logError("Failed to process generated image", { 
+                      error: error instanceof Error ? error.message : String(error) 
+                    });
+                  }
+                }
               }
               break;
 
@@ -415,6 +464,19 @@ export const OpenAIResponsesStream = (props: {
                 
                 reasoningContent = Object.values(reasoningSummaries).join('\n\n');
               }
+              break;
+
+            case "response.image_generation_call.in_progress":
+              logDebug("Image generation in progress", { outputIndex: event.output_index });
+              break;
+
+            case "response.image_generation_call.generating":
+              logDebug("Image generation generating", { outputIndex: event.output_index });
+              break;
+
+            case "response.image_generation_call.partial_image":
+              // Partial image data available during generation - could be used for progressive loading
+              logDebug("Partial image received", { outputIndex: event.output_index });
               break;
 
             case "response.completed":

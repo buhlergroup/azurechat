@@ -1,9 +1,6 @@
 "use server";
 import "server-only";
 
-import { uniqueId } from "@/features/common/util";
-import { OpenAIDALLEInstance } from "@/features/common/services/openai";
-import { GetImageUrl, UploadImageToStore } from "../chat-image-service";
 import { SimilaritySearch } from "../azure-ai-search/azure-ai-search";
 import { CreateCitations, FormatCitations } from "../citation-service";
 import { userHashedId } from "@/features/auth-page/helpers";
@@ -76,61 +73,6 @@ export async function executeFunction(
 }
 
 // Built-in function implementations
-
-// Image creation function
-async function createImage(
-  args: { prompt: string }, 
-  context: { threadId: string; userMessage: string; signal: AbortSignal; headers?: Record<string, string> }
-) {
-  logInfo("Creating image with DALL-E", { 
-    promptLength: args.prompt?.length || 0,
-    threadId: context.threadId 
-  });
-  logDebug("Image prompt", { prompt: args.prompt });
-
-  if (!args.prompt) {
-    throw new Error("No prompt provided");
-  }
-
-  if (args.prompt.length >= 4000) {
-    throw new Error("Prompt is too long, it must be less than 4000 characters");
-  }
-
-  const openAI = OpenAIDALLEInstance();
-
-  const response = await openAI.images.generate(
-    {
-      model: "dall-e-3",
-      prompt: args.prompt,
-      response_format: "b64_json",
-    },
-    {
-      signal: context.signal,
-    }
-  );
-
-  if (
-    !response.data ||
-    !Array.isArray(response.data) ||
-    !response.data[0] ||
-    response.data[0].b64_json === undefined
-  ) {
-    throw new Error("Invalid API response received");
-  }
-
-  const imageName = `${uniqueId()}.png`;
-
-  await UploadImageToStore(
-    context.threadId,
-    imageName,
-    Buffer.from(response.data[0].b64_json, "base64")
-  );
-
-  return {
-    revised_prompt: response.data[0].revised_prompt,
-    url: await GetImageUrl(context.threadId, imageName),
-  };
-}
 
 // RAG search function
 async function searchDocuments(
@@ -222,9 +164,6 @@ async function searchDocuments(
 
 // Register built-in functions (will be called when needed)
 async function ensureBuiltInFunctionsRegistered() {
-  if (!functionRegistry.has("create_image")) {
-    await registerFunction("create_image", createImage);
-  }
   if (!functionRegistry.has("search_documents")) {
     await registerFunction("search_documents", searchDocuments);
   }
@@ -235,30 +174,9 @@ export async function getAvailableFunctions(): Promise<FunctionDefinition[]> {
   // Ensure built-in functions are registered
   await ensureBuiltInFunctionsRegistered();
   
-  // Define the base schemas for built-in functions
-  const builtInFunctions = [
-    {
-      type: "function" as const,
-      name: "create_image",
-      description: "Create an image using DALL-E 3. Only use this when the user explicitly asks to create, generate, or make an image.",
-      parameters: {
-        type: "object",
-        properties: {
-          prompt: {
-            type: "string",
-            description: "A detailed description of the image to create. Be descriptive and specific."
-          }
-        }
-      },
-      strict: true as const
-    }
-  ];
-
-  // Apply schema validation to all built-in functions
-  return builtInFunctions.map(func => ({
-    ...func,
-    parameters: validateAndFixSchema(func.parameters)
-  }));
+  // No built-in function tools needed anymore - image_generation is handled as a tool type
+  // and search_documents is added conditionally in chat-api-response.ts
+  return [];
 }
 
 // Get a specific tool by name
@@ -268,21 +186,6 @@ export async function getToolByName(toolName: string): Promise<FunctionDefinitio
   
   // Define all available tools (including those not in getAvailableFunctions)
   const allTools = [
-    {
-      type: "function" as const,
-      name: "create_image",
-      description: "Create an image using DALL-E 3. Only use this when the user explicitly asks to create, generate, or make an image.",
-      parameters: {
-        type: "object",
-        properties: {
-          prompt: {
-            type: "string",
-            description: "A detailed description of the image to create. Be descriptive and specific."
-          }
-        }
-      },
-      strict: true as const
-    },
     {
       type: "function" as const, 
       name: "search_documents",

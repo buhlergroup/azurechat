@@ -108,31 +108,6 @@ export const OpenAIEmbeddingInstance = () => {
   return openai;
 };
 
-// a new instance definition for DALL-E image generation
-export const OpenAIDALLEInstance = () => {
-  const deploymentName = process.env.AZURE_OPENAI_DALLE_API_DEPLOYMENT_NAME;
-  const instanceName = process.env.AZURE_OPENAI_DALLE_API_INSTANCE_NAME;
-
-  if (!deploymentName || !instanceName) {
-    throw new Error(
-      "Azure OpenAI DALLE endpoint config is not set, check environment variables."
-    );
-  }
-
-  const openai = new AzureOpenAI({
-    ...buildAzureOpenAIAuthConfig({
-      apiKeyEnvVar: "AZURE_OPENAI_DALLE_API_KEY",
-    }),
-    baseURL: `https://${instanceName}.openai.azure.com/openai/deployments/${deploymentName}`,
-    defaultQuery: {
-      "api-version":
-        process.env.AZURE_OPENAI_DALLE_API_VERSION || "2023-12-01-preview",
-    },
-    apiVersion: process.env.AZURE_OPENAI_DALLE_API_VERSION || "2023-12-01-preview",
-  });
-  return openai;
-};
-
 export const OpenAIVisionInstance = () => {
   const deploymentName = process.env.AZURE_OPENAI_VISION_API_DEPLOYMENT_NAME;
   const instanceName = process.env.AZURE_OPENAI_VISION_API_INSTANCE_NAME;
@@ -179,6 +154,7 @@ export const OpenAIReasoningInstance = () => {
 export const OpenAIV1ReasoningInstance = () => {
   const instanceName = process.env.AZURE_OPENAI_API_INSTANCE_NAME;
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION;
+  const imageDeploymentName = process.env.AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME;
 
   if (!instanceName || !apiVersion) {
     throw new Error(
@@ -187,7 +163,12 @@ export const OpenAIV1ReasoningInstance = () => {
   }
 
   const openai = new AzureOpenAI({
-    ...buildAzureOpenAIAuthConfig(),
+    ...buildAzureOpenAIAuthConfig({
+      extraHeaders: imageDeploymentName ? {
+        "x-ms-oai-image-generation-deployment": imageDeploymentName,
+        "api-version": "preview"
+      } : undefined,
+    }),
     baseURL: `https://${instanceName}.openai.azure.com/openai/v1/`,
     apiVersion,
   });
