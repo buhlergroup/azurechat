@@ -284,7 +284,6 @@ export const OpenAIResponsesStream = (props: {
               } else if (event.item?.type === "image_generation_call") {
                 logInfo("Image generation started", { outputIndex: event.output_index });
                 functionCalls[event.output_index] = {
-                  type: "image_generation_call",
                   ...event.item
                 };
               } else if (event.item?.type === "web_search_call") {
@@ -294,7 +293,6 @@ export const OpenAIResponsesStream = (props: {
                   query: event.item?.action?.query 
                 });
                 functionCalls[event.output_index] = {
-                  type: "web_search_call",
                   ...event.item
                 };
               }
