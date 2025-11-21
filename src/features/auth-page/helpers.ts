@@ -11,7 +11,8 @@ export const userSession = async (): Promise<UserModel | null> => {
       image: session.user.image!,
       email: session.user.email!,
       isAdmin: session.user.isAdmin!,
-      token: session.user.accessToken!
+      token: session.user.accessToken!,
+      isLocalDevUser: session.user.isLocalDevUser,
     };
   }
 
@@ -54,4 +55,5 @@ export type UserModel = {
   email: string;
   isAdmin: boolean;
   token: string;
+  isLocalDevUser: boolean;
 };

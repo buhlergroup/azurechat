@@ -109,7 +109,11 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     model: modelConfig.deploymentName,
     stream: true,
     store: false,
-    tools: tools,
+    tools: [
+      ...tools, 
+      ...(props.imageGenerationEnabled ? [{ type: "image_generation" }] : []),
+      ...(props.webSearchEnabled ? [{ type: "web_search_preview" }] : [])
+    ],
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls
   };
@@ -117,7 +121,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   try {
     const preferredToolNames = tools
       .map((t: any) => t?.name)
-      .filter((n: string | undefined) => !!n && n !== "create_image");
+      .filter((n: string | undefined) => !!n);
 
     if (preferredToolNames.length > 0) {
       const toolsList = preferredToolNames.join(", ");

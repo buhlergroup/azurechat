@@ -70,6 +70,7 @@ const configureIdentityProvider = () => {
   if (process.env.NODE_ENV === "development") {
     providers.push(
       CredentialsProvider({
+        id: "localdev",
         name: "localdev",
         credentials: {
           username: { label: "Username", type: "text", placeholder: "dev" },
@@ -101,23 +102,48 @@ export const options: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user, account }) {
       if (account && user) {
-        token.accessToken = account.access_token;
-        token.accessTokenExpires = account.expires_at;
-        token.refreshToken = account.refresh_token;
-        token.isAdmin = user.isAdmin;
+        const extendedUser = user as { accessToken?: string; isAdmin?: boolean };
+        const previousExpiry = token.accessTokenExpires as number | undefined;
+        const previousRefreshToken = token.refreshToken as string | undefined;
+        token.accessToken =
+          account.access_token ?? extendedUser.accessToken ?? (token.accessToken as string);
+        token.accessTokenExpires =
+          account.expires_at ??
+          previousExpiry ??
+          Math.floor(Date.now() / 1000) + 60 * 60;
+        token.refreshToken = account.refresh_token ?? previousRefreshToken;
+        token.isAdmin = extendedUser.isAdmin ?? false;
+        token.authProvider = account.provider ?? (token.authProvider as string);
 
         return token;
       }
 
-      if (Date.now() < (token.accessTokenExpires as number) * 1000) {
+      token.authProvider =
+        (token.authProvider as string) ??
+        ((token.refreshToken as string | undefined) ? "azure-ad" : "localdev");
+
+      if (token.authProvider !== "azure-ad") {
+        return token;
+      }
+
+      if (
+        token.accessTokenExpires &&
+        Date.now() < (token.accessTokenExpires as number) * 1000
+      ) {
         return token;
       }
 
       return refreshAccessToken(token);
     },
     async session({ session, token }) {
-      session.user.isAdmin = token.isAdmin as boolean;
-      session.user.accessToken = token.accessToken as string;
+      session.user.isAdmin = Boolean(token.isAdmin);
+      session.user.accessToken = (token.accessToken as string) ?? "";
+      session.user.authProvider =
+        (token.authProvider as string) ??
+        ((token.refreshToken as string | undefined) ? "azure-ad" : "localdev");
+      const fallbackLocalDev = session.user.email?.endsWith("@localhost") ?? false;
+      session.user.isLocalDevUser =
+        session.user.authProvider === "localdev" || fallbackLocalDev;
       return session;
     },
   },
@@ -128,6 +154,12 @@ export const options: NextAuthOptions = {
 
 async function refreshAccessToken(token: JWT) {
   try {
+    const refreshToken = token.refreshToken as string | undefined;
+
+    if (!refreshToken) {
+      throw new Error("Missing refresh token");
+    }
+
     const url = `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/oauth2/v2.0/token`;
     const response = await fetch(url, {
       method: "POST",
@@ -138,7 +170,7 @@ async function refreshAccessToken(token: JWT) {
         client_id: process.env.AZURE_AD_CLIENT_ID!,
         client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
         grant_type: "refresh_token",
-        refresh_token: token.refreshToken as string,
+        refresh_token: refreshToken,
         scope: SCOPES,
       }),
     });
@@ -151,10 +183,15 @@ async function refreshAccessToken(token: JWT) {
       );
     }
 
+    const expiresInSeconds = Number(refreshedTokens.expires_in ?? 0);
+    const newExpiry = expiresInSeconds
+      ? Math.floor(Date.now() / 1000) + expiresInSeconds
+      : (token.accessTokenExpires as number | undefined);
+
     return {
       ...token,
       accessToken: refreshedTokens.access_token,
-      accessTokenExpires: refreshedTokens.expiresAt,
+      accessTokenExpires: newExpiry,
       refreshToken: refreshedTokens.refresh_token || token.refreshToken,
     };
   } catch (error) {

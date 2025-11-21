@@ -1,8 +1,8 @@
-import { DefaultAzureCredential } from "@azure/identity";
 import { SecretClient } from "@azure/keyvault-secrets";
+import { getAzureDefaultCredential } from "./azure-default-credential";
 
 export const AzureKeyVaultInstance = () => {
-  const credential = new DefaultAzureCredential();
+  const credential = getAzureDefaultCredential();
   const keyVaultName = process.env.AZURE_KEY_VAULT_NAME;
 
   if (!keyVaultName) {

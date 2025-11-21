@@ -1,4 +1,4 @@
-import { FC, use, useEffect, useState } from "react";
+import { FC, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { UserAccessGroups } from "@/features/persona-page/persona-services/acces
 import { ScrollArea } from "@/features/ui/scroll-area";
 import { toast } from "@/features/ui/use-toast";
 import { Button } from "@/features/ui/button";
+import { logoutOnSessionExpired } from "@/features/auth-page/logout-on-session-expired";
 
 interface Props {
   onSelectGroup: (group: AccessGroup) => void;
@@ -38,6 +39,10 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
     const fetchAccessGroups = async () => {
       try {
         const result = await UserAccessGroups();
+
+        if (logoutOnSessionExpired(result)) {
+          return;
+        }
 
         if (result.status !== "OK") {
           const errorMessage =

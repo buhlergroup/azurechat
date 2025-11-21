@@ -11,6 +11,7 @@ import {
 } from "@/features/ui/select";
 import { Button } from "@/features/ui/button";
 import { ReasoningEffort } from "../chat-services/models";
+import { useChat } from "../chat-store";
 
 interface ReasoningEffortSelectorProps {
   value: ReasoningEffort;
@@ -25,6 +26,9 @@ export const ReasoningEffortSelector: React.FC<ReasoningEffortSelectorProps> = (
   disabled = false,
   showReasoningModelsOnly = false,
 }) => {
+  const { webSearchEnabled, imageGenerationEnabled } = useChat();
+  const toolsEnabled = webSearchEnabled || imageGenerationEnabled;
+
   if (!showReasoningModelsOnly) {
     return null;
   }
@@ -34,21 +38,25 @@ export const ReasoningEffortSelector: React.FC<ReasoningEffortSelectorProps> = (
       value: "minimal" as ReasoningEffort,
       label: "Minimal",
       description: "Fastest, minimal reasoning",
+      disabled: toolsEnabled, // Disable minimal when tools are active
     },
     {
       value: "low" as ReasoningEffort,
       label: "Low",
       description: "Quick responses, basic reasoning",
+      disabled: false,
     },
     {
       value: "medium" as ReasoningEffort,
       label: "Medium",
       description: "Balanced reasoning and speed",
+      disabled: false,
     },
     {
       value: "high" as ReasoningEffort,
       label: "High",
       description: "Deep analysis, thorough reasoning",
+      disabled: false,
     },
   ];
 
@@ -61,7 +69,11 @@ export const ReasoningEffortSelector: React.FC<ReasoningEffortSelectorProps> = (
         </SelectTrigger>
         <SelectContent>
           {effortOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
+            <SelectItem 
+              key={option.value} 
+              value={option.value}
+              disabled={option.disabled}
+            >
               <div className="flex flex-col">
                 <span className="font-medium">{option.label}</span>
               </div>

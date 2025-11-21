@@ -1,21 +1,21 @@
 import { BlobServiceClient, RestError } from "@azure/storage-blob";
 import { ServerActionResponse } from "../server-action-response";
 import { logInfo, logError } from "./logger";
+import { getAzureDefaultCredential } from "./azure-default-credential";
 
 // initialize the blobServiceClient
 const InitBlobServiceClient = () => {
   const acc = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-  const key = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 
-  if (!acc || !key)
+  if (!acc)
     throw new Error(
       "Azure Storage Account not configured correctly, check environment variables."
     );
 
-  const connectionString = `DefaultEndpointsProtocol=https;AccountName=${acc};AccountKey=${key};EndpointSuffix=core.windows.net`;
+  const endpoint = `https://${acc}.blob.core.windows.net`;
+  const credential = getAzureDefaultCredential();
 
-  const blobServiceClient =
-    BlobServiceClient.fromConnectionString(connectionString);
+  const blobServiceClient = new BlobServiceClient(endpoint, credential);
   return blobServiceClient;
 };
 

@@ -1,12 +1,12 @@
 import { Label } from "@/features/ui/label";
 import { FC, useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 import { PersonaAccessGroupSelector } from "./persona-access-group-selector";
 import { AccessGroup } from "../persona-services/models";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/features/ui/tooltip";
 import { Info, Trash } from "lucide-react";
 import { Button } from "@/features/ui/button";
 import { AccessGroupById } from "../persona-services/access-group-service";
+import { logoutOnSessionExpired } from "@/features/auth-page/logout-on-session-expired";
 
 interface Props {
   initialSelectedGroup: string | null;
@@ -21,6 +21,10 @@ export const PersonaAccessGroup: FC<Props> = (props) => {
       if (!props.initialSelectedGroup) return;
       setIsLoading(true);
       const response = await AccessGroupById(props.initialSelectedGroup);
+      if (logoutOnSessionExpired(response)) {
+        setIsLoading(false);
+        return;
+      }
       if (response.status === "OK") {
         setSelectedGroup(response.response);
       } else {

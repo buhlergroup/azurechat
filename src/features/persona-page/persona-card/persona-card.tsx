@@ -17,6 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/features/ui/tooltip";
+import { PersonaVisibilityInfo } from "./persona-visibility-info";
 
 interface Props {
   persona: PersonaModel;
@@ -29,8 +30,11 @@ export const PersonaCard: FC<Props> = (props) => {
 
   return (
     <Card key={persona.id} className="flex flex-col">
-      <CardHeader className="flex flex-row">
-        <CardTitle className="flex-1">{persona.name}</CardTitle>
+      <CardHeader className="flex flex-row gap-2 items-start">
+        <div className="flex flex-1 items-center gap-2">
+          <CardTitle className="flex-1 truncate">{persona.name}</CardTitle>
+          <PersonaVisibilityInfo persona={persona} />
+        </div>
         {props.showActionMenu && (
           <div>
             <PersonaCardContextMenu persona={persona} />

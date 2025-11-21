@@ -15,6 +15,7 @@ export const CHAT_CITATION_ATTRIBUTE = "CHAT_CITATION";
 
 export type ChatModel = 
   | "gpt-5"
+  | "gpt-5.1"
   | "gpt-4o" 
   | "gpt-4o-mini" 
   | "gpt-4.1" 
@@ -49,6 +50,16 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "minimal"
+  },
+  "gpt-5.1": {
+    id: "gpt-5.1",
+    name: "GPT-5.1",
+    description: "Latest GPT-5.1 model with enhanced capabilities",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    deploymentName: "gpt-5.1",
     defaultReasoningEffort: "minimal"
   },
   "gpt-4o": {
@@ -121,7 +132,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O3_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "medium"
+    defaultReasoningEffort: "low"
   },
   "o3-pro": {
     id: "o3-pro",
@@ -132,7 +143,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "medium"
+    defaultReasoningEffort: "low"
   },
   "o4-mini": {
     id: "o4-mini",
@@ -143,7 +154,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O4_MINI_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "medium"
+    defaultReasoningEffort: "low"
   },
   "computer-use-preview": {
     id: "computer-use-preview",
@@ -277,6 +288,8 @@ export interface UserPrompt {
   multimodalImage: string;
   selectedModel?: ChatModel;
   reasoningEffort?: ReasoningEffort;
+  webSearchEnabled?: boolean;
+  imageGenerationEnabled?: boolean;
 }
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
