@@ -288,9 +288,7 @@ export const OpenAIResponsesStream = (props: {
                 };
               } else if (event.item?.type === "web_search_call") {
                 logInfo("Web search started", { 
-                  outputIndex: event.output_index,
-                  action: event.item?.action?.type,
-                  query: event.item?.action?.query 
+                  outputIndex: event.output_index
                 });
                 functionCalls[event.output_index] = {
                   ...event.item
