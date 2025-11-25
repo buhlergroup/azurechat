@@ -92,17 +92,20 @@ export const OpenAIMiniInstance = () => {
 export const OpenAIEmbeddingInstance = () => {
   const deploymentName = process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME;
   const instanceName = process.env.AZURE_OPENAI_API_INSTANCE_NAME;
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION;
+  const apiVersion = "2025-01-01-preview";
 
-  if (!deploymentName || !instanceName || !apiVersion) {
+  if (!deploymentName || !instanceName) {
     throw new Error(
       "Azure OpenAI Embeddings endpoint config is not set, check environment variables."
     );
   }
 
+  const endpoint = `https://${instanceName}.openai.azure.com`;
+
   const openai = new AzureOpenAI({
     ...buildAzureOpenAIAuthConfig(),
-    baseURL: `https://${instanceName}.openai.azure.com/openai/deployments/${deploymentName}`,
+    endpoint,
+    deployment: deploymentName,
     apiVersion,
   });
   return openai;
