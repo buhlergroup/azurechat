@@ -60,7 +60,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     deploymentName: "gpt-5.1",
-    defaultReasoningEffort: "minimal"
+    defaultReasoningEffort: "low"
   },
   "gpt-4o": {
     id: "gpt-4o",
