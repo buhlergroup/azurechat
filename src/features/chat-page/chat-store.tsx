@@ -99,6 +99,10 @@ class ChatState {
     
     // Only set default reasoning effort when switching to a new thread
     if (isNewThread) {
+      // Reset tool states for new chat
+      this.webSearchEnabled = false;
+      this.imageGenerationEnabled = false;
+      
       const defaultEffort = (MODEL_CONFIGS as any)[this.selectedModel]?.defaultReasoningEffort;
       if (defaultEffort) {
         this.reasoningEffort = defaultEffort;
