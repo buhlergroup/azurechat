@@ -162,11 +162,13 @@ class ChatState {
 
   public toggleWebSearch(enabled: boolean) {
     this.webSearchEnabled = enabled;
+    if (enabled && this.reasoningEffort === "minimal") {
+      this.reasoningEffort = "low";
+    }
   }
 
   public toggleImageGeneration(enabled: boolean) {
     this.imageGenerationEnabled = enabled;
-    // Switch away from minimal if image generation is enabled
     if (enabled && this.reasoningEffort === "minimal") {
       this.reasoningEffort = "low";
     }
