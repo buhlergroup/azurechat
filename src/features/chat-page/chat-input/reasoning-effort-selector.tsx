@@ -38,7 +38,7 @@ export const ReasoningEffortSelector: React.FC<ReasoningEffortSelectorProps> = (
       value: "minimal" as ReasoningEffort,
       label: "Minimal",
       description: "Fastest, minimal reasoning",
-      disabled: imageGenerationEnabled, // Disable minimal when image generation is active
+      disabled: toolsEnabled,
     },
     {
       value: "low" as ReasoningEffort,

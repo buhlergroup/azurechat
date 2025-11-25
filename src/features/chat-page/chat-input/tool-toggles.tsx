@@ -30,7 +30,13 @@ export const ToolToggles = () => {
               <Globe className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
+          <TooltipContent 
+            side="top" 
+            align="start" 
+            sideOffset={5} 
+            collisionPadding={{ left: 16, right: 16, top: 8, bottom: 8 }}
+            avoidCollisions={true}
+          >
             <p>Web Search</p>
             <p className="text-xs text-muted-foreground">
               Search the web for real-time information
@@ -53,7 +59,13 @@ export const ToolToggles = () => {
               <ImageIcon className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
+          <TooltipContent 
+            side="top" 
+            align="start" 
+            sideOffset={5} 
+            collisionPadding={{ left: 16, right: 16, top: 8, bottom: 8 }}
+            avoidCollisions={true}
+          >
             <p>Image Generation</p>
             <p className="text-xs text-muted-foreground">
               Generate images
