@@ -109,14 +109,23 @@ class ChatState {
     // Only initialize if this is a new chat thread
     const isNewThread = this.chatThreadId !== chatThread.id;
     
-    this.chatThread = chatThread;
-    this.chatThreadId = chatThread.id;
-    this.messages = messages;
-    this.userName = userName;
-    this.selectedModel = chatThread.selectedModel || "gpt-5";
-    
-    // Only set default reasoning effort when switching to a new thread
+    logInfo("Chat Store: initChatSession", {
+      isNewThread,
+      currentThreadId: this.chatThreadId,
+      newThreadId: chatThread.id,
+      currentMessagesCount: this.messages.length,
+      newMessagesCount: messages.length
+    });
+
     if (isNewThread) {
+      this.chatThread = chatThread;
+      this.chatThreadId = chatThread.id;
+      this.messages = messages;
+      this.selectedModel = chatThread.selectedModel || "gpt-5";
+      this.toolCallHistory = {};
+      this.tempReasoningContent = "";
+      this.currentAssistantMessageId = "";
+      
       // Reset tool states for new chat
       this.webSearchEnabled = false;
       this.imageGenerationEnabled = false;
@@ -125,26 +134,24 @@ class ChatState {
       if (defaultEffort) {
         this.reasoningEffort = defaultEffort;
       }
+
+      // Restore tool call history from loaded messages
+      messages.forEach(message => {
+        if (message.toolCallHistory && message.toolCallHistory.length > 0) {
+          this.toolCallHistory[message.id] = message.toolCallHistory;
+          logDebug("Chat Store: Restored tool call history", {
+            messageId: message.id,
+            toolCallCount: message.toolCallHistory.length,
+            toolNames: message.toolCallHistory.map(tc => tc.name)
+          });
+        }
+      });
     }
     
-    this.tempReasoningContent = "";
-    this.currentAssistantMessageId = "";
-    // Preserve tool call history across messages; do not reset here
-
-    // Restore tool call history from loaded messages
-    messages.forEach(message => {
-      if (message.toolCallHistory && message.toolCallHistory.length > 0) {
-        this.toolCallHistory[message.id] = message.toolCallHistory;
-        logDebug("Chat Store: Restored tool call history", {
-          messageId: message.id,
-          toolCallCount: message.toolCallHistory.length,
-          toolNames: message.toolCallHistory.map(tc => tc.name)
-        });
-      }
-    });
+    this.userName = userName;
     
     logDebug("Chat Store: Initialization complete", {
-      totalMessages: messages.length,
+      totalMessages: this.messages.length,
       messagesWithToolCalls: Object.keys(this.toolCallHistory).length,
       toolCallHistory: this.toolCallHistory
     });
@@ -277,6 +284,12 @@ class ChatState {
       type: "CHAT_MESSAGE",
       userId: "",
     };
+
+    logInfo("Chat Store: Adding user message", {
+      messageId: newUserMessage.id,
+      content: newUserMessage.content,
+      threadId: newUserMessage.threadId
+    });
 
     this.messages.push(newUserMessage);
     this.reset();
