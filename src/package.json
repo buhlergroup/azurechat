@@ -52,13 +52,13 @@
     "lucide-react": "^0.453.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.41.0",
     "nanoid": "^5.0.7",
-    "next": "^15.3.0",
-    "next-auth": "^4.24.11",
+    "next": "^15.4.7",
+    "next-auth": "^4.24.12",
     "next-themes": "^0.3.0",
     "openai": "^5.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-syntax-highlighter": "15.6.1",
+    "react-syntax-highlighter": "^15.6.1",
     "server-only": "^0.0.1",
     "sharp": "^0.33.5",
     "tailwind-merge": "^2.5.4",
@@ -73,10 +73,15 @@
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.20",
     "cross-env": "^7.0.3",
-    "eslint": "^8",
+    "eslint": "^8.57.0",
     "eslint-config-next": "^15.0.1",
     "postcss": "^8.4.47",
-    "tailwindcss": "^3.3.0",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5"
+  },
+  "overrides": {
+    "sucrase": "3.35.1",
+    "js-yaml": "4.1.1",
+    "prismjs": "1.30.0"
   }
 }
