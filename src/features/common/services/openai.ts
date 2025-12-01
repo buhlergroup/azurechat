@@ -73,17 +73,20 @@ export const OpenAIV1Instance = () => {
 export const OpenAIMiniInstance = () => {
   const instanceName = process.env.AZURE_OPENAI_API_INSTANCE_NAME;
   const deploymentName = process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME;
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION;
+  const apiVersion = "2025-01-01-preview";
 
-  if (!instanceName || !deploymentName || !apiVersion) {
+  if (!instanceName || !deploymentName) {
     throw new Error(
       "Azure OpenAI Mini endpoint config is not set, check environment variables."
     );
   }
 
+  const endpoint = `https://${instanceName}.openai.azure.com`;
+
   const openai = new AzureOpenAI({
     ...buildAzureOpenAIAuthConfig(),
-    baseURL: `https://${instanceName}.openai.azure.com/openai/deployments/${deploymentName}`,
+    endpoint,
+    deployment: deploymentName,
     apiVersion,
   });
   return openai;

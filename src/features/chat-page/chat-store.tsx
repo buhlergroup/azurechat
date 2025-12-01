@@ -46,7 +46,7 @@ class ChatState {
   public userName: string = "";
   public chatThreadId: string = "";
   public selectedModel: ChatModel = "gpt-5.1"; // Will be updated when available models are fetched
-  public reasoningEffort: ReasoningEffort = "minimal";
+  public reasoningEffort: ReasoningEffort = "low";
   public webSearchEnabled: boolean = false;
   public imageGenerationEnabled: boolean = false;
 
@@ -130,7 +130,7 @@ class ChatState {
       
       // Reset tool states for new chat
       this.webSearchEnabled = false;
-      this.imageGenerationEnabled = false;
+      this.imageGenerationEnabled = true;
       
       const defaultEffort = MODEL_CONFIGS[this.selectedModel]?.defaultReasoningEffort || "low";
       if (chatThread.reasoningEffort) {
@@ -165,6 +165,13 @@ class ChatState {
     this.selectedModel = model;
     const defaultEffort = MODEL_CONFIGS[model]?.defaultReasoningEffort || "low";
     this.reasoningEffort = defaultEffort;
+
+    // Automatically enable image generation if the model supports it
+    if (MODEL_CONFIGS[model]?.supportsImageGeneration) {
+      this.imageGenerationEnabled = true;
+    } else {
+      this.imageGenerationEnabled = false;
+    }
     
     // Persist model selection to thread
     if (this.chatThreadId) {

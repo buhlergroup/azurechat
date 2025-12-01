@@ -50,6 +50,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
     supportsResponsesAPI: true,
+    supportsImageGeneration: true,
     deploymentName: "gpt-5.1",
     defaultReasoningEffort: "low"
   },
@@ -60,6 +61,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
     supportsResponsesAPI: true,
+    supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low"
   },
@@ -70,6 +72,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
     supportsResponsesAPI: true,
+    supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT5_PRO_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low"
   },
@@ -141,6 +144,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
     supportsResponsesAPI: true,
+    supportsImageGeneration: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O3_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low"
@@ -152,6 +156,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
     supportsResponsesAPI: true,
+    supportsImageGeneration: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O3_PRO_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low"
@@ -163,6 +168,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     getInstance: () => OpenAIV1ReasoningInstance(),
     supportsReasoning: true,
     supportsResponsesAPI: true,
+    supportsImageGeneration: true,
     supportedSummarizers: ["detailed", "concise", "auto"],
     deploymentName: process.env.AZURE_OPENAI_API_O4_MINI_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low"
