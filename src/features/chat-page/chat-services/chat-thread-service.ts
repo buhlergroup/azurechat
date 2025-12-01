@@ -20,6 +20,7 @@ import { FindAllChatMessagesForCurrentUser } from "./chat-message-service";
 import {
   CHAT_THREAD_ATTRIBUTE,
   ChatDocumentModel,
+  ChatMessageModel,
   ChatThreadModel,
 } from "./models";
 import { redirect } from "next/navigation";

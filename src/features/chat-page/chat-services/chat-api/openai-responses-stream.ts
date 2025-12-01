@@ -24,10 +24,10 @@ import {
   ConversationState 
 } from "./conversation-manager";
 import { Stream } from "openai/core/streaming";
-import { ResponseStreamEvent } from "openai/resources/responses/responses";
+import { Responses } from "openai/resources/responses/responses";
 
 export const OpenAIResponsesStream = (props: {
-  stream: Stream<ResponseStreamEvent>;
+  stream: Stream<Responses.ResponseStreamEvent>;
   chatThread: ChatThreadModel;
   conversationState?: ConversationState;
   onComplete?: () => Promise<void>;
