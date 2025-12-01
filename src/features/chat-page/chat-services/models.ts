@@ -15,6 +15,7 @@ export const CHAT_CITATION_ATTRIBUTE = "CHAT_CITATION";
 
 export type ChatModel = 
   | "gpt-5"
+  | "gpt-5-pro"
   | "gpt-5.1"
   | "gpt-4o" 
   | "gpt-4o-mini" 
@@ -51,6 +52,16 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME,
     defaultReasoningEffort: "minimal"
+  },
+  "gpt-5-pro": {
+    id: "gpt-5-pro",
+    name: "GPT-5 Pro",
+    description: "Premium GPT-5 model with enhanced performance and extended capabilities",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT5_PRO_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "low"
   },
   "gpt-5.1": {
     id: "gpt-5.1",
