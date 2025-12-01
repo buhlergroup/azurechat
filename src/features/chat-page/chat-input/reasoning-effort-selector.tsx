@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/features/ui/select";
-import { Button } from "@/features/ui/button";
 import { ReasoningEffort } from "../chat-services/models";
 import { useChat } from "../chat-store";
 

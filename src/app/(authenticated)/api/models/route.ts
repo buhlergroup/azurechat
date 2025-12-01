@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       availableModels,
       availableModelIds,
       defaultModel,
-      defaultReasoningEffort: MODEL_CONFIGS[defaultModel as ChatModel]?.defaultReasoningEffort || "minimal"
+      defaultReasoningEffort: MODEL_CONFIGS[defaultModel as ChatModel]?.defaultReasoningEffort || "low"
     });
   } catch (error) {
     logError("Error getting available models", { error: error instanceof Error ? error.message : String(error) });

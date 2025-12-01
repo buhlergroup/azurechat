@@ -51,7 +51,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT5_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "minimal"
+    defaultReasoningEffort: "low"
   },
   "gpt-5-pro": {
     id: "gpt-5-pro",
