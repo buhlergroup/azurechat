@@ -3,7 +3,10 @@ import { logInfo, logDebug } from "./features/common/services/logger";
 
 export function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { useAzureMonitor } = require("@azure/monitor-opentelemetry");
+    // Suppress OpenTelemetry verbose logging
+    process.env.OTEL_LOG_LEVEL = 'error';
+
+    const { useAzureMonitor: azureMonitor } = require("@azure/monitor-opentelemetry");
     const { metrics } = require('@opentelemetry/api');
     const { SpanEnrichingProcessor } = require('./span-enriching-processor');
 
@@ -31,7 +34,7 @@ export function register() {
       }
     };
 
-    useAzureMonitor({
+    azureMonitor({
       spanProcessors: [new SpanEnrichingProcessor()] ,
       azureMonitorExporterOptions: {
         connectionString: process.env.APPLICATIONINSIGHTS_CONNECTION_STRING || "",
