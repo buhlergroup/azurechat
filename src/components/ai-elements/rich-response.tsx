@@ -15,6 +15,11 @@ function parse(content: string): Segment[] {
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
+    const language = (match[1] || 'text').toLowerCase();
+    if (['mermaid', 'plantuml', 'dot', 'graphviz'].includes(language)) {
+      continue;
+    }
+
     if (match.index > lastIndex) {
       segments.push({ type: 'text', text: content.slice(lastIndex, match.index) });
     }
