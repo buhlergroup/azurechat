@@ -80,8 +80,8 @@
     "typescript": "^5"
   },
   "overrides": {
-    "sucrase": "3.35.1",
-    "js-yaml": "4.1.1",
-    "prismjs": "1.30.0"
+    "sucrase": "^3.35.1",
+    "js-yaml": "^4.1.1",
+    "prismjs": "^1.30.0"
   }
 }
