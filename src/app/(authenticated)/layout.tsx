@@ -27,9 +27,9 @@ export default async function RootLayout({
   return (
     <AuthenticatedProviders>
       <ApplicationInsightsProvider instrumentationKey={instrumentationKey}>
-        <div className={cn("flex flex-1 items-stretch")}>
+        <div className={cn("flex flex-1 items-stretch overflow-hidden")}>
           <MainMenu user={user} />
-          <div className="flex-1 flex">{children}</div>
+          <div className="flex-1 flex min-w-0 overflow-hidden">{children}</div>
         </div>
         <InfoModal/>
       </ApplicationInsightsProvider>

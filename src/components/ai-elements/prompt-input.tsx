@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from '@/features/ui/select';
 import { Textarea } from '@/features/ui/textarea';
-import { cn } from '@/features/lib/utils';
+import { cn } from '@/features/ui/lib';
 import type { ChatStatus } from 'ai';
 import { Loader2Icon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
 import type {

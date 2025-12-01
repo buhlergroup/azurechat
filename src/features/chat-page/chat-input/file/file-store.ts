@@ -11,7 +11,9 @@ import {
   CrackDocument,
   CreateChatDocument,
 } from "../../chat-services/chat-document-service";
+import { SupportedFileExtensionsInputImages } from "../../chat-services/models";
 import { chatStore } from "../../chat-store";
+import { InputImageStore } from "@/features/ui/chat/chat-input-area/input-image-store";
 
 class FileStore {
   public uploadButtonLabel: string = "";
@@ -31,6 +33,19 @@ class FileStore {
       if(file.size > Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_DOCUMENT_SIZE)){
         const maxSizeMB = Math.round(Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_DOCUMENT_SIZE) / (1024 * 1024));
         showError(`File size is too large. Please upload a file less than ${maxSizeMB}MB.`);
+        return;
+      }
+
+      const fileExtension = file.name.split(".").pop()?.toUpperCase();
+      if (fileExtension && Object.values(SupportedFileExtensionsInputImages).includes(fileExtension as SupportedFileExtensionsInputImages)) {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          if (typeof reader.result === "string") {
+            InputImageStore.UpdateBase64Image(reader.result);
+          }
+        };
+        chatStore.updateLoading("idle");
         return;
       }
 

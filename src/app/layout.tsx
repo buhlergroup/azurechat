@@ -20,9 +20,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="h-full w-full overflow-auto text-sm">
+    <html lang="en" className="h-full w-full overflow-hidden text-sm">
       <body
-        className={cn(inter.className, "h-full w-full flex  bg-background")}
+        className={cn(inter.className, "h-full w-full flex overflow-hidden bg-background")}
       >
         <ThemeProvider
           attribute="class"

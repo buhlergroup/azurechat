@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/features/ui/button';
-import { cn } from '@/features/lib/utils';
+import { cn } from '@/features/ui/lib';
 import { ArrowDownIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
 import { useCallback } from 'react';
@@ -11,7 +11,7 @@ export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
 export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
-    className={cn('relative flex-1 overflow-y-auto', className)}
+    className={cn('relative flex-1 overflow-x-hidden overflow-y-auto', className)}
     initial="smooth"
     resize="smooth"
     role="log"

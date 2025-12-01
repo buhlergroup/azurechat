@@ -33,10 +33,12 @@ import { UpsertChatMessage } from "./chat-services/chat-message-service";
 let abortController: AbortController = new AbortController();
 
 type chatStatus = "idle" | "loading" | "file upload";
+type chatPhase = 'idle' | 'submitted' | 'streaming' | 'error';
 
 class ChatState {
   public messages: Array<ChatMessageModel> = [];
   public loading: chatStatus = "idle";
+  public phase: chatPhase = 'idle';
   public input: string = "";
   public lastMessage: string = "";
   public autoScroll: boolean = false;
@@ -52,6 +54,7 @@ class ChatState {
   private currentAssistantMessageId: string = "";
   public toolCallHistory: Record<string, Array<{ name: string; arguments: string; result?: string; timestamp: Date; callId?: string }>> = {};
   public toolCallInProgress: Record<string, string | null> = {};
+  public reasoningMeta: Record<string, { start: number; elapsed: number; isStreaming: boolean }> = {};
 
   private addToMessages(message: ChatMessageModel) {
     const currentMessageIndex = this.messages.findIndex((el) => el.id === message.id);
@@ -75,8 +78,23 @@ class ChatState {
     }
   }
 
+  public removeMessages(options?: {fromMessageId?: string}) {
+    if (!options?.fromMessageId) {
+      this.messages = [];
+      return;
+    }
+    const index = this.messages.findIndex((el) => el.id === options.fromMessageId);
+    if (index > -1 && index < this.messages.length - 1) {
+      this.messages = this.messages.slice(0, index + 1);
+    }
+  }
+
   public updateLoading(value: chatStatus) {
     this.loading = value;
+  }
+
+  public updatePhase(value: chatPhase) {
+    this.phase = value;
   }
 
   public   initChatSession({
@@ -222,6 +240,8 @@ class ChatState {
 
   public stopGeneratingMessages() {
     abortController.abort();
+    this.loading = 'idle';
+    this.phase = 'idle';
   }
 
   public updateAutoScroll(value: boolean) {
@@ -237,6 +257,7 @@ class ChatState {
   private async chat(formData: FormData) {
     this.updateAutoScroll(true);
     this.loading = "loading";
+    this.phase = 'submitted';
     this.currentAssistantMessageId = "";
     this.tempReasoningContent = "";
     this.toolCallHistory = {};
@@ -404,6 +425,9 @@ class ChatState {
 
             case "content":
               const contentChunk = responseType.response.choices?.[0]?.message?.content || "";
+              if (this.phase === 'submitted') {
+                this.phase = 'streaming';
+              }
               
               logInfo("Chat Store: Received content event", {
                 contentLength: contentChunk.length,
@@ -462,10 +486,12 @@ class ChatState {
                 showError((responseType as any).response);
               }
               this.loading = "idle";
+              this.phase = 'error';
               break;
             case "error":
               showError(responseType.response);
               this.loading = "idle";
+              this.phase = 'error';
               break;
             case "reasoning":
               logInfo("Chat Store: Received reasoning event", { 
@@ -477,6 +503,15 @@ class ChatState {
               // Ensure we have a consistent message ID for reasoning content
               if (!this.currentAssistantMessageId) {
                 this.currentAssistantMessageId = uniqueId();
+              }
+
+              // Initialize reasoning meta (start timer) if first reasoning token for this message
+              if (!this.reasoningMeta[this.currentAssistantMessageId]) {
+                this.reasoningMeta[this.currentAssistantMessageId] = {
+                  start: Date.now(),
+                  elapsed: 0,
+                  isStreaming: true
+                };
               }
               
               // Try to find existing assistant message
@@ -604,6 +639,8 @@ class ChatState {
                 timestamp: new Date().toISOString()
               });
               
+              const finalResponseText = (responseType as any).response || '';
+
               // Ensure the final message is properly displayed in the UI
               if (this.lastMessage && this.currentAssistantMessageId) {
                 // Find the existing assistant message and ensure it has the final content
@@ -619,8 +656,14 @@ class ChatState {
                   // Update the message with the final content to ensure UI reflects the complete response
                   const existingMessage = this.messages[existingMessageIndex];
                   // Clean up any remaining tool call progress indicators
-                  const finalContent = this.lastMessage.replace(/🔧 \*\*Tool Call\*\*: [^\n]*\n\n\*\*Arguments\*\*:\n\`\`\`json\n[\s\S]*?\n\`\`\`\n\n⏳ Executing\.\.\./g, "").replace(/✅ \*\*Completed\*\*/g, "");
+                  let finalContent = this.lastMessage.replace(/🔧 \*\*Tool Call\*\*: [^\n]*\n\n\*\*Arguments\*\*:\n\`\`\`json\n[\s\S]*?\n\`\`\`\n\n⏳ Executing\.\.\./g, "").replace(/✅ \*\*Completed\*\*/g, "");
                   
+                  // If finalContent event has a longer / different body (e.g. no incremental chunks were sent), prefer it
+                  if (finalResponseText && (finalResponseText.length > finalContent.length || finalContent.length === 0)) {
+                    finalContent = finalResponseText;
+                    this.lastMessage = finalResponseText;
+                  }
+
                   // Get tool call history for this message
                   const toolCallHistory = this.toolCallHistory[this.currentAssistantMessageId] || [];
                   
@@ -667,17 +710,52 @@ class ChatState {
                     messageId: this.currentAssistantMessageId,
                     availableMessageIds: this.messages.map(m => ({ id: m.id, role: m.role }))
                   });
+                  // If we *only* received a finalContent event (no prior content events), create the assistant message now
+                  if (finalResponseText) {
+                    const newAssistantMsg: ChatMessageModel = {
+                      id: this.currentAssistantMessageId || uniqueId(),
+                      content: finalResponseText,
+                      name: AI_NAME,
+                      role: 'assistant',
+                      createdAt: new Date(),
+                      isDeleted: false,
+                      threadId: this.chatThreadId,
+                      type: 'CHAT_MESSAGE',
+                      userId: '',
+                    };
+                    this.addToMessages(newAssistantMsg);
+                    this.lastMessage = finalResponseText;
+                  }
                 }
               } else {
                 logWarn("Chat Store: Missing lastMessage or currentAssistantMessageId", {
                   hasLastMessage: !!this.lastMessage,
                   hasCurrentAssistantMessageId: !!this.currentAssistantMessageId
                 });
+                // Fallback: create message directly from finalContent if nothing streamed
+                if (finalResponseText) {
+                  const finalId = this.currentAssistantMessageId || uniqueId();
+                  const newAssistantMsg: ChatMessageModel = {
+                    id: finalId,
+                    content: finalResponseText,
+                    name: AI_NAME,
+                    role: 'assistant',
+                    createdAt: new Date(),
+                    isDeleted: false,
+                    threadId: this.chatThreadId,
+                    type: 'CHAT_MESSAGE',
+                    userId: '',
+                  };
+                  this.addToMessages(newAssistantMsg);
+                  this.currentAssistantMessageId = finalId;
+                  this.lastMessage = finalResponseText;
+                }
               }
               
               // Set loading to idle and complete the conversation
               logInfo("Chat Store: Setting loading to idle and completing conversation");
               this.loading = "idle";
+              this.phase = 'idle';
               this.completed(this.lastMessage);
               
               // Update title asynchronously (non-blocking)
@@ -686,6 +764,14 @@ class ChatState {
               // Reset the current assistant message ID for the next conversation
               // Do this last to avoid any race conditions
               logInfo("Chat Store: Resetting currentAssistantMessageId for next conversation");
+              // Stop reasoning timer if active
+              if (this.currentAssistantMessageId && this.reasoningMeta[this.currentAssistantMessageId]) {
+                const meta = this.reasoningMeta[this.currentAssistantMessageId];
+                if (meta.isStreaming) {
+                  meta.elapsed = Math.ceil((Date.now() - meta.start) / 1000);
+                  meta.isStreaming = false;
+                }
+              }
               this.currentAssistantMessageId = "";
               // Note: currentToolCall UI removed
               break;
@@ -791,3 +877,7 @@ export const useToolCallHistory = (messageId: string) => {
 };
 
 // Hook removed: current tool call overlay no longer used
+export const useReasoningMeta = (messageId: string) => {
+  const snapshot = useSnapshot(chatStore, { sync: true });
+  return snapshot.reasoningMeta[messageId] || { start: 0, elapsed: 0, isStreaming: false };
+};

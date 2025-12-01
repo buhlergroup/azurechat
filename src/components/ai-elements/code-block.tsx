@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/features/ui/button';
-import { cn } from '@/features/lib/utils';
+import { cn } from '@/features/ui/lib';
 import { CheckIcon, CopyIcon } from 'lucide-react';
 import type { ComponentProps, HTMLAttributes, ReactNode } from 'react';
 import { createContext, useContext, useState } from 'react';

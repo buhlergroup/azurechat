@@ -28,7 +28,7 @@ export const ChatHeader: FC<Props> = (props) => {
     <>
       {/* Mobile header with hamburger menu */}
       <MobileHeader>
-        <div className="flex flex-wrap items-center min-w-0 flex-1 gap-2">
+        <div className="flex items-center min-w-0 flex-1 gap-2">
           {/* Model selector */}
           <div className="shrink-0">
             <ModelSelector
@@ -58,9 +58,9 @@ export const ChatHeader: FC<Props> = (props) => {
 
       {/* Desktop header */}
       <div className="bg-background border-b hidden md:flex items-center py-2 px-3">
-        <div className="flex items-center min-w-0 w-full max-w-3xl mx-auto">
-          {/* Main content area that can wrap */}
-          <div className="flex flex-wrap items-center min-w-0 flex-1 gap-2">
+        <div className="flex items-center min-w-0 w-full max-w-4xl mx-auto">
+          {/* Main content area */}
+          <div className="flex items-center min-w-0 flex-1 gap-2">
             {/* Model selector */}
             <div className="shrink-0">
               <ModelSelector

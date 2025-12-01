@@ -29,8 +29,8 @@ export default async function RootLayout({
   }
 
   return (
-    <div className={cn("flex flex-1 items-stretch")}>
-      <div className="flex-1 flex">
+    <div className={cn("flex flex-1 items-stretch overflow-hidden")}>
+      <div className="flex-1 flex min-w-0">
         <MenuTray>
           <ChatMenuHeader />
           <Suspense fallback={<Loading />}>

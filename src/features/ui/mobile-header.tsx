@@ -10,7 +10,7 @@ interface MobileHeaderProps {
 
 export const MobileHeader = ({ title, children }: MobileHeaderProps) => {
   return (
-    <div className="bg-background border-b flex items-center py-2 px-3 md:hidden">
+    <div className="bg-background border-b flex items-center py-2 px-3 md:hidden overflow-hidden">
       <div className="flex items-center min-w-0 w-full">
         {/* Mobile hamburger menu */}
         <Button
