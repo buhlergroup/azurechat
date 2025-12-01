@@ -31,7 +31,7 @@ export const FindAllChatThreadForCurrentUser = async (): Promise<
   try {
     const querySpec: SqlQuerySpec = {
       query:
-        "SELECT * FROM root r WHERE r.type=@type AND r.userId=@userId AND r.isDeleted=@isDeleted ORDER BY r.createdAt DESC",
+        "SELECT * FROM root r WHERE r.type=@type AND r.userId=@userId AND (NOT IS_DEFINED(r.isTemporary) OR r.isTemporary=@isTemporary) AND r.isDeleted=@isDeleted ORDER BY r.createdAt DESC",
       parameters: [
         {
           name: "@type",
@@ -40,6 +40,10 @@ export const FindAllChatThreadForCurrentUser = async (): Promise<
         {
           name: "@userId",
           value: await userHashedId(),
+        },
+        {
+          name: "@isTemporary",
+          value: false,
         },
         {
           name: "@isDeleted",
@@ -115,8 +119,33 @@ export const FindChatThreadForCurrentUser = async (
   }
 };
 
-export const SoftDeleteChatThreadForCurrentUser = async (
-  chatThreadID: string
+/**
+ * Returns the start index for deletion, validating existence of untilMessageId or untilMessageIndex.
+ * Throws an error if the provided option is invalid or not found.
+ * If no option is provided, returns 0 (delete all).
+ */
+function getValidatedStartIndex(chats: ChatMessageModel[], options?: { untilMessageId?: string, untilMessageIndex?: number }) {
+  if (options && (typeof options.untilMessageIndex === "number" || options.untilMessageId)) {
+    if (typeof options.untilMessageIndex === "number") {
+      if (options.untilMessageIndex < 0 || options.untilMessageIndex >= chats.length) {
+        throw new Error("untilMessageIndex is out of bounds");
+      }
+      return options.untilMessageIndex + 1;
+    } else if (options.untilMessageId) {
+      const foundIdx = chats.findIndex((chat) => chat.id === options.untilMessageId);
+      if (foundIdx === -1) {
+        throw new Error("untilMessageId not found");
+      }
+      return foundIdx + 1;
+    }
+  }
+  // No option provided: delete all
+  return 0;
+}
+
+export const SoftDeleteChatContentsForCurrentUser = async (
+  chatThreadID: string,
+  options?: { untilMessageId?: string, untilMessageIndex?: number }
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
     const chatThreadResponse = await FindChatThreadForCurrentUser(chatThreadID);
@@ -131,13 +160,16 @@ export const SoftDeleteChatThreadForCurrentUser = async (
       }
       const chats = chatResponse.response;
 
-      chats.forEach(async (chat) => {
-        const itemToUpdate = {
-          ...chat,
-        };
-        itemToUpdate.isDeleted = true;
-        await HistoryContainer().items.upsert(itemToUpdate);
-      });
+      const startIdx = getValidatedStartIndex(chats, options);
+      await Promise.all(
+        chats.slice(startIdx).map(async (chat) => {
+          const itemToUpdate = {
+            ...chat,
+            isDeleted: true,
+          };
+          await HistoryContainer().items.upsert(itemToUpdate);
+        })
+      );
 
       const chatDocumentsResponse = await FindAllChatDocuments(chatThreadID);
 
@@ -158,7 +190,28 @@ export const SoftDeleteChatThreadForCurrentUser = async (
         itemToUpdate.isDeleted = true;
         await HistoryContainer().items.upsert(itemToUpdate);
       });
+    }
 
+    return chatThreadResponse;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
+export const SoftDeleteChatThreadForCurrentUser = async (
+  chatThreadID: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const chatThreadResponse = await FindChatThreadForCurrentUser(chatThreadID);
+
+    if (chatThreadResponse.status === "OK") {
+      const response = await SoftDeleteChatContentsForCurrentUser(chatThreadID);
+      if (response.status !== "OK") {
+        return response;
+      }
       chatThreadResponse.response.isDeleted = true;
       await HistoryContainer().items.upsert(chatThreadResponse.response);
     }
@@ -310,15 +363,17 @@ export const UpsertChatThread = async (
   }
 };
 
-export const CreateChatThread = async (): Promise<
-  ServerActionResponse<ChatThreadModel>
-> => {
+export const CreateChatThread = async (options?: {
+  id?: string;
+  name?: string;
+  temporary?: boolean;
+}): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
     const modelToSave: ChatThreadModel = {
-      name: NEW_CHAT_NAME,
+      name: options?.name ?? NEW_CHAT_NAME,
       useName: (await userSession())!.name,
       userId: await userHashedId(),
-      id: uniqueId(),
+      id: options?.id ?? uniqueId(),
       createdAt: new Date(),
       lastMessageAt: new Date(),
       bookmarked: false,
@@ -327,10 +382,13 @@ export const CreateChatThread = async (): Promise<
       personaMessage: "",
       personaMessageTitle: CHAT_DEFAULT_PERSONA,
       extension: [],
-      personaDocumentIds: []
+      personaDocumentIds: [],
+      isTemporary: options?.temporary ?? false,
     };
 
-    const { resource } = await HistoryContainer().items.create<ChatThreadModel>(
+    // Use upsert to allow both creation of new chat threads and updating existing ones.
+    // This ensures that if a thread with the same ID exists, it will be updated instead of failing.
+    const { resource } = await HistoryContainer().items.upsert<ChatThreadModel>(
       modelToSave
     );
     if (resource) {
@@ -350,6 +408,16 @@ export const CreateChatThread = async (): Promise<
       errors: [{ message: `${error}` }],
     };
   }
+};
+
+export const ResetChatThread = async (
+  chatThreadId: string,
+  options?: { toMessageId?: string, toMessageIndex?: number }
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  return await SoftDeleteChatContentsForCurrentUser(
+    chatThreadId,
+    { untilMessageId: options?.toMessageId, untilMessageIndex: options?.toMessageIndex }
+  );
 };
 
 export const UpdateChatTitle = async (

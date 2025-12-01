@@ -9,6 +9,7 @@ import { ExtensionDetail } from "./extension-detail";
 import { ModelSelector } from "./model-selector";
 import { PersonaDetail } from "./persona-detail";
 import { MobileHeader } from "@/features/ui/mobile-header";
+import { ChatReset } from "./chat-reset";
 
 interface Props {
   chatThread: ChatThreadModel;
@@ -44,6 +45,7 @@ export const ChatHeader: FC<Props> = (props) => {
               {props.chatThread.name}
             </span>
           </div>
+          <ChatReset chatThreadId={props.chatThread.id} disabled={!chat.messages.length} />
           
           {/* Extension detail - always visible on mobile */}
           <ExtensionDetail
@@ -80,6 +82,7 @@ export const ChatHeader: FC<Props> = (props) => {
                 <span className="truncate">{persona}</span>
               </span>
             </div>
+            <ChatReset chatThreadId={props.chatThread.id} disabled={!chat.messages.length} />
             
             {/* Action buttons */}
             <div className="flex gap-1 shrink-0">

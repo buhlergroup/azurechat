@@ -291,6 +291,7 @@ export interface ChatThreadModel {
   type: typeof CHAT_THREAD_ATTRIBUTE;
   personaDocumentIds: string[];
   selectedModel?: ChatModel;
+  isTemporary?: boolean;
 }
 
 export interface UserPrompt {
