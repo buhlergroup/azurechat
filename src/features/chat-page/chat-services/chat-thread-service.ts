@@ -473,6 +473,26 @@ export const UpdateChatThreadSelectedModel = async (
   }
 };
 
+export const UpdateChatThreadReasoningEffort = async (
+  chatThreadId: string,
+  reasoningEffort: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const response = await FindChatThreadForCurrentUser(chatThreadId);
+    if (response.status === "OK") {
+      const chatThread = response.response;
+      chatThread.reasoningEffort = reasoningEffort as any;
+      return await UpsertChatThread(chatThread);
+    }
+    return response;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
 export const CreateChatAndRedirect = async () => {
   const response = await CreateChatThread();
   if (response.status === "OK") {

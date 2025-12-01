@@ -19,6 +19,7 @@ import {
   RemoveExtensionFromChatThread,
   UpdateChatTitle,
   UpdateChatThreadSelectedModel,
+  UpdateChatThreadReasoningEffort,
 } from "./chat-services/chat-thread-service";
 import {
   AzureChatCompletion,
@@ -131,7 +132,9 @@ class ChatState {
       this.imageGenerationEnabled = false;
       
       const defaultEffort = (MODEL_CONFIGS as any)[this.selectedModel]?.defaultReasoningEffort;
-      if (defaultEffort) {
+      if (chatThread.reasoningEffort) {
+        this.reasoningEffort = chatThread.reasoningEffort;
+      } else if (defaultEffort) {
         this.reasoningEffort = defaultEffort;
       }
 
@@ -171,6 +174,10 @@ class ChatState {
         if (response.status !== "OK") {
           showError("Failed to save model selection");
         }
+        
+        if (defaultEffort) {
+          await UpdateChatThreadReasoningEffort(this.chatThreadId, defaultEffort);
+        }
       } catch (error) {
         showError("Failed to save model selection: " + error);
       }
@@ -181,8 +188,18 @@ class ChatState {
     return this.selectedModel;
   }
 
-  public updateReasoningEffort(effort: ReasoningEffort) {
+  public async updateReasoningEffort(effort: ReasoningEffort) {
     this.reasoningEffort = effort;
+    if (this.chatThreadId) {
+      try {
+        const response = await UpdateChatThreadReasoningEffort(this.chatThreadId, effort);
+        if (response.status !== "OK") {
+          showError("Failed to save reasoning effort");
+        }
+      } catch (error) {
+        showError("Failed to save reasoning effort: " + error);
+      }
+    }
   }
 
   public getReasoningEffort(): ReasoningEffort {
