@@ -5,7 +5,7 @@ import {
   ScrollArea,
   ScrollBar,
 } from '@/features/ui/scroll-area';
-import { cn } from '@/features/lib/utils';
+import { cn } from '@/features/ui/lib';
 import type { ComponentProps } from 'react';
 
 export type SuggestionsProps = ComponentProps<typeof ScrollArea>;

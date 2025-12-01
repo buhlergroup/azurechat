@@ -12,7 +12,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/features/ui/hover-card';
-import { cn } from '@/features/lib/utils';
+import { cn } from '@/features/ui/lib';
 import { ArrowLeftIcon, ArrowRightIcon } from 'lucide-react';
 import {
   type ComponentProps,
