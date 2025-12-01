@@ -395,7 +395,7 @@ export const OpenAIResponsesStream = (props: {
 
             case "response.output_item.done":
               // Check if this was a function call completion
-              if (event.ite?.type === "function_call") {
+              if (event.item?.type === "function_call") {
                 logInfo("Function call completed", { functionName: event.item.name });
                 
                 // If we have conversation state and function calls, signal continuation
