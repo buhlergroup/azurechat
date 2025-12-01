@@ -122,7 +122,8 @@ class ChatState {
       this.chatThread = chatThread;
       this.chatThreadId = chatThread.id;
       this.messages = messages;
-      this.selectedModel = chatThread.selectedModel || "gpt-5";
+      const threadModel = chatThread.selectedModel;
+      this.selectedModel = (threadModel && MODEL_CONFIGS[threadModel]) ? threadModel : "gpt-5.1";
       this.toolCallHistory = {};
       this.tempReasoningContent = "";
       this.currentAssistantMessageId = "";
@@ -131,10 +132,10 @@ class ChatState {
       this.webSearchEnabled = false;
       this.imageGenerationEnabled = false;
       
-      const defaultEffort = (MODEL_CONFIGS as any)[this.selectedModel]?.defaultReasoningEffort;
+      const defaultEffort = MODEL_CONFIGS[this.selectedModel]?.defaultReasoningEffort || "low";
       if (chatThread.reasoningEffort) {
         this.reasoningEffort = chatThread.reasoningEffort;
-      } else if (defaultEffort) {
+      } else {
         this.reasoningEffort = defaultEffort;
       }
 
@@ -162,10 +163,8 @@ class ChatState {
 
   public async updateSelectedModel(model: ChatModel) {
     this.selectedModel = model;
-    const defaultEffort = MODEL_CONFIGS[model]?.defaultReasoningEffort;
-    if (defaultEffort) {
-      this.reasoningEffort = defaultEffort;
-    }
+    const defaultEffort = MODEL_CONFIGS[model]?.defaultReasoningEffort || "low";
+    this.reasoningEffort = defaultEffort;
     
     // Persist model selection to thread
     if (this.chatThreadId) {
@@ -175,9 +174,7 @@ class ChatState {
           showError("Failed to save model selection");
         }
         
-        if (defaultEffort) {
-          await UpdateChatThreadReasoningEffort(this.chatThreadId, defaultEffort);
-        }
+        await UpdateChatThreadReasoningEffort(this.chatThreadId, defaultEffort);
       } catch (error) {
         showError("Failed to save model selection: " + error);
       }

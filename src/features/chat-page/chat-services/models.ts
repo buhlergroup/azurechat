@@ -43,6 +43,16 @@ export interface ModelConfig {
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
+  "gpt-5.1": {
+    id: "gpt-5.1",
+    name: "GPT-5.1",
+    description: "Latest GPT-5.1 model with enhanced capabilities",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    deploymentName: "gpt-5.1",
+    defaultReasoningEffort: "low"
+  },
   "gpt-5": {
     id: "gpt-5",
     name: "GPT-5",
@@ -61,16 +71,6 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT5_PRO_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "low"
-  },
-  "gpt-5.1": {
-    id: "gpt-5.1",
-    name: "GPT-5.1",
-    description: "Latest GPT-5.1 model with enhanced capabilities",
-    getInstance: () => OpenAIV1ReasoningInstance(),
-    supportsReasoning: true,
-    supportsResponsesAPI: true,
-    deploymentName: "gpt-5.1",
     defaultReasoningEffort: "low"
   },
   "gpt-4o": {
@@ -236,8 +236,8 @@ export async function getDefaultModel(): Promise<ChatModel> {
     logError("Error fetching default model", { 
       error: error instanceof Error ? error.message : String(error) 
     });
-    // Fallback to gpt-5 if API fails
-    return "gpt-5";
+    // Fallback to gpt-5.1 if API fails
+    return "gpt-5.1";
   }
 }
 
