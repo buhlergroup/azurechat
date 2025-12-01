@@ -45,7 +45,7 @@ class ChatState {
   public autoScroll: boolean = false;
   public userName: string = "";
   public chatThreadId: string = "";
-  public selectedModel: ChatModel = "gpt-5"; // Will be updated when available models are fetched
+  public selectedModel: ChatModel = "gpt-5.1"; // Will be updated when available models are fetched
   public reasoningEffort: ReasoningEffort = "minimal";
   public webSearchEnabled: boolean = false;
   public imageGenerationEnabled: boolean = false;
