@@ -84,7 +84,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
                       try { parsedArgs = JSON.parse(tc.arguments); } catch { parsedArgs = tc.arguments; }
                       const state = tc.result ? 'output-available' : (chatStore.toolCallInProgress[m.id] === tc.name ? 'input-available' : 'input-streaming');
                       return (
-                        <Tool key={i} defaultOpen={state !== 'input-streaming'}>
+                        <Tool key={i}>
                           <ToolHeader type={`tool-${tc.name}`} state={state as any} />
                           <ToolContent>
                             <ToolInput input={parsedArgs} />
@@ -102,7 +102,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
                   const toolArgs = parsed?.arguments ? (() => { try { return JSON.parse(parsed.arguments); } catch { return parsed.arguments; } })() : undefined;
                   const toolResult = parsed?.result;
                   return (
-                    <Tool defaultOpen>
+                    <Tool>
                       <ToolHeader type={toolName} state={toolResult ? 'output-available' : 'input-available'} />
                       <ToolContent>
                         {toolArgs && <ToolInput input={toolArgs} />}
