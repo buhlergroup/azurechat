@@ -33,9 +33,8 @@ export const MessageContent = ({
     className={cn(
   'flex flex-col gap-2 overflow-hidden min-w-0 text-foreground text-sm',
   'group-[.is-user]:w-fit group-[.is-user]:max-w-[75%] group-[.is-user]:break-words group-[.is-user]:whitespace-pre-wrap group-[.is-user]:ml-auto',
-  'group-[.is-user]:rounded-xl group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
+  'group-[.is-user]:rounded-xl group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:bg-background group-[.is-user]:text-foreground group-[.is-user]:border-2 group-[.is-user]:border-primary',
   'group-[.is-assistant]:px-0 group-[.is-assistant]:py-0',
-  'is-user:dark',
       className
     )}
     {...props}
