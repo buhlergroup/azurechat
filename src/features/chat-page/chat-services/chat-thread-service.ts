@@ -74,34 +74,20 @@ export const FindChatThreadForCurrentUser = async (
   id: string
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
-    const querySpec: SqlQuerySpec = {
-      query:
-        "SELECT * FROM root r WHERE r.type=@type AND r.userId=@userId AND r.id=@id AND r.isDeleted=@isDeleted",
-      parameters: [
-        {
-          name: "@type",
-          value: CHAT_THREAD_ATTRIBUTE,
-        },
-        {
-          name: "@userId",
-          value: await userHashedId(),
-        },
-        {
-          name: "@id",
-          value: id,
-        },
-        {
-          name: "@isDeleted",
-          value: false,
-        },
-      ],
-    };
+    const userId = await userHashedId();
 
-    const { resources } = await HistoryContainer()
-      .items.query<ChatThreadModel>(querySpec)
-      .fetchAll();
+    const { resource } = await HistoryContainer()
+      .item(id, userId)
+      .read<ChatThreadModel>();
 
-    if (resources.length === 0) {
+    if (!resource) {
+      return {
+        status: "NOT_FOUND",
+        errors: [{ message: `Chat thread not found` }],
+      };
+    }
+
+    if (resource.type !== CHAT_THREAD_ATTRIBUTE || resource.isDeleted) {
       return {
         status: "NOT_FOUND",
         errors: [{ message: `Chat thread not found` }],
@@ -110,7 +96,7 @@ export const FindChatThreadForCurrentUser = async (
 
     return {
       status: "OK",
-      response: resources[0],
+      response: resource,
     };
   } catch (error) {
     return {
@@ -336,7 +322,9 @@ export const UpsertChatThread = async (
     if (chatThread.id) {
       const response = await EnsureChatThreadOperation(chatThread.id);
       if (response.status !== "OK") {
-        return response;
+        if (response.status !== "NOT_FOUND") {
+          return response;
+        }
       }
     }
 

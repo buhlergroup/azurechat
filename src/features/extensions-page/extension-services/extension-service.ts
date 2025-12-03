@@ -437,7 +437,7 @@ export const CreateChatWithExtension = async (
       name: extension.name,
       useName: (await userSession())!.name,
       userId: await userHashedId(),
-      id: "",
+      id: uniqueId(),
       createdAt: new Date(),
       lastMessageAt: new Date(),
       bookmarked: false,

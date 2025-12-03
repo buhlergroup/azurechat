@@ -7,7 +7,13 @@ const CONTAINER_NAME = process.env.AZURE_COSMOSDB_CONTAINER_NAME || "history";
 const CONFIG_CONTAINER_NAME =
   process.env.AZURE_COSMOSDB_CONFIG_CONTAINER_NAME || "config";
 
+let client: CosmosClient | null = null;
+
 export const CosmosInstance = () => {
+  if (client) {
+    return client;
+  }
+
   const endpoint = process.env.AZURE_COSMOSDB_URI;
 
   if (!endpoint) {
@@ -16,10 +22,12 @@ export const CosmosInstance = () => {
     );
   }
 
-  return new CosmosClient({
+  client = new CosmosClient({
     endpoint,
     aadCredentials: getAzureDefaultCredential(),
   });
+
+  return client;
 };
 
 export const ConfigContainer = () => {

@@ -414,7 +414,7 @@ export const CreatePersonaChat = async (
       name: persona.name,
       useName: user.name,
       userId: await userHashedId(),
-      id: "",
+      id: uniqueId(),
       createdAt: new Date(),
       lastMessageAt: new Date(),
       bookmarked: false,
