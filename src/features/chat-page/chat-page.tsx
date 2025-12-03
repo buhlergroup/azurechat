@@ -168,6 +168,9 @@ export const ChatPage = (props: ChatPageProps) => {
   const { base64Image, previewImage } = useInputImage();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Ensure we always have a valid model selected
+  const effectiveModel = selectedModel && MODEL_CONFIGS[selectedModel] ? selectedModel : "gpt-5.1";
+
   const internetSearch = useMemo(() => props.extensions.find(e => e.name === "Bing Search"), [props.extensions]);
   
   const handleDocumentsDeletion = async () => {
@@ -274,9 +277,9 @@ export const ChatPage = (props: ChatPageProps) => {
                 value={reasoningEffort}
                 onChange={(effort) => chatStore.updateReasoningEffort(effort)}
                 disabled={loading === 'loading'}
-                showReasoningModelsOnly={MODEL_CONFIGS[selectedModel]?.supportsReasoning}
+                showReasoningModelsOnly={MODEL_CONFIGS[effectiveModel]?.supportsReasoning}
               />
-              <PromptInputModelSelect value={selectedModel} onValueChange={(v) => chatStore.updateSelectedModel(v as any)}>
+              <PromptInputModelSelect value={effectiveModel} onValueChange={(v) => chatStore.updateSelectedModel(v as any)}>
                 <PromptInputModelSelectTrigger className="h-8 px-2 text-xs">
                   <PromptInputModelSelectValue placeholder="Model" />
                 </PromptInputModelSelectTrigger>
@@ -288,9 +291,9 @@ export const ChatPage = (props: ChatPageProps) => {
               </PromptInputModelSelect>
             </PromptInputTools>
             <div className="flex items-center gap-2 pr-2">
-              {phase === 'streaming' ? (
+              {loading === 'loading' || phase === 'submitted' || phase === 'streaming' ? (
                 <PromptInputSubmit
-                  status={phase as any}
+                  status="streaming"
                   aria-label="Stop generating"
                   onClick={(e) => {
                     e.preventDefault();

@@ -2,6 +2,10 @@ import { ChatAPIEntry } from "@/features/chat-page/chat-services/chat-api/chat-a
 import { UserPrompt } from "@/features/chat-page/chat-services/models";
 import { logDebug } from "@/features/common/services/logger";
 
+// Allow streaming responses to run for up to 10 minutes (600 seconds)
+// This is needed for long-running reasoning models like gpt-5-pro
+export const maxDuration = 600;
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();

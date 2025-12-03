@@ -28,11 +28,12 @@ export const ChatAPIEntry = async (props: UserPrompt, signal: AbortSignal) => {
 
     return await ChatAPIResponse(props, signal);
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     logDebug("ChatAPIEntry error details", {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
       stack: error instanceof Error ? error.stack : undefined,
       props
     });
-    return new Response("Internal Server Error", { status: 500 });
+    return new Response(errorMessage, { status: 500 });
   }
 };

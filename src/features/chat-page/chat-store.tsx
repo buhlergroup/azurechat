@@ -42,7 +42,7 @@ class ChatState {
   public phase: chatPhase = 'idle';
   public input: string = "";
   public lastMessage: string = "";
-  public autoScroll: boolean = false;
+  public autoScroll: boolean = true;
   public userName: string = "";
   public chatThreadId: string = "";
   public selectedModel: ChatModel = "gpt-5.1"; // Will be updated when available models are fetched
@@ -267,6 +267,10 @@ class ChatState {
   }
 
   public stopGeneratingMessages() {
+    logInfo("Chat Store: stopGeneratingMessages called", {
+      currentPhase: this.phase,
+      currentLoading: this.loading
+    });
     abortController.abort();
     this.loading = 'idle';
     this.phase = 'idle';
@@ -330,6 +334,14 @@ class ChatState {
         signal: controller.signal,
       });
 
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        showError(errorMessage);
+        this.loading = "idle";
+        this.phase = 'idle';
+        return;
+      }
+
       if (response.body) {
         const parser = this.createStreamParser(newUserMessage);
 
@@ -383,6 +395,7 @@ class ChatState {
     } catch (error) {
       showError("" + error);
       this.loading = "idle";
+      this.phase = 'idle';
     }
   }
 

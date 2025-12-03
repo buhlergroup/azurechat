@@ -52,7 +52,7 @@ export const ChatInput = ({
   internetSearch,
   threadExtensions
 }: ChatInputProps) => {
-  const { loading, input, chatThreadId, selectedModel, reasoningEffort } = useChat();
+  const { loading, input, chatThreadId, selectedModel, reasoningEffort, phase } = useChat();
   const { uploadButtonLabel } = useFileStore();
   const { isPlaying } = useTextToSpeech();
   const { isMicrophoneReady } = useSpeechToText();
@@ -60,6 +60,12 @@ export const ChatInput = ({
 
   const submitButton = React.useRef<HTMLButtonElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Determine if we should show the stop button
+  const isProcessing = loading === "loading" || phase === "submitted" || phase === "streaming";
+
+  // Debug logging
+  console.log("ChatInput state:", { loading, phase, isProcessing });
 
   const submit = () => {
     if (formRef.current) {
@@ -183,7 +189,7 @@ export const ChatInput = ({
         </ChatInputSecondaryActionArea>
         <ChatInputPrimaryActionArea>
           <ImageInput />
-          {loading === "loading" ? (
+          {isProcessing ? (
             <StopChat stop={() => chatStore.stopGeneratingMessages()} />
           ) : (
             <SubmitChat ref={submitButton} />

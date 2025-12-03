@@ -5,12 +5,12 @@ export const StopChat = (props: { stop: () => void }) => {
   return (
     <Button
       size="icon"
-      type="submit"
+      type="button"
       variant={"ghost"}
       onClick={() => props.stop()}
-      aria-label="Stop speech readout"
+      aria-label="Stop generating"
     >
-      <Square size={16} />
+      <Square size={16} className="fill-current" />
     </Button>
   );
 };
