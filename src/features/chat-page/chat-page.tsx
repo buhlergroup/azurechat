@@ -180,6 +180,109 @@ export const ChatPage = (props: ChatPageProps) => {
     RevalidateCache({ page: "chat", type: "layout" });
   };
 
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Unexpected file reader result'));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+  const attachImageFromFile = async (file: File) => {
+    const dataUrl = await fileToDataUrl(file);
+    InputImageStore.UpdateBase64Image(dataUrl);
+  };
+
+  const uploadFile = async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    await fileStore.onFileChange({ formData: fd, chatThreadId });
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+
+    const hasMeaningfulText = (() => {
+      const plain = clipboard.getData('text/plain');
+      if (plain && plain.trim().length > 0) return true;
+      const html = clipboard.getData('text/html');
+      if (!html) return false;
+      const textFromHtml = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      return textFromHtml.length > 0;
+    })();
+
+    const files: File[] = [];
+
+    if (clipboard.items && clipboard.items.length > 0) {
+      for (const item of Array.from(clipboard.items)) {
+        if (item.kind !== 'file') continue;
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (clipboard.files && clipboard.files.length > 0) {
+      for (const file of Array.from(clipboard.files)) {
+        files.push(file);
+      }
+    }
+
+    if (files.length === 0) return;
+
+    const image = files.find((f) => f.type?.startsWith('image/'));
+
+    // Some apps (e.g. PowerPoint) include both text and an image snapshot.
+    // If the clipboard has meaningful text, keep the text paste behavior and ignore the image.
+    if (hasMeaningfulText) {
+      return;
+    }
+
+    // Prevent the browser from trying to insert the image/file contents
+    e.preventDefault();
+
+    // Prefer an image if present; otherwise upload the first file
+    if (image) {
+      await attachImageFromFile(image);
+      return;
+    }
+
+    await uploadFile(files[0]);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    // Allow dropping files onto the textarea
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLTextAreaElement>) => {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+
+    // Prevent the browser from navigating to the dropped image
+    e.preventDefault();
+
+    const files = Array.from(dt.files ?? []);
+    if (files.length === 0) return;
+
+    const image = files.find(f => f.type?.startsWith('image/'));
+    if (image) {
+      await attachImageFromFile(image);
+      return;
+    }
+
+    await uploadFile(files[0]);
+  };
+
   return (
     <main className="flex flex-1 relative flex-col px-3 gap-3 overflow-hidden">
       <ChatHeader
@@ -234,6 +337,9 @@ export const ChatPage = (props: ChatPageProps) => {
             value={input}
             onChange={(e) => chatStore.updateInput(e.currentTarget.value)}
             placeholder="Type your message..."
+            onPaste={handlePaste}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           />
           <PromptInputToolbar>
             <PromptInputTools className="pl-2">
