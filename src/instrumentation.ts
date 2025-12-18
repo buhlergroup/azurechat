@@ -10,7 +10,7 @@ export function register() {
     const { metrics } = require('@opentelemetry/api');
     const { SpanEnrichingProcessor } = require('./span-enriching-processor');
 
-    const cosmosdb = new URL(process.env.AZURE_COSMOSDB_URI || "https://localhost:443/");
+    const cosmosdb = new URL(process.env.AZURE_COSMOSDB_URI || "https://placeholder.documents.azure.com:443/");
     const cosmosdbHost = cosmosdb.hostname;
 
     // Filter using HTTP instrumentation configuration
