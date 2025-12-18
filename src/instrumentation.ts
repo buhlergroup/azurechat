@@ -10,7 +10,7 @@ export function register() {
     const { metrics } = require('@opentelemetry/api');
     const { SpanEnrichingProcessor } = require('./span-enriching-processor');
 
-    const cosmosdb = new URL(process.env.AZURE_COSMOSDB_URI);
+    const cosmosdb = new URL(process.env.AZURE_COSMOSDB_URI || "https://localhost:443/");
     const cosmosdbHost = cosmosdb.hostname;
 
     // Filter using HTTP instrumentation configuration
@@ -34,24 +34,31 @@ export function register() {
       }
     };
 
-    azureMonitor({
-      spanProcessors: [new SpanEnrichingProcessor()] ,
-      azureMonitorExporterOptions: {
-        connectionString: process.env.APPLICATIONINSIGHTS_CONNECTION_STRING || "",
+    // Only enable Azure Monitor if a valid connection string is provided
+    if (process.env.APPLICATIONINSIGHTS_CONNECTION_STRING && 
+        process.env.APPLICATIONINSIGHTS_CONNECTION_STRING.includes('InstrumentationKey=') &&
+        !process.env.APPLICATIONINSIGHTS_CONNECTION_STRING.includes('test-key')) {
+      azureMonitor({
+        spanProcessors: [new SpanEnrichingProcessor()] ,
+        azureMonitorExporterOptions: {
+          connectionString: process.env.APPLICATIONINSIGHTS_CONNECTION_STRING || "",
 
-      },
-      enableStandardMetrics: true,
-      enableLiveMetrics: false,
-      instrumentationOptions: {
-        azureSdk: { enabled: false },
-        http: httpInstrumentationConfig
-      },
-    });
+        },
+        enableStandardMetrics: true,
+        enableLiveMetrics: false,
+        instrumentationOptions: {
+          azureSdk: { enabled: false },
+          http: httpInstrumentationConfig
+        },
+      });
 
-    logDebug("Meter provider initialized", { hasMeterProvider: !!metrics.getMeterProvider() });
+      logDebug("Meter provider initialized", { hasMeterProvider: !!metrics.getMeterProvider() });
 
-    logInfo("Application Insights Connection String configured", { 
-      hasConnectionString: !!process.env.APPLICATIONINSIGHTS_CONNECTION_STRING 
-    });
+      logInfo("Application Insights Connection String configured", { 
+        hasConnectionString: !!process.env.APPLICATIONINSIGHTS_CONNECTION_STRING 
+      });
+    } else {
+      logInfo("Azure Monitor instrumentation disabled - no valid connection string provided");
+    }
   }
 }
