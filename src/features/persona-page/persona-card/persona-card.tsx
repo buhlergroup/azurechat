@@ -41,7 +41,7 @@ export const PersonaCard: FC<Props> = (props) => {
           </div>
         )}
       </CardHeader>
-      <CardContent className="text-muted-foreground flex-1">
+      <CardContent className="text-muted-foreground flex-1 line-clamp-3">
         {persona.description}
       </CardContent>
       <CardFooter className="gap-1 content-stretch f">
