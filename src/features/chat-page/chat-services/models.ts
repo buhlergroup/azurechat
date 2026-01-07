@@ -254,8 +254,8 @@ export async function getDefaultModel(): Promise<ChatModel> {
     logError("Error fetching default model", { 
       error: error instanceof Error ? error.message : String(error) 
     });
-    // Fallback to gpt-5.1 if API fails
-    return "gpt-5.1";
+    // Fallback to gpt-5.2 if API fails
+    return "gpt-5.2";
   }
 }
 

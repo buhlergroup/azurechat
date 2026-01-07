@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     
     const availableModelIds = Object.keys(availableModels) as ChatModel[];
     
-    const defaultModel = availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5.1";
+    const defaultModel = availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5.2";
     return NextResponse.json({
       availableModels,
       availableModelIds,
