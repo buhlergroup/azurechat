@@ -73,9 +73,10 @@ While this repository is not affected by this specific vulnerability:
 
 ## References
 
-- [GitHub Security Advisory](https://github.com/advisories)
-- [CVE-2025-61686 Details](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-61686)
-- [React Router Security Patches](https://github.com/remix-run/react-router/releases)
+- [GitHub Security Advisories Database](https://github.com/advisories) - Search for CVE-2025-61686
+- [National Vulnerability Database](https://nvd.nist.gov/) - CVE-2025-61686
+- [React Router GitHub Repository](https://github.com/remix-run/react-router) - Official releases and security patches
+- [Next.js Security Best Practices](https://nextjs.org/docs/app/building-your-application/configuring/security-headers)
 
 ---
 
