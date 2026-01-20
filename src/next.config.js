@@ -12,11 +12,8 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "10mb", // increased from 3mb to support larger file uploads
     },
+    turbopackUseSystemTlsCerts: true,
   },
-  turbopack: {
-    // Turbopack handles source maps automatically in dev mode
-    rules: {},
-  }
 };
 
 module.exports = nextConfig;
