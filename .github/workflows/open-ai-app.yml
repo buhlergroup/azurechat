@@ -43,7 +43,9 @@ jobs:
           cp -R ./src/.next/static/* ./site-deploy/src/.next/static/
 
       - name: 📂 Copy Public folder
-        run: cp -R ./src/public/* ./site-deploy/src/public/
+        run: |
+          mkdir -p ./site-deploy/src/public
+          cp -R ./src/public/* ./site-deploy/src/public/
 
       - name: 📦 Package Next application
         run: |
