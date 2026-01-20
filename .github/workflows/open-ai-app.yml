@@ -39,13 +39,13 @@ jobs:
 
       - name: 📂 Copy static into the standalone .next folder
         run: |
-          mkdir -p ./site-deploy/src/.next/static
-          cp -R ./src/.next/static/* ./site-deploy/src/.next/static/
+          mkdir -p ./site-deploy/.next/static
+          cp -R ./src/.next/static/* ./site-deploy/.next/static/
 
       - name: 📂 Copy Public folder
         run: |
-          mkdir -p ./site-deploy/src/public
-          cp -R ./src/public/* ./site-deploy/src/public/
+          mkdir -p ./site-deploy/public
+          cp -R ./src/public/* ./site-deploy/public/
 
       - name: 📦 Package Next application
         run: |
@@ -95,7 +95,7 @@ jobs:
           inlineScript: |
             rg=$(az webapp list --query "[?name=='${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}'].resourceGroup" --output tsv)
             echo Setting SCM_DO_BUILD_DURING_DEPLOYMENT=false on app service ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
-            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1 -o none
             echo Setting --startup-file=\"node server.js\" on app service ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
             az webapp config set --startup-file="node server.js" -n ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }} -g $rg -o none
             sleep 10
@@ -131,7 +131,7 @@ jobs:
           inlineScript: |
             rg=$(az webapp list --query "[?name=='${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}'].resourceGroup" --output tsv)
             echo Setting SCM_DO_BUILD_DURING_DEPLOYMENT=false on app service ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}
-            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1 -o none
             echo Setting --startup-file=\"node server.js\" on app service ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}
             az webapp config set --startup-file="node server.js" -n ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }} -g $rg -o none
             sleep 10
