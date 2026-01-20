@@ -1,10 +1,10 @@
-import { FC, PropsWithChildren, createContext, useContext } from "react";
+import React, { FC, PropsWithChildren, createContext, useContext } from "react";
 
 interface ContextProps {
   onCitationClick?: (
     previousState: any,
     formData: FormData
-  ) => Promise<JSX.Element>;
+  ) => Promise<React.ReactNode>;
 }
 
 const Context = createContext<ContextProps | null>(null);
@@ -13,7 +13,7 @@ interface ProviderProps extends PropsWithChildren {
   onCitationClick: (
     previousState: any,
     formData: FormData
-  ) => Promise<JSX.Element>;
+  ) => Promise<React.ReactNode>;
 }
 
 export const MarkdownProvider: FC<ProviderProps> = (props: ProviderProps) => {

@@ -11,7 +11,7 @@ interface Props {
   onCitationClick: (
     previousState: any,
     formData: FormData
-  ) => Promise<JSX.Element>;
+  ) => Promise<React.ReactNode>;
 }
 
 export const Markdown: FC<Props> = (props) => {

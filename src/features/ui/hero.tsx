@@ -16,7 +16,7 @@ export const Hero: FC<HeroProps> = (props) => {
       return node.map(extractTextFromReactNode).join(' ');
     }
     if (node && typeof node === 'object' && 'props' in node) {
-      const element = node as React.ReactElement;
+      const element = node as React.ReactElement<{ children?: React.ReactNode }>;
       if (element.props && element.props.children) {
         return extractTextFromReactNode(element.props.children);
       }
