@@ -123,7 +123,7 @@ class ChatState {
       this.chatThreadId = chatThread.id;
       this.messages = messages;
       const threadModel = chatThread.selectedModel;
-      this.selectedModel = (threadModel && MODEL_CONFIGS[threadModel]) ? threadModel : "gpt-5.1";
+      this.selectedModel = (threadModel && MODEL_CONFIGS[threadModel]) ? threadModel : "gpt-5.2";
       this.toolCallHistory = {};
       this.tempReasoningContent = "";
       this.currentAssistantMessageId = "";

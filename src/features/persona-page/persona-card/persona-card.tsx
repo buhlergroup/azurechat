@@ -32,7 +32,7 @@ export const PersonaCard: FC<Props> = (props) => {
     <Card key={persona.id} className="flex flex-col">
       <CardHeader className="flex flex-row gap-2 items-start">
         <div className="flex flex-1 items-center gap-2">
-          <CardTitle className="flex-1 truncate">{persona.name}</CardTitle>
+          <CardTitle className="flex-1 line-clamp-1">{persona.name}</CardTitle>
           <PersonaVisibilityInfo persona={persona} />
         </div>
         {props.showActionMenu && (
@@ -41,7 +41,7 @@ export const PersonaCard: FC<Props> = (props) => {
           </div>
         )}
       </CardHeader>
-      <CardContent className="text-muted-foreground flex-1">
+      <CardContent className="text-muted-foreground flex-1 line-clamp-3">
         {persona.description}
       </CardContent>
       <CardFooter className="gap-1 content-stretch f">
