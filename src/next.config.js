@@ -8,6 +8,16 @@ const nextConfig = {
     "@opentelemetry/instrumentation",
     "@opentelemetry/sdk-trace-base",
   ],
+  images: {
+    // Configure image sizes and qualities for Next.js 16
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    qualities: [75, 100],
+    localPatterns: [
+      {
+        pathname: '/**',
+      },
+    ],
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb", // increased from 3mb to support larger file uploads
