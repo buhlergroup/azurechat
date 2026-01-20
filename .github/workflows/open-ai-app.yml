@@ -49,15 +49,15 @@ jobs:
 
       - name: 📦 Package Next application
         run: |
-          cd ./site-deploy/src
-          zip ../Nextjs-site.zip ./* .next -qr
+          cd ./site-deploy
+          zip Nextjs-site.zip ./* src node_modules -qr
 
       - name: 🔍 Diagnostics
         run: |
-          echo "=== site-deploy/src contents ==="
-          ls -la ./site-deploy/src/
+          echo "=== site-deploy contents ==="
+          ls -la ./site-deploy/
           echo "=== Verifying server.js exists ==="
-          ls -la ./site-deploy/src/server.js || echo "server.js NOT FOUND!"
+          ls -la ./site-deploy/server.js || echo "server.js NOT FOUND!"
           echo "=== Zip contents ==="
           unzip -l ./site-deploy/Nextjs-site.zip | head -30
 
