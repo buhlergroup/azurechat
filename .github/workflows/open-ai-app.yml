@@ -35,24 +35,27 @@ jobs:
           cd ..
 
       - name: 📂 Copy standalone into the root
-        run: cp -R ./src/.next/standalone ./site-deploy
+        run: cp -R ./src/.next/standalone/* ./site-deploy/
 
-      - name: 📂 Copy static into the .next folder
-        run: cp -R ./src/.next/static ./site-deploy/.next/static
+      - name: 📂 Copy static into the standalone .next folder
+        run: |
+          mkdir -p ./site-deploy/src/.next/static
+          cp -R ./src/.next/static/* ./site-deploy/src/.next/static/
 
       - name: 📂 Copy Public folder
-        run: cp -R ./src/public ./site-deploy/public
+        run: cp -R ./src/public/* ./site-deploy/src/public/
 
       - name: 📦 Package Next application
         run: |
-          cd ./site-deploy
-          zip Nextjs-site.zip ./* .next -qr
+          cd ./site-deploy/src
+          zip ../Nextjs-site.zip ./* .next -qr
 
       - name: 🔍 Diagnostics
         run: |
           ls ./src
           ls ./src/.next
           ls ./site-deploy
+          ls ./site-deploy/src
 
       - name: ⬆️ Publish Next Application artifact
         uses: actions/upload-artifact@v4
