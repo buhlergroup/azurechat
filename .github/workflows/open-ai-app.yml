@@ -35,7 +35,13 @@ jobs:
           cd ..
 
       - name: 📂 Copy standalone into the root
-        run: cp -R ./src/.next/standalone/* ./site-deploy/
+        run: |
+          # Copy the src folder contents (server.js, .next, node_modules, package.json)
+          cp -R ./src/.next/standalone/src/* ./site-deploy/
+          # Also merge root node_modules if it exists
+          if [ -d "./src/.next/standalone/node_modules" ]; then
+            cp -R ./src/.next/standalone/node_modules/* ./site-deploy/node_modules/
+          fi
 
       - name: 📂 Copy static into the standalone .next folder
         run: |
@@ -58,8 +64,10 @@ jobs:
           ls -la ./site-deploy/
           echo "=== Verifying server.js exists ==="
           ls -la ./site-deploy/server.js || echo "server.js NOT FOUND!"
-          echo "=== Zip contents ==="
-          unzip -l ./site-deploy/Nextjs-site.zip | head -30
+          echo "=== Verifying node_modules/next exists ==="
+          ls -la ./site-deploy/node_modules/next/package.json || echo "next module NOT FOUND!"
+          echo "=== Zip contents (first 50) ==="
+          unzip -l ./site-deploy/Nextjs-site.zip | head -50
 
       - name: ⬆️ Publish Next Application artifact
         uses: actions/upload-artifact@v4
@@ -95,7 +103,7 @@ jobs:
           inlineScript: |
             rg=$(az webapp list --query "[?name=='${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}'].resourceGroup" --output tsv)
             echo Setting SCM_DO_BUILD_DURING_DEPLOYMENT=false on app service ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
-            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1 -o none
+            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
             echo Setting --startup-file=\"node server.js\" on app service ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
             az webapp config set --startup-file="node server.js" -n ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }} -g $rg -o none
             sleep 10
@@ -107,6 +115,7 @@ jobs:
           resource-group-name: ${{ secrets.AZURE_APP_SERVICE_RG_NAME_DEV }}
           app-name: ${{ secrets.AZURE_APP_SERVICE_NAME_DEV }}
           package: ${{ github.workspace }}/Nextjs-site.zip
+
   deploy-production:
     runs-on: ubuntu-latest
     needs: build
@@ -131,7 +140,7 @@ jobs:
           inlineScript: |
             rg=$(az webapp list --query "[?name=='${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}'].resourceGroup" --output tsv)
             echo Setting SCM_DO_BUILD_DURING_DEPLOYMENT=false on app service ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}
-            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1 -o none
+            az webapp config appsettings set -n ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }} -g $rg --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
             echo Setting --startup-file=\"node server.js\" on app service ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }}
             az webapp config set --startup-file="node server.js" -n ${{ secrets.AZURE_APP_SERVICE_NAME_PROD }} -g $rg -o none
             sleep 10
