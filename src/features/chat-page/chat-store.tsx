@@ -45,7 +45,7 @@ class ChatState {
   public autoScroll: boolean = true;
   public userName: string = "";
   public chatThreadId: string = "";
-  public selectedModel: ChatModel = "gpt-5.1"; // Will be updated when available models are fetched
+  public selectedModel: ChatModel = "gpt-5.2"; // Will be updated when available models are fetched
   public reasoningEffort: ReasoningEffort = "low";
   public webSearchEnabled: boolean = false;
   public imageGenerationEnabled: boolean = false;
@@ -295,7 +295,10 @@ class ChatState {
     this.toolCallHistory = {};
     this.toolCallInProgress = {};
 
-    const multimodalImage = formData.get("image-base64") as unknown as string;
+    const multimodalImages = formData
+      .getAll("image-base64")
+      .filter((v): v is string => typeof v === "string" && v.length > 0);
+    const multimodalImage = multimodalImages[0] || "";
 
     const newUserMessage: ChatMessageModel = {
       id: uniqueId(),
@@ -303,6 +306,7 @@ class ChatState {
       content: this.input,
       name: this.userName,
       multiModalImage: multimodalImage,
+      multiModalImages: multimodalImages,
       createdAt: new Date(),
       isDeleted: false,
       threadId: this.chatThreadId,

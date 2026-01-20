@@ -19,7 +19,11 @@ export async function GET(request: NextRequest) {
     
     const availableModelIds = Object.keys(availableModels) as ChatModel[];
     
-    const defaultModel = availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5.1";
+    // Priority order for default model selection
+    const defaultModelPriority: ChatModel[] = ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-4o", "gpt-4.1"];
+    const defaultModel = defaultModelPriority.find(model => availableModelIds.includes(model)) 
+      ?? (availableModelIds.length > 0 ? availableModelIds[0] : "gpt-5.2");
+    
     return NextResponse.json({
       availableModels,
       availableModelIds,
