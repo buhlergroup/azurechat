@@ -54,10 +54,12 @@ jobs:
 
       - name: 🔍 Diagnostics
         run: |
-          ls ./src
-          ls ./src/.next
-          ls ./site-deploy
-          ls ./site-deploy/src
+          echo "=== site-deploy/src contents ==="
+          ls -la ./site-deploy/src/
+          echo "=== Verifying server.js exists ==="
+          ls -la ./site-deploy/src/server.js || echo "server.js NOT FOUND!"
+          echo "=== Zip contents ==="
+          unzip -l ./site-deploy/Nextjs-site.zip | head -30
 
       - name: ⬆️ Publish Next Application artifact
         uses: actions/upload-artifact@v4
