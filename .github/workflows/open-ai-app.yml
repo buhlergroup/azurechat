@@ -36,6 +36,8 @@ jobs:
 
       - name: 📂 Copy standalone into the root
         run: |
+          # Create site-deploy directory
+          mkdir -p ./site-deploy
           # Copy the src folder contents (server.js, .next, node_modules, package.json)
           cp -R ./src/.next/standalone/src/* ./site-deploy/
           # Also merge root node_modules if it exists
