@@ -82,7 +82,7 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   }
 
   // Update system prompt with current date and document hint
-  currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\nToday's Date: ${new Date().toLocaleString()}${documentHint}\n\n${currentChatThread.personaMessage}`;
+  currentChatThread.personaMessage = `${CHAT_DEFAULT_SYSTEM_PROMPT} \n\nToday's Date: ${new Date().toLocaleDateString()}${documentHint}\n\n${currentChatThread.personaMessage}`;
 
   // Save user message
   await CreateChatMessage({
