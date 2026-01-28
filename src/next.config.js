@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  distDir: "build",
   serverExternalPackages: [
     "@azure/storage-blob",
     "@azure/monitor-opentelemetry",

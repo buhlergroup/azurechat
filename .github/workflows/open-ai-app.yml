@@ -38,22 +38,16 @@ jobs:
         run: |
           # Create site-deploy directory
           mkdir -p ./site-deploy
-          # Copy the src folder contents (server.js, .next, node_modules, package.json)
-          cp -R ./src/.next/standalone/src/* ./site-deploy/
-          # Also merge root node_modules if it exists
-          if [ -d "./src/.next/standalone/node_modules" ]; then
-            cp -R ./src/.next/standalone/node_modules/* ./site-deploy/node_modules/
-          fi
+          # Copy everything from standalone/src (server.js, build, node_modules, package.json, etc.)
+          cp -R ./src/build/standalone/src/* ./site-deploy/
 
-      - name: 📂 Copy static into the standalone .next folder
+      - name: 📂 Copy static and public folders into standalone
         run: |
-          mkdir -p ./site-deploy/.next/static
-          cp -R ./src/.next/static/* ./site-deploy/.next/static/
-
-      - name: 📂 Copy Public folder
-        run: |
-          mkdir -p ./site-deploy/public
-          cp -R ./src/public/* ./site-deploy/public/
+          # Move static from build to standalone
+          mkdir -p ./site-deploy/build
+          cp -R ./src/build/static ./site-deploy/build/
+          # Move public folder to standalone
+          cp -R ./src/public ./site-deploy/
 
       - name: 📦 Package Next application
         run: |
@@ -93,7 +87,7 @@ jobs:
         with:
           name: Nextjs-site
 
-      - name: 🗝️ Azure Login
+      - name: ️ Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
@@ -130,7 +124,7 @@ jobs:
         with:
           name: Nextjs-site
 
-      - name: 🗝️ Azure Login
+      - name: ️Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
