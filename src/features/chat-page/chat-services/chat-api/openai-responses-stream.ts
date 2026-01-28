@@ -293,6 +293,22 @@ export const OpenAIResponsesStream = (props: {
                 functionCalls[event.output_index] = {
                   ...event.item
                 };
+              } else if (event.item?.type === "code_interpreter_call") {
+                logInfo("Code interpreter started", { 
+                  outputIndex: event.output_index,
+                  id: event.item.id
+                });
+                functionCalls[event.output_index] = {
+                  ...event.item,
+                  code: ""
+                };
+                // Record a started tool call entry for code interpreter
+                toolCallHistory.push({
+                  name: "code_interpreter",
+                  arguments: "",
+                  timestamp: new Date(),
+                  call_id: event.item.id
+                });
               }
               break;
 
@@ -461,6 +477,144 @@ export const OpenAIResponsesStream = (props: {
                 });
                 // Web search results are embedded in the message content with citations
                 // No additional processing needed - the model will reference the search results
+              } else if (event.item?.type === "code_interpreter_call") {
+                logInfo("Code interpreter completed", { 
+                  outputIndex: event.output_index,
+                  status: event.item?.status,
+                  containerId: event.item?.container_id,
+                  hasCode: !!event.item?.code,
+                  outputCount: event.item?.outputs?.length || 0
+                });
+
+                // Save the container ID to the chat thread for reuse in subsequent requests
+                if (event.item?.container_id) {
+                  try {
+                    const { UpdateChatThreadCodeInterpreterContainer } = await import("../chat-thread-service");
+                    await UpdateChatThreadCodeInterpreterContainer(chatThread.id, event.item.container_id);
+                    logInfo("Saved Code Interpreter container ID to chat thread", { 
+                      containerId: event.item.container_id,
+                      threadId: chatThread.id 
+                    });
+                  } catch (error) {
+                    logError("Failed to save container ID", { 
+                      error: error instanceof Error ? error.message : String(error) 
+                    });
+                  }
+                }
+
+                // Update the tool call history with the code that was executed
+                for (let i = toolCallHistory.length - 1; i >= 0; i--) {
+                  if (toolCallHistory[i].name === "code_interpreter" && !toolCallHistory[i].result) {
+                    toolCallHistory[i].arguments = event.item?.code || "";
+                    break;
+                  }
+                }
+
+                // Process code interpreter outputs
+                if (event.item?.outputs && Array.isArray(event.item.outputs)) {
+                  let codeInterpreterOutput = "";
+                  
+                  for (const output of event.item.outputs) {
+                    if (output.type === "logs" && output.logs) {
+                      // Stream logs as code block
+                      const logsContent = `\n\`\`\`\n${output.logs}\n\`\`\`\n`;
+                      codeInterpreterOutput += logsContent;
+                      lastMessage += logsContent;
+                      
+                      const logsResponse: AzureChatCompletion = {
+                        type: "content",
+                        response: {
+                          id: messageId,
+                          choices: [{
+                            message: {
+                              content: logsContent,
+                              role: "assistant"
+                            }
+                          }]
+                        },
+                      };
+                      streamResponse(logsResponse.type, JSON.stringify(logsResponse));
+                    } else if (output.type === "image" && output.url) {
+                      try {
+                        // Download the image from the URL and upload to blob storage
+                        const imageName = `code_interpreter_${uniqueId()}.png`;
+                        const { UploadImageToStore, GetImageUrl } = await import("../chat-image-service");
+                        
+                        // Fetch the image from the code interpreter URL
+                        const imageResponse = await fetch(output.url);
+                        if (imageResponse.ok) {
+                          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+                          
+                          await UploadImageToStore(
+                            chatThread.id,
+                            imageName,
+                            imageBuffer
+                          );
+                          
+                          const imageUrl = await GetImageUrl(chatThread.id, imageName);
+                          
+                          // Add image markdown to the message
+                          const imageMarkdown = `\n\n![Code Output](${imageUrl})\n\n`;
+                          codeInterpreterOutput += imageMarkdown;
+                          lastMessage += imageMarkdown;
+                          
+                          // Stream the image as content
+                          const imgResponse: AzureChatCompletion = {
+                            type: "content",
+                            response: {
+                              id: messageId,
+                              choices: [{
+                                message: {
+                                  content: imageMarkdown,
+                                  role: "assistant"
+                                }
+                              }]
+                            },
+                          };
+                          streamResponse(imgResponse.type, JSON.stringify(imgResponse));
+                          
+                          logInfo("Code interpreter image uploaded", { imageName, imageUrl });
+                        }
+                      } catch (error) {
+                        logError("Failed to process code interpreter image", { 
+                          error: error instanceof Error ? error.message : String(error),
+                          url: output.url
+                        });
+                      }
+                    } else if ((output as any).type === "file" && (output as any).file_id) {
+                      // Handle file outputs - provide a download link
+                      const fileOutput = output as any;
+                      const fileName = fileOutput.name || `output_${fileOutput.file_id}`;
+                      const fileContent = `\n\n📎 [Download: ${fileName}](/api/code-interpreter/file/${fileOutput.file_id})\n\n`;
+                      codeInterpreterOutput += fileContent;
+                      lastMessage += fileContent;
+                      
+                      const fileResponse: AzureChatCompletion = {
+                        type: "content",
+                        response: {
+                          id: messageId,
+                          choices: [{
+                            message: {
+                              content: fileContent,
+                              role: "assistant"
+                            }
+                          }]
+                        },
+                      };
+                      streamResponse(fileResponse.type, JSON.stringify(fileResponse));
+                      
+                      logInfo("Code interpreter file output", { fileName, fileId: fileOutput.file_id });
+                    }
+                  }
+
+                  // Update tool call history with result
+                  for (let i = toolCallHistory.length - 1; i >= 0; i--) {
+                    if (toolCallHistory[i].name === "code_interpreter" && !toolCallHistory[i].result) {
+                      toolCallHistory[i].result = codeInterpreterOutput || "Code executed successfully";
+                      break;
+                    }
+                  }
+                }
               }
               break;
 
@@ -533,9 +687,36 @@ export const OpenAIResponsesStream = (props: {
               return;
 
             default:
-              // Log unknown events for debugging but don't treat them as errors
-              // These might be informational events that don't need processing
-              logDebug("Unhandled event", { eventType: event.type });
+              // Handle code interpreter events that might not be in TypeScript definitions
+              const eventType = (event as any).type as string;
+              if (eventType?.includes("code_interpreter_call")) {
+                if (eventType.includes("in_progress") || eventType.includes("interpreting")) {
+                  logDebug("Code interpreter in progress/interpreting", { 
+                    outputIndex: (event as any).output_index 
+                  });
+                } else if (eventType.includes("code") && eventType.includes("delta")) {
+                  // Accumulate code being written
+                  const outputIndex = (event as any).output_index;
+                  if (functionCalls[outputIndex]) {
+                    functionCalls[outputIndex].code = (functionCalls[outputIndex].code || "") + ((event as any).delta || "");
+                  }
+                  logDebug("Code interpreter code delta", { 
+                    outputIndex,
+                    deltaLength: (event as any).delta?.length || 0
+                  });
+                } else if (eventType.includes("code") && eventType.includes("done")) {
+                  logDebug("Code interpreter code complete", { 
+                    outputIndex: (event as any).output_index,
+                    codeLength: functionCalls[(event as any).output_index]?.code?.length || 0
+                  });
+                } else {
+                  logDebug("Code interpreter event", { eventType, outputIndex: (event as any).output_index });
+                }
+              } else {
+                // Log unknown events for debugging but don't treat them as errors
+                // These might be informational events that don't need processing
+                logDebug("Unhandled event", { eventType: event.type });
+              }
               break;
           }
         }

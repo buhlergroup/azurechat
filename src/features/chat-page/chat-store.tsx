@@ -27,6 +27,7 @@ import {
   ChatThreadModel,
   ChatModel,
   ReasoningEffort,
+  AttachedFileModel,
   getDefaultModel as getDefaultModelFromAPI,
   MODEL_CONFIGS,
 } from "./chat-services/models";
@@ -49,6 +50,9 @@ class ChatState {
   public reasoningEffort: ReasoningEffort = "low";
   public webSearchEnabled: boolean = false;
   public imageGenerationEnabled: boolean = false;
+  public companyContentEnabled: boolean = false;
+  public codeInterpreterEnabled: boolean = false;
+  public attachedFiles: Array<AttachedFileModel> = [];
 
   private chatThread: ChatThreadModel | undefined;
   private tempReasoningContent: string = "";
@@ -131,6 +135,15 @@ class ChatState {
       // Reset tool states for new chat
       this.webSearchEnabled = false;
       this.imageGenerationEnabled = true;
+      this.companyContentEnabled = false;
+      this.codeInterpreterEnabled = false;
+      
+      // Load attached files from the chat thread
+      this.attachedFiles = chatThread.attachedFiles || [];
+      // Auto-enable code interpreter if there are code interpreter files
+      if (this.attachedFiles.some(f => f.type === "code-interpreter")) {
+        this.codeInterpreterEnabled = true;
+      }
       
       const defaultEffort = MODEL_CONFIGS[this.selectedModel]?.defaultReasoningEffort || "low";
       if (chatThread.reasoningEffort) {
@@ -222,6 +235,50 @@ class ChatState {
     if (enabled && this.reasoningEffort === "minimal") {
       this.reasoningEffort = "low";
     }
+  }
+
+  public toggleCompanyContent(enabled: boolean) {
+    this.companyContentEnabled = enabled;
+    if (enabled && this.reasoningEffort === "minimal") {
+      this.reasoningEffort = "low";
+    }
+  }
+
+  public toggleCodeInterpreter(enabled: boolean) {
+    this.codeInterpreterEnabled = enabled;
+    if (enabled && this.reasoningEffort === "minimal") {
+      this.reasoningEffort = "low";
+    }
+  }
+
+  public setAttachedFiles(files: Array<AttachedFileModel>) {
+    this.attachedFiles = files;
+    logDebug("Chat Store: setAttachedFiles", { fileCount: files.length, files });
+  }
+
+  public addAttachedFile(file: AttachedFileModel) {
+    // Use spread to create a new array reference for Valtio reactivity
+    this.attachedFiles = [...this.attachedFiles, file];
+    logDebug("Chat Store: addAttachedFile", { 
+      addedFile: file, 
+      totalFiles: this.attachedFiles.length,
+      allFiles: this.attachedFiles 
+    });
+  }
+
+  public removeAttachedFile(fileId: string) {
+    this.attachedFiles = this.attachedFiles.filter(f => f.id !== fileId);
+    logDebug("Chat Store: removeAttachedFile", { removedFileId: fileId, remainingFiles: this.attachedFiles.length });
+  }
+
+  public clearAttachedFiles() {
+    this.attachedFiles = [];
+    logDebug("Chat Store: clearAttachedFiles");
+  }
+
+  // Get only code interpreter files for the API
+  public getCodeInterpreterFileIds(): string[] {
+    return this.attachedFiles.filter(f => f.type === "code-interpreter").map(f => f.id);
   }
 
   public async AddExtensionToChatThread(extensionId: string) {
@@ -441,10 +498,15 @@ class ChatState {
       reasoningEffort: this.reasoningEffort,
       webSearchEnabled: this.webSearchEnabled,
       imageGenerationEnabled: this.imageGenerationEnabled,
+      companyContentEnabled: this.companyContentEnabled,
+      codeInterpreterEnabled: this.codeInterpreterEnabled,
+      codeInterpreterFileIds: this.getCodeInterpreterFileIds(),
     });
     formData.append("content", body);
 
     this.chat(formData);
+    
+    // Note: Don't clear attached files after submission - they persist with the thread
   }
 
   private createStreamParser(newUserMessage: ChatMessageModel) {

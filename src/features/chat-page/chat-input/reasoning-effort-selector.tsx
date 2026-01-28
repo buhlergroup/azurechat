@@ -25,8 +25,8 @@ export const ReasoningEffortSelector: React.FC<ReasoningEffortSelectorProps> = (
   disabled = false,
   showReasoningModelsOnly = false,
 }) => {
-  const { webSearchEnabled, imageGenerationEnabled } = useChat();
-  const toolsEnabled = webSearchEnabled || imageGenerationEnabled;
+  const { webSearchEnabled, imageGenerationEnabled, companyContentEnabled, codeInterpreterEnabled } = useChat();
+  const toolsEnabled = webSearchEnabled || imageGenerationEnabled || companyContentEnabled || codeInterpreterEnabled;
 
   if (!showReasoningModelsOnly) {
     return null;

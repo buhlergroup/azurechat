@@ -1,12 +1,11 @@
-import { Image as ImageIcon, X } from "lucide-react";
-import Image from "next/image";
+import { Image as ImageIcon } from "lucide-react";
 import { FC, useRef } from "react";
 import { Button } from "../../button";
 import { InputImageStore, useInputImage } from "./input-image-store";
 import { SupportedFileExtensionsInputImages } from "@/features/chat-page/chat-services/models";
 
 export const ImageInput: FC = () => {
-  const { base64Image, previewImage } = useInputImage();
+  const { base64Image } = useInputImage();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleButtonClick = () => {
@@ -16,24 +15,9 @@ export const ImageInput: FC = () => {
     fileInputRef.current?.click();
   };
 
-  const resetFileInput = () => {
-    InputImageStore.Reset();
-  };
-
   return (
     <div className="flex gap-2">
-      {previewImage && (
-        <div className="relative overflow-hidden rounded-md w-[35px] h-[35px]">
-          <Image src={previewImage} alt="Preview" fill={true} />
-          <button
-            className="absolute right-1 top-1 bg-background/20 rounded-full p-[2px]"
-            onClick={resetFileInput}
-            aria-label="Remove image from chat input"
-          >
-            <X size={12} className="stroke-background" />
-          </button>
-        </div>
-      )}
+      {/* Hidden inputs for form submission */}
       <input
         type="hidden"
         name="image-base64"

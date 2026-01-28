@@ -104,6 +104,55 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     }
   }
 
+  // Add search_company_content tool if company content search is enabled
+  if (props.companyContentEnabled) {
+    const companyContentTool = await getToolByName("search_company_content");
+    if (companyContentTool) {
+      tools.push(companyContentTool);
+      logInfo("Added search_company_content function (company content search)");
+    }
+  }
+
+  // Build code interpreter tool configuration if enabled
+  // If we have an existing container ID from a previous request, reuse it
+  // Otherwise, create a new container with any uploaded file IDs
+  const buildCodeInterpreterTool = (useExistingContainer: boolean) => {
+    if (!props.codeInterpreterEnabled) return null;
+    
+    const hasNewFiles = props.codeInterpreterFileIds && props.codeInterpreterFileIds.length > 0;
+    const hasExistingContainer = useExistingContainer && !!currentChatThread.codeInterpreterContainerId;
+    
+    if (hasExistingContainer) {
+      // Reuse existing container by passing the container ID directly
+      // New files can be added via file_ids in addition to the existing container
+      logInfo("Reusing existing Code Interpreter container", { 
+        containerId: currentChatThread.codeInterpreterContainerId,
+        addingNewFiles: hasNewFiles,
+        newFileCount: props.codeInterpreterFileIds?.length || 0 
+      });
+      return {
+        type: "code_interpreter",
+        container: currentChatThread.codeInterpreterContainerId,
+        ...(hasNewFiles ? { file_ids: props.codeInterpreterFileIds } : {})
+      };
+    } else {
+      // Create new container (auto), optionally with new files
+      logInfo("Creating new Code Interpreter container", { 
+        hasNewFiles,
+        fileCount: props.codeInterpreterFileIds?.length || 0 
+      });
+      return {
+        type: "code_interpreter",
+        container: { 
+          type: "auto",
+          ...(hasNewFiles ? { file_ids: props.codeInterpreterFileIds } : {})
+        }
+      };
+    }
+  };
+
+  let codeInterpreterTool = buildCodeInterpreterTool(true);
+
   // Create request options for Responses API
   const requestOptions: any = {
     model: modelConfig.deploymentName,
@@ -112,7 +161,8 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     tools: [
       ...tools, 
       ...(props.imageGenerationEnabled ? [{ type: "image_generation" }] : []),
-      ...(props.webSearchEnabled ? [{ type: "web_search_preview" }] : [])
+      ...(props.webSearchEnabled ? [{ type: "web_search_preview" }] : []),
+      ...(codeInterpreterTool ? [codeInterpreterTool] : [])
     ],
     tool_choice: "auto", // Let the model decide when to use tools
     parallel_tool_calls: true, // Allow parallel tool calls
@@ -187,13 +237,45 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   }
 
   // Create conversation state and start the conversation
-  const conversationState = await createConversationState(conversationContext, initialInput);
+  let conversationState = await createConversationState(conversationContext, initialInput);
   let stream;
   try {
     stream = await startConversation(conversationState);
   } catch (error) {
-    logDebug("startConversation failed", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Check if this is an expired container error
+    if (errorMessage.includes("Container is expired") && currentChatThread.codeInterpreterContainerId) {
+      logInfo("Code Interpreter container expired, retrying with new container", {
+        expiredContainerId: currentChatThread.codeInterpreterContainerId
+      });
+      
+      // Clear the expired container ID from the chat thread
+      try {
+        const { UpdateChatThreadCodeInterpreterContainer } = await import("../chat-thread-service");
+        await UpdateChatThreadCodeInterpreterContainer(currentChatThread.id, "");
+      } catch (clearError) {
+        logError("Failed to clear expired container ID", { error: clearError });
+      }
+      
+      // Rebuild the code interpreter tool without the expired container
+      codeInterpreterTool = buildCodeInterpreterTool(false);
+      
+      // Update the tools in requestOptions
+      requestOptions.tools = [
+        ...tools, 
+        ...(props.imageGenerationEnabled ? [{ type: "image_generation" }] : []),
+        ...(props.webSearchEnabled ? [{ type: "web_search_preview" }] : []),
+        ...(codeInterpreterTool ? [codeInterpreterTool] : [])
+      ];
+      
+      // Retry with updated context
+      conversationState = await createConversationState(conversationContext, initialInput);
+      stream = await startConversation(conversationState);
+    } else {
+      logDebug("startConversation failed", { error: errorMessage, stack: error instanceof Error ? error.stack : undefined });
+      throw error;
+    }
   }
 
   // Create a conversation orchestrator that handles stream continuation

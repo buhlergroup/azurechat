@@ -11,9 +11,39 @@ import {
   CrackDocument,
   CreateChatDocument,
 } from "../../chat-services/chat-document-service";
-import { SupportedFileExtensionsInputImages } from "../../chat-services/models";
+import { SupportedFileExtensionsInputImages, AttachedFileModel } from "../../chat-services/models";
 import { chatStore } from "../../chat-store";
 import { InputImageStore } from "@/features/ui/chat/chat-input-area/input-image-store";
+import { AddAttachedFile, RemoveAttachedFile } from "../../chat-services/chat-thread-service";
+
+// File extensions that should be handled by Code Interpreter instead of Azure Search
+// These are data files that are better processed by Python code
+const CODE_INTERPRETER_ONLY_EXTENSIONS = [
+  "XLSX", "XLS",  // Excel files
+  "CSV",          // CSV files  
+  "JSON",         // JSON data files
+  "XML",          // XML data files
+  "PKL",          // Python pickle files
+  "ZIP", "TAR",   // Archives
+];
+
+// File extensions that should be indexed in Azure Search for RAG
+const AZURE_SEARCH_INDEXABLE_EXTENSIONS = [
+  "PDF",          // PDF documents
+  "TXT",          // Text files
+  "DOCX", "DOC",  // Word documents
+  "PPTX", "PPT",  // PowerPoint
+  "HTML", "HTM",  // HTML files
+  "MD",           // Markdown
+];
+
+async function shouldUseCodeInterpreter(extension: string): Promise<boolean> {
+  return CODE_INTERPRETER_ONLY_EXTENSIONS.includes(extension.toUpperCase());
+}
+
+async function shouldIndexInAzureSearch(extension: string): Promise<boolean> {
+  return AZURE_SEARCH_INDEXABLE_EXTENSIONS.includes(extension.toUpperCase());
+}
 
 class FileStore {
   public uploadButtonLabel: string = "";
@@ -49,6 +79,60 @@ class FileStore {
         return;
       }
 
+      // Check if this file should go to Code Interpreter instead of Azure Search
+      if (fileExtension && await shouldUseCodeInterpreter(fileExtension)) {
+        this.uploadButtonLabel = "Uploading for Code Interpreter";
+        
+        try {
+          const uploadFormData = new FormData();
+          uploadFormData.append("file", file);
+
+          const response = await fetch("/api/code-interpreter/upload", {
+            method: "POST",
+            body: uploadFormData
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || "Upload failed");
+          }
+
+          const data = await response.json();
+          
+          console.log("file-store: File uploaded, adding to chatStore:", { id: data.id, name: data.name });
+          
+          // Create attached file model
+          const attachedFile: AttachedFileModel = {
+            id: data.id,
+            name: data.name,
+            type: "code-interpreter",
+            uploadedAt: new Date()
+          };
+          
+          // Add file to store and enable code interpreter
+          chatStore.addAttachedFile(attachedFile);
+          chatStore.toggleCodeInterpreter(true);
+          
+          // Persist to database
+          await AddAttachedFile(chatThreadId, attachedFile);
+          
+          console.log("file-store: After adding, attachedFiles:", chatStore.attachedFiles);
+
+          this.uploadButtonLabel = file.name + " ready for analysis";
+          showSuccess({
+            title: "File uploaded",
+            description: `${file.name} is ready for Code Interpreter analysis`
+          });
+        } catch (error) {
+          showError(`Failed to upload file: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          this.uploadButtonLabel = "";
+          chatStore.updateLoading("idle");
+        }
+        return;
+      }
+
+      // For text documents, proceed with Azure Search indexing
       this.uploadButtonLabel = "Processing document";
       const crackingResponse = await CrackDocument(formData);
       if (crackingResponse.status === "OK") {

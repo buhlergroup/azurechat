@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/features/ui/button";
-import { Globe, ImageIcon } from "lucide-react";
+import { Globe, ImageIcon, Building2, Code2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -12,7 +12,7 @@ import { chatStore, useChat } from "../chat-store";
 import { cn } from "@/ui/lib";
 
 export const ToolToggles = () => {
-  const { webSearchEnabled, imageGenerationEnabled, loading } = useChat();
+  const { webSearchEnabled, imageGenerationEnabled, companyContentEnabled, codeInterpreterEnabled, loading } = useChat();
 
   return (
     <div className="flex gap-1 items-center">
@@ -69,6 +69,64 @@ export const ToolToggles = () => {
             <p>Image Generation</p>
             <p className="text-xs text-muted-foreground">
               Generate images
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={companyContentEnabled ? "default" : "ghost"}
+              size="icon"
+              className={cn("h-8 w-8", companyContentEnabled && "bg-primary text-primary-foreground")}
+              onClick={() => chatStore.toggleCompanyContent(!companyContentEnabled)}
+              disabled={loading === "loading"}
+            >
+              <Building2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent 
+            side="top" 
+            align="start" 
+            sideOffset={5} 
+            collisionPadding={{ left: 16, right: 16, top: 8, bottom: 8 }}
+            avoidCollisions={true}
+          >
+            <p>Company Content</p>
+            <p className="text-xs text-muted-foreground">
+              Search SharePoint, OneDrive & connected sources
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={codeInterpreterEnabled ? "default" : "ghost"}
+              size="icon"
+              className={cn("h-8 w-8", codeInterpreterEnabled && "bg-primary text-primary-foreground")}
+              onClick={() => chatStore.toggleCodeInterpreter(!codeInterpreterEnabled)}
+              disabled={loading === "loading"}
+            >
+              <Code2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent 
+            side="top" 
+            align="start" 
+            sideOffset={5} 
+            collisionPadding={{ left: 16, right: 16, top: 8, bottom: 8 }}
+            avoidCollisions={true}
+          >
+            <p>Code Interpreter</p>
+            <p className="text-xs text-muted-foreground">
+              Execute Python code for data analysis & file processing
             </p>
           </TooltipContent>
         </Tooltip>

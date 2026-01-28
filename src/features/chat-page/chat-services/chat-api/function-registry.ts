@@ -3,7 +3,7 @@ import "server-only";
 
 import { SimilaritySearch } from "../azure-ai-search/azure-ai-search";
 import { CreateCitations, FormatCitations } from "../citation-service";
-import { userHashedId } from "@/features/auth-page/helpers";
+import { getCurrentUser, userHashedId } from "@/features/auth-page/helpers";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { AllowedPersonaDocumentIds } from "@/features/persona-page/persona-services/persona-documents-service";
 import { ConversationContext } from "./conversation-manager";
@@ -162,10 +162,161 @@ async function searchDocuments(
   };
 }
 
+// Company content search function using Microsoft 365 Copilot Retrieval API
+async function searchCompanyContent(
+  args: { query: string; dataSource?: string; maxResults?: number },
+  context: { conversationContext: ConversationContext; userMessage: string; signal: AbortSignal }
+) {
+  logInfo("Searching company content", {
+    queryLength: args.query?.length || 0,
+    dataSource: args.dataSource || "sharePoint",
+    maxResults: args.maxResults || 10,
+    threadId: context.conversationContext.chatThread.id
+  });
+  logDebug("Company content search query", { query: args.query });
+
+  try {
+    const user = await getCurrentUser();
+    const token = user.token;
+    
+    if (!token) {
+      logError("No access token available for company content search");
+      return {
+        query: args.query,
+        results: [],
+        summary: "Unable to search company content: No access token available. Please sign in again.",
+        error: true
+      };
+    }
+
+    // Log token info for debugging (first/last few chars only for security)
+    logDebug("Company content search token check", {
+      tokenLength: token.length,
+      tokenPrefix: token.substring(0, 10) + "...",
+      userEmail: user.email
+    });
+
+    const dataSource = args.dataSource || "sharePoint";
+    const maxResults = Math.min(Math.max(args.maxResults || 10, 1), 25);
+
+    // Call Microsoft Graph Copilot Retrieval API
+    const response = await fetch("https://graph.microsoft.com/v1.0/copilot/retrieval", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        queryString: args.query.substring(0, 1500), // Limit to 1500 chars per API docs
+        dataSource: dataSource,
+        resourceMetadata: ["title", "author"],
+        maximumNumberOfResults: maxResults,
+      }),
+      signal: context.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logError("Company content search failed", { status: response.status, error: errorText });
+      
+      if (response.status === 401) {
+        return {
+          query: args.query,
+          results: [],
+          summary: "Company content search failed: Authorization expired. Please sign in again.",
+          error: true
+        };
+      }
+      
+      if (response.status === 403) {
+        return {
+          query: args.query,
+          results: [],
+          summary: "Company content search failed: Insufficient permissions. The required permissions are Files.Read.All and Sites.Read.All.",
+          error: true
+        };
+      }
+
+      return {
+        query: args.query,
+        results: [],
+        summary: `Company content search failed: ${response.status} ${response.statusText}`,
+        error: true
+      };
+    }
+
+    const data = await response.json();
+    const hits = data.retrievalHits || [];
+
+    logInfo("Company content search completed", { resultCount: hits.length });
+
+    // Format results for the AI
+    const results = hits.map((hit: any, index: number) => {
+      const title = hit.resourceMetadata?.title || extractTitleFromUrl(hit.webUrl);
+      const author = hit.resourceMetadata?.author || "Unknown";
+      const extracts = hit.extracts || [];
+      
+      return {
+        index: index + 1,
+        title: title,
+        author: author,
+        url: hit.webUrl,
+        resourceType: hit.resourceType,
+        sensitivityLabel: hit.sensitivityLabel?.displayName || null,
+        content: extracts.map((e: any) => e.text).join("\n\n"),
+        relevanceScores: extracts.map((e: any) => e.relevanceScore).filter(Boolean),
+      };
+    });
+
+    // Create context text for the AI
+    const contextText = results
+      .map((r: any) => {
+        return `[${r.index}] ${r.title} (by ${r.author})${r.sensitivityLabel ? ` [${r.sensitivityLabel}]` : ""}
+Source: ${r.url}
+Content:
+${r.content}
+`;
+      })
+      .join("\n---\n");
+
+    return {
+      query: args.query,
+      dataSource: dataSource,
+      results: results,
+      contextText: contextText,
+      summary: `Found ${results.length} relevant company documents for: "${args.query}". Use this content to ground your response and cite sources when relevant.`,
+      resultCount: results.length
+    };
+  } catch (error) {
+    logError("Company content search error", { error: error instanceof Error ? error.message : String(error) });
+    return {
+      query: args.query,
+      results: [],
+      summary: `Company content search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      error: true
+    };
+  }
+}
+
+// Helper to extract title from URL
+function extractTitleFromUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split("/").filter(Boolean);
+    const lastPart = pathParts[pathParts.length - 1] || "Untitled";
+    return decodeURIComponent(lastPart.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
+  } catch {
+    return "Untitled";
+  }
+}
+
 // Register built-in functions (will be called when needed)
 async function ensureBuiltInFunctionsRegistered() {
   if (!functionRegistry.has("search_documents")) {
     await registerFunction("search_documents", searchDocuments);
+  }
+  if (!functionRegistry.has("search_company_content")) {
+    await registerFunction("search_company_content", searchCompanyContent);
   }
 }
 
@@ -205,6 +356,29 @@ export async function getToolByName(toolName: string): Promise<FunctionDefinitio
             type: ["number", "null"],
             description: "Number of documents to skip (default: 0). Use to paginate (e.g., skip=10 with top=10 for the second page)."
           }  
+        }
+      },
+      strict: true as const
+    },
+    {
+      type: "function" as const,
+      name: "search_company_content",
+      description: "Search for relevant content from company SharePoint, OneDrive, and connected data sources. Use this tool when the user asks questions about company policies, internal documents, procedures, or any information that might be in corporate repositories. This searches across all content the user has access to.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Natural language query to search for relevant company content. Should be a clear, concise question or topic (max 1500 characters)."
+          },
+          dataSource: {
+            type: ["string", "null"],
+            description: "The data source to search. Options: 'sharePoint' (SharePoint sites), 'oneDriveBusiness' (OneDrive for Business). Default: 'sharePoint'."
+          },
+          maxResults: {
+            type: ["number", "null"],
+            description: "Maximum number of results to return (1-25). Default: 10."
+          }
         }
       },
       strict: true as const

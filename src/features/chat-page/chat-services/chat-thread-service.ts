@@ -22,6 +22,7 @@ import {
   ChatDocumentModel,
   ChatMessageModel,
   ChatThreadModel,
+  AttachedFileModel,
 } from "./models";
 import { redirect } from "next/navigation";
 import { ChatApiText } from "./chat-api/chat-api-text";
@@ -470,6 +471,91 @@ export const UpdateChatThreadReasoningEffort = async (
     if (response.status === "OK") {
       const chatThread = response.response;
       chatThread.reasoningEffort = reasoningEffort as any;
+      return await UpsertChatThread(chatThread);
+    }
+    return response;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
+export const UpdateChatThreadCodeInterpreterContainer = async (
+  chatThreadId: string,
+  containerId: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const response = await FindChatThreadForCurrentUser(chatThreadId);
+    if (response.status === "OK") {
+      const chatThread = response.response;
+      chatThread.codeInterpreterContainerId = containerId;
+      return await UpsertChatThread(chatThread);
+    }
+    return response;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
+export const UpdateChatThreadAttachedFiles = async (
+  chatThreadId: string,
+  attachedFiles: AttachedFileModel[]
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const response = await FindChatThreadForCurrentUser(chatThreadId);
+    if (response.status === "OK") {
+      const chatThread = response.response;
+      chatThread.attachedFiles = attachedFiles;
+      return await UpsertChatThread(chatThread);
+    }
+    return response;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
+export const AddAttachedFile = async (
+  chatThreadId: string,
+  file: AttachedFileModel
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const response = await FindChatThreadForCurrentUser(chatThreadId);
+    if (response.status === "OK") {
+      const chatThread = response.response;
+      const existingFiles = chatThread.attachedFiles || [];
+      // Avoid duplicates
+      if (!existingFiles.some(f => f.id === file.id)) {
+        chatThread.attachedFiles = [...existingFiles, file];
+        return await UpsertChatThread(chatThread);
+      }
+      return response;
+    }
+    return response;
+  } catch (error) {
+    return {
+      status: "ERROR",
+      errors: [{ message: `${error}` }],
+    };
+  }
+};
+
+export const RemoveAttachedFile = async (
+  chatThreadId: string,
+  fileId: string
+): Promise<ServerActionResponse<ChatThreadModel>> => {
+  try {
+    const response = await FindChatThreadForCurrentUser(chatThreadId);
+    if (response.status === "OK") {
+      const chatThread = response.response;
+      chatThread.attachedFiles = (chatThread.attachedFiles || []).filter(f => f.id !== fileId);
       return await UpsertChatThread(chatThread);
     }
     return response;

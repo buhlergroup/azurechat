@@ -11,7 +11,7 @@ const requireAuth: string[] = [
 ];
 const requireAdmin: string[] = ["/reporting"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const res = NextResponse.next();
   const pathname = request.nextUrl.pathname;
   // Check if the user is trying to access the root path

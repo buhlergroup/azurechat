@@ -28,7 +28,7 @@ import { MODEL_CONFIGS } from "./chat-services/models";
 import { ToolToggles } from "./chat-input/tool-toggles";
 import { InputImageStore, useInputImage } from "@/features/ui/chat/chat-input-area/input-image-store";
 import Image from "next/image";
-import { X } from "lucide-react";
+import { X, FileSpreadsheet } from "lucide-react";
 import { ChatImageDisplay } from "./chat-image-display";
 
 interface ChatPageProps {
@@ -163,7 +163,7 @@ export const ChatPage = (props: ChatPageProps) => {
   }, [props.chatThread.id, session?.user?.name]);
 
   // Separate subscriptions: messages handled in ChatMessages; here only input & control state
-  const { input, chatThreadId, selectedModel, reasoningEffort, phase, loading, messages } = useChat();
+  const { input, chatThreadId, selectedModel, reasoningEffort, phase, loading, messages, attachedFiles } = useChat();
   const { uploadButtonLabel } = useFileStore();
   const { base64Image, previewImage } = useInputImage();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -314,6 +314,38 @@ export const ChatPage = (props: ChatPageProps) => {
             </div>
           )}
           <input type="hidden" name="image-base64" value={base64Image} />
+          
+          {/* Attached Files (Code Interpreter files) */}
+          {attachedFiles.filter(f => f.type === "code-interpreter").length > 0 && (
+            <div className="flex flex-wrap gap-2 p-2">
+              {attachedFiles.filter(f => f.type === "code-interpreter").map((file) => (
+                <div key={file.id} className="relative group flex items-center gap-2 bg-muted border rounded-lg px-3 py-2 pr-8">
+                  <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium truncate max-w-[150px]" title={file.name}>
+                      {file.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">Code Interpreter</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={async () => {
+                      chatStore.removeAttachedFile(file.id);
+                      // Also remove from database
+                      const { RemoveAttachedFile } = await import("./chat-services/chat-thread-service");
+                      await RemoveAttachedFile(chatThreadId, file.id);
+                    }}
+                    type="button"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          
           {props.chatDocuments.length > 0 && (
             <div className="flex flex-wrap gap-2 p-2">
               {props.chatDocuments.map((doc, i) => (

@@ -295,6 +295,15 @@ export interface ChatMessageModel {
 
 export type ChatRole = "system" | "user" | "assistant" | "function" | "tool" | "reasoning";
 
+export type AttachedFileType = "code-interpreter" | "search-indexed";
+
+export interface AttachedFileModel {
+  id: string;
+  name: string;
+  type: AttachedFileType;
+  uploadedAt?: Date;
+}
+
 export interface ChatThreadModel {
   id: string;
   name: string;
@@ -312,6 +321,8 @@ export interface ChatThreadModel {
   selectedModel?: ChatModel;
   reasoningEffort?: ReasoningEffort;
   isTemporary?: boolean;
+  codeInterpreterContainerId?: string;
+  attachedFiles?: Array<AttachedFileModel>;
 }
 
 export interface UserPrompt {
@@ -325,6 +336,9 @@ export interface UserPrompt {
   reasoningEffort?: ReasoningEffort;
   webSearchEnabled?: boolean;
   imageGenerationEnabled?: boolean;
+  companyContentEnabled?: boolean;
+  codeInterpreterEnabled?: boolean;
+  codeInterpreterFileIds?: string[];
 }
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
