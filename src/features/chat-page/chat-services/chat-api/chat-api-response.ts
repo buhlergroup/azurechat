@@ -114,38 +114,49 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
   }
 
   // Build code interpreter tool configuration if enabled
-  // If we have an existing container ID from a previous request, reuse it
-  // Otherwise, create a new container with any uploaded file IDs
+  // Container management: 
+  // - type: "auto" lets the API automatically reuse an active container from the conversation context (within 20 min timeout)
+  // - Only create a new container when new files are added (files can only be added at container creation time)
+  // - The API returns the container_id which we store for reference and reuse in subsequent calls
   const buildCodeInterpreterTool = (useExistingContainer: boolean) => {
     if (!props.codeInterpreterEnabled) return null;
     
     const hasNewFiles = props.codeInterpreterFileIds && props.codeInterpreterFileIds.length > 0;
-    const hasExistingContainer = useExistingContainer && !!currentChatThread.codeInterpreterContainerId;
+    const hasExistingContainer = useExistingContainer && !!currentChatThread.codeInterpreterContainerId && !hasNewFiles;
     
-    if (hasExistingContainer) {
-      // Reuse existing container by passing the container ID directly
-      // New files can be added via file_ids in addition to the existing container
-      logInfo("Reusing existing Code Interpreter container", { 
-        containerId: currentChatThread.codeInterpreterContainerId,
-        addingNewFiles: hasNewFiles,
-        newFileCount: props.codeInterpreterFileIds?.length || 0 
-      });
-      return {
-        type: "code_interpreter",
-        container: currentChatThread.codeInterpreterContainerId,
-        ...(hasNewFiles ? { file_ids: props.codeInterpreterFileIds } : {})
-      };
-    } else {
-      // Create new container (auto), optionally with new files
-      logInfo("Creating new Code Interpreter container", { 
-        hasNewFiles,
-        fileCount: props.codeInterpreterFileIds?.length || 0 
+    if (hasNewFiles) {
+      // When new files are added, always create a new container session
+      // This allows the new files to be properly integrated
+      // The API will create a fresh container since we're passing file_ids
+      logInfo("Creating new Code Interpreter container session for new files", { 
+        fileCount: props.codeInterpreterFileIds?.length || 0,
+        fileIds: props.codeInterpreterFileIds
       });
       return {
         type: "code_interpreter",
         container: { 
           type: "auto",
-          ...(hasNewFiles ? { file_ids: props.codeInterpreterFileIds } : {})
+          file_ids: props.codeInterpreterFileIds || []
+        }
+      };
+    } else if (hasExistingContainer) {
+      // Reuse existing container by its ID
+      // The API will validate and reuse if still active (within 20 min idle timeout)
+      logInfo("Reusing existing Code Interpreter container", { 
+        containerId: currentChatThread.codeInterpreterContainerId
+      });
+      return {
+        type: "code_interpreter",
+        container: currentChatThread.codeInterpreterContainerId
+      };
+    } else {
+      // Create new container without files
+      // type: "auto" will create a new container or reuse if one exists in context (within 20 min timeout)
+      logInfo("Creating new Code Interpreter container without files");
+      return {
+        type: "code_interpreter",
+        container: { 
+          type: "auto"
         }
       };
     }

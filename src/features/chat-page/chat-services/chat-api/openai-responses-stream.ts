@@ -534,6 +534,30 @@ export const OpenAIResponsesStream = (props: {
                         },
                       };
                       streamResponse(logsResponse.type, JSON.stringify(logsResponse));
+                    } else if ((output as any).type === "file" && (output as any).file_id) {
+                      // Handle file outputs (including generated images and data files)
+                      // These are stored in the Code Interpreter container with file_id
+                      const fileOutput = output as any;
+                      const fileName = fileOutput.filename || `output_${fileOutput.file_id}`;
+                      const fileContent = `\n\n📎 [Download: ${fileName}](/api/code-interpreter/file/${fileOutput.file_id})\n\n`;
+                      codeInterpreterOutput += fileContent;
+                      lastMessage += fileContent;
+                      
+                      const fileResponse: AzureChatCompletion = {
+                        type: "content",
+                        response: {
+                          id: messageId,
+                          choices: [{
+                            message: {
+                              content: fileContent,
+                              role: "assistant"
+                            }
+                          }]
+                        },
+                      };
+                      streamResponse(fileResponse.type, JSON.stringify(fileResponse));
+                      
+                      logInfo("Code interpreter file output", { fileName, fileId: fileOutput.file_id });
                     } else if (output.type === "image" && output.url) {
                       try {
                         // Download the image from the URL and upload to blob storage
@@ -581,29 +605,6 @@ export const OpenAIResponsesStream = (props: {
                           url: output.url
                         });
                       }
-                    } else if ((output as any).type === "file" && (output as any).file_id) {
-                      // Handle file outputs - provide a download link
-                      const fileOutput = output as any;
-                      const fileName = fileOutput.name || `output_${fileOutput.file_id}`;
-                      const fileContent = `\n\n📎 [Download: ${fileName}](/api/code-interpreter/file/${fileOutput.file_id})\n\n`;
-                      codeInterpreterOutput += fileContent;
-                      lastMessage += fileContent;
-                      
-                      const fileResponse: AzureChatCompletion = {
-                        type: "content",
-                        response: {
-                          id: messageId,
-                          choices: [{
-                            message: {
-                              content: fileContent,
-                              role: "assistant"
-                            }
-                          }]
-                        },
-                      };
-                      streamResponse(fileResponse.type, JSON.stringify(fileResponse));
-                      
-                      logInfo("Code interpreter file output", { fileName, fileId: fileOutput.file_id });
                     }
                   }
 
