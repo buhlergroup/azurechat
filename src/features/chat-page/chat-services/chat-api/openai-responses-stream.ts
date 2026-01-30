@@ -78,13 +78,18 @@ export const OpenAIResponsesStream = (props: {
     messageId: string, 
     chatThread: ChatThreadModel, 
     controller: ReadableStreamDefaultController, 
-    streamResponse: (event: string, value: string) => void
+    streamResponse: (event: string, value: string) => void,
+    codeInterpreterFiles: Record<string, string> = {}
   ) => {
     logInfo("Response completion handler called", { 
       eventType: event.type,
       messageLength: lastMessage?.length || 0,
-      hasReasoning: !!reasoningContent
+      hasReasoning: !!reasoningContent,
+      codeInterpreterFilesCount: Object.keys(codeInterpreterFiles).length
     });
+    
+    // Initialize processedMessage - will be updated after annotation processing
+    let processedMessage = lastMessage;
     
     // For response.completed events, the final content is already accumulated in lastMessage
     // The event.response.output contains the final structured output, but we've been
@@ -93,13 +98,190 @@ export const OpenAIResponsesStream = (props: {
       ?.find((item: any) => item.type === "reasoning");
     const messageOutput = event.response?.output?.find((item: any) => item.type === "message");
     const originalMessageId = messageOutput?.id || messageId;
-
+    
+    // Log the full response output for debugging
+    logInfo("Response completion output structure", {
+      outputCount: event.response?.output?.length || 0,
+      outputTypes: event.response?.output?.map((o: any) => o.type),
+      messageOutputContent: messageOutput?.content,
+      hasAnnotations: messageOutput?.content?.some((c: any) => c.annotations?.length > 0)
+    });
+    
+    // Process annotations from the message to extract file references
+    // Code Interpreter files are cited in annotations of the message
+    if (messageOutput?.content && Array.isArray(messageOutput.content)) {
+      for (const contentPart of messageOutput.content) {
+        if (contentPart.annotations && Array.isArray(contentPart.annotations)) {
+          logInfo("Found annotations in message content", {
+            annotationCount: contentPart.annotations.length,
+            annotations: contentPart.annotations
+          });
+          
+          for (const annotation of contentPart.annotations) {
+            // Check for container_file_citation annotations (Code Interpreter files)
+            if (annotation.type === "container_file_citation" && annotation.file_id && annotation.container_id) {
+              logInfo("Found container_file_citation annotation", {
+                fileId: annotation.file_id,
+                filename: annotation.filename,
+                containerId: annotation.container_id
+              });
+              
+              // Download the file from the container and store it
+              try {
+                const { DownloadContainerFile } = await import("../code-interpreter-service");
+                const { UploadImageToStore, GetImageUrl } = await import("../chat-image-service");
+                
+                const downloadResult = await DownloadContainerFile(
+                  annotation.container_id,
+                  annotation.file_id,
+                  annotation.filename || "output"
+                );
+                
+                if (downloadResult.status === "OK") {
+                  const { data: fileBuffer, name: originalFileName, contentType } = downloadResult.response;
+                  
+                  const fileExtension = originalFileName.split(".").pop() || "bin";
+                  const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
+                  
+                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer);
+                  const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
+                  
+                  // Store mapping for URL replacement - use the annotation's filename
+                  const annotationFilename = annotation.filename || originalFileName;
+                  codeInterpreterFiles[annotationFilename] = fileUrl;
+                  
+                  logInfo("Container file downloaded and stored", {
+                    annotationFilename,
+                    originalFileName,
+                    storedFileName,
+                    fileUrl
+                  });
+                } else {
+                  logError("Container file download failed", {
+                    fileId: annotation.file_id,
+                    containerId: annotation.container_id,
+                    errors: downloadResult.errors
+                  });
+                }
+              } catch (error) {
+                logError("Failed to download container file", {
+                  error: error instanceof Error ? error.message : String(error),
+                  fileId: annotation.file_id,
+                  containerId: annotation.container_id
+                });
+              }
+            }
+            // Check for file_citation annotations (legacy/other types)
+            else if (annotation.type === "file_citation" && annotation.file_id) {
+              logInfo("Found file_citation annotation", {
+                fileId: annotation.file_id,
+                filename: annotation.filename,
+                text: annotation.text
+              });
+              
+              // Download the file and store it
+              try {
+                const { DownloadFileFromCodeInterpreter } = await import("../code-interpreter-service");
+                const { UploadImageToStore, GetImageUrl } = await import("../chat-image-service");
+                
+                const downloadResult = await DownloadFileFromCodeInterpreter(annotation.file_id);
+                
+                if (downloadResult.status === "OK") {
+                  const { data: fileBuffer, name: originalFileName, contentType } = downloadResult.response;
+                  
+                  const fileExtension = originalFileName.split(".").pop() || "bin";
+                  const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
+                  
+                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer);
+                  const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
+                  
+                  // Store mapping for URL replacement
+                  codeInterpreterFiles[originalFileName] = fileUrl;
+                  
+                  logInfo("Annotation file downloaded and stored", {
+                    originalFileName,
+                    storedFileName,
+                    fileUrl
+                  });
+                }
+              } catch (error) {
+                logError("Failed to download annotation file", {
+                  error: error instanceof Error ? error.message : String(error),
+                  fileId: annotation.file_id
+                });
+              }
+            } else if (annotation.type === "file_path" && annotation.file_id) {
+              // Handle file_path annotations (for sandbox:// paths)
+              logInfo("Found file_path annotation", {
+                fileId: annotation.file_id,
+                filePath: annotation.file_path,
+                text: annotation.text
+              });
+              
+              // Extract filename from the path
+              const pathParts = (annotation.file_path || "").split("/");
+              const filename = pathParts[pathParts.length - 1];
+              
+              // Download the file and store it
+              try {
+                const { DownloadFileFromCodeInterpreter } = await import("../code-interpreter-service");
+                const { UploadImageToStore, GetImageUrl } = await import("../chat-image-service");
+                
+                const downloadResult = await DownloadFileFromCodeInterpreter(annotation.file_id);
+                
+                if (downloadResult.status === "OK") {
+                  const { data: fileBuffer, name: originalFileName, contentType } = downloadResult.response;
+                  
+                  const fileExtension = originalFileName.split(".").pop() || "bin";
+                  const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
+                  
+                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer);
+                  const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
+                  
+                  // Store mapping for URL replacement using both the filename and the full sandbox path
+                  codeInterpreterFiles[originalFileName] = fileUrl;
+                  if (filename) {
+                    codeInterpreterFiles[filename] = fileUrl;
+                  }
+                  
+                  logInfo("File path annotation file downloaded and stored", {
+                    originalFileName,
+                    filename,
+                    storedFileName,
+                    fileUrl
+                  });
+                }
+              } catch (error) {
+                logError("Failed to download file path annotation file", {
+                  error: error instanceof Error ? error.message : String(error),
+                  fileId: annotation.file_id
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Now replace sandbox URLs with the stored file URLs
+    // Use direct string replacement based on the annotation mappings
+    if (Object.keys(codeInterpreterFiles).length > 0) {
+      for (const [filename, storedUrl] of Object.entries(codeInterpreterFiles)) {
+        // Replace sandbox:// paths with stored URLs
+        const sandboxPattern = `sandbox:/mnt/data/${filename}`;
+        if (processedMessage.includes(sandboxPattern)) {
+          processedMessage = processedMessage.split(sandboxPattern).join(storedUrl);
+          logInfo("Replaced sandbox path with stored URL", { filename, storedUrl });
+        }
+      }
+    }
+    
     const finalReasoningContent = Object.keys(reasoningSummaries).length > 0 
       ? Object.values(reasoningSummaries).join('\n\n') 
       : reasoningContent;
 
-    // Save message to database
-    await saveMessage(originalMessageId, lastMessage, finalReasoningContent, chatThread, undefined, encryptedReasoning);
+    // Save message to database (use processedMessage with replaced URLs)
+    await saveMessage(originalMessageId, processedMessage, finalReasoningContent, chatThread, undefined, encryptedReasoning);
 
     // Report token usage
     if (event.response?.usage) {
@@ -125,13 +307,13 @@ export const OpenAIResponsesStream = (props: {
       });
     }
 
-    // Send final response and close
+    // Send final response and close (use processedMessage with replaced URLs)
     const finalResponse: AzureChatCompletion = {
       type: "finalContent",
-      response: lastMessage,
+      response: processedMessage,
     };
     logInfo("Sending finalContent event to frontend", {
-      messageLength: lastMessage.length,
+      messageLength: processedMessage.length,
       responseType: finalResponse.type,
       responseData: JSON.stringify(finalResponse)
     });
@@ -181,6 +363,8 @@ export const OpenAIResponsesStream = (props: {
       let functionCalls: Record<number, any> = {}; // Track function calls per output index
       let toolCallHistory: Array<{ name: string; arguments: string; result?: string; timestamp: Date; call_id?: string }> = [];
       let currentConversationState = conversationState; // Use passed conversation state
+      // Track Code Interpreter files: maps filename to stored URL
+      let codeInterpreterFiles: Record<string, string> = {};
       // Use a consistent message ID across the entire conversation
       const messageId = conversationState?.messageId || uniqueId();
       logDebug("OpenAI Responses Stream: Using message ID", {
@@ -514,6 +698,11 @@ export const OpenAIResponsesStream = (props: {
                 if (event.item?.outputs && Array.isArray(event.item.outputs)) {
                   let codeInterpreterOutput = "";
                   
+                  logInfo("Processing Code Interpreter outputs", {
+                    outputCount: event.item.outputs.length,
+                    outputTypes: event.item.outputs.map((o: any) => ({ type: o.type, hasFileId: !!o.file_id, hasUrl: !!o.url, filename: o.filename }))
+                  });
+                  
                   for (const output of event.item.outputs) {
                     if (output.type === "logs" && output.logs) {
                       // Stream logs as code block
@@ -535,29 +724,92 @@ export const OpenAIResponsesStream = (props: {
                       };
                       streamResponse(logsResponse.type, JSON.stringify(logsResponse));
                     } else if ((output as any).type === "file" && (output as any).file_id) {
-                      // Handle file outputs (including generated images and data files)
-                      // These are stored in the Code Interpreter container with file_id
+                      // Handle file outputs from Code Interpreter
+                      // Download from OpenAI and upload to our blob storage
                       const fileOutput = output as any;
-                      const fileName = fileOutput.filename || `output_${fileOutput.file_id}`;
-                      const fileContent = `\n\n📎 [Download: ${fileName}](/api/code-interpreter/file/${fileOutput.file_id})\n\n`;
-                      codeInterpreterOutput += fileContent;
-                      lastMessage += fileContent;
+                      const fileId = fileOutput.file_id;
                       
-                      const fileResponse: AzureChatCompletion = {
-                        type: "content",
-                        response: {
-                          id: messageId,
-                          choices: [{
-                            message: {
-                              content: fileContent,
-                              role: "assistant"
-                            }
-                          }]
-                        },
-                      };
-                      streamResponse(fileResponse.type, JSON.stringify(fileResponse));
+                      logInfo("Found file output from Code Interpreter", {
+                        fileId,
+                        filename: fileOutput.filename,
+                        outputType: fileOutput.type
+                      });
                       
-                      logInfo("Code interpreter file output", { fileName, fileId: fileOutput.file_id });
+                      try {
+                        const { DownloadFileFromCodeInterpreter } = await import("../code-interpreter-service");
+                        const { UploadImageToStore, GetImageUrl } = await import("../chat-image-service");
+                        
+                        logInfo("Downloading file from OpenAI Files API", { fileId });
+                        
+                        // Download file from OpenAI Files API
+                        const downloadResult = await DownloadFileFromCodeInterpreter(fileId);
+                        
+                        if (downloadResult.status === "OK") {
+                          const { data: fileBuffer, name: originalFileName, contentType } = downloadResult.response;
+                          
+                          // Generate unique filename for storage
+                          const fileExtension = originalFileName.split(".").pop() || "bin";
+                          const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
+                          
+                          // Upload to blob storage (same as images)
+                          await UploadImageToStore(
+                            chatThread.id,
+                            storedFileName,
+                            fileBuffer
+                          );
+                          
+                          // Get the URL for the stored file
+                          const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
+                          
+                          // Store the mapping from original filename to stored URL
+                          // This allows us to replace sandbox:// URLs in the model's text
+                          codeInterpreterFiles[originalFileName] = fileUrl;
+                          
+                          // Check if it's an image type - display inline
+                          const isImage = contentType.startsWith("image/");
+                          const fileMarkdown = isImage
+                            ? `\n\n![${originalFileName}](${fileUrl})\n\n`
+                            : `\n\n📎 [Download: ${originalFileName}](${fileUrl})\n\n`;
+                          
+                          codeInterpreterOutput += fileMarkdown;
+                          lastMessage += fileMarkdown;
+                          
+                          // Stream the file link as content
+                          const fileResponse: AzureChatCompletion = {
+                            type: "content",
+                            response: {
+                              id: messageId,
+                              choices: [{
+                                message: {
+                                  content: fileMarkdown,
+                                  role: "assistant"
+                                }
+                              }]
+                            },
+                          };
+                          streamResponse(fileResponse.type, JSON.stringify(fileResponse));
+                          
+                          logInfo("Code interpreter file downloaded and stored", { 
+                            originalFileName, 
+                            storedFileName,
+                            fileId,
+                            fileUrl,
+                            contentType,
+                            isImage,
+                            mappingAdded: true
+                          });
+                        } else {
+                          logError("Failed to download code interpreter file", { 
+                            fileId, 
+                            error: downloadResult.errors[0]?.message 
+                          });
+                        }
+                      } catch (error) {
+                        logError("Failed to process code interpreter file output", { 
+                          error: error instanceof Error ? error.message : String(error),
+                          fileId
+                        });
+                      }
                     } else if (output.type === "image" && output.url) {
                       try {
                         // Download the image from the URL and upload to blob storage
@@ -661,8 +913,11 @@ export const OpenAIResponsesStream = (props: {
               break;
 
             case "response.completed":
-              logInfo("Received response.completed event");
-              await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse);
+              logInfo("Received response.completed event", {
+                codeInterpreterFilesCount: Object.keys(codeInterpreterFiles).length,
+                filesMapped: Object.keys(codeInterpreterFiles)
+              });
+              await handleResponseCompletion(event, lastMessage, reasoningContent, reasoningSummaries, messageId, chatThread, controller, streamResponse, codeInterpreterFiles);
               return;
 
             case "error":
@@ -724,15 +979,29 @@ export const OpenAIResponsesStream = (props: {
 
         // Stream ended without completion event - send final content if available
         if (lastMessage && !messageSaved) {
-          logInfo("Stream ended without completion event - sending final content");
-          await saveMessage(messageId, lastMessage, reasoningContent, chatThread, toolCallHistory);
+          logInfo("Stream ended without completion event - sending final content", {
+            codeInterpreterFilesCount: Object.keys(codeInterpreterFiles).length
+          });
+          
+          // Replace sandbox:// URLs with stored file URLs using direct string replacement
+          let processedMessage = lastMessage;
+          if (Object.keys(codeInterpreterFiles).length > 0) {
+            for (const [filename, storedUrl] of Object.entries(codeInterpreterFiles)) {
+              const sandboxPattern = `sandbox:/mnt/data/${filename}`;
+              if (processedMessage.includes(sandboxPattern)) {
+                processedMessage = processedMessage.split(sandboxPattern).join(storedUrl);
+              }
+            }
+          }
+          
+          await saveMessage(messageId, processedMessage, reasoningContent, chatThread, toolCallHistory);
           
           const finalResponse: AzureChatCompletion = {
             type: "finalContent",
-            response: lastMessage,
+            response: processedMessage,
           };
           logInfo("Sending finalContent event (fallback)", {
-            messageLength: lastMessage.length,
+            messageLength: processedMessage.length,
             responseType: finalResponse.type
           });
           streamResponse(finalResponse.type, JSON.stringify(finalResponse));

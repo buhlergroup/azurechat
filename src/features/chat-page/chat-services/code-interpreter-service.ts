@@ -156,3 +156,94 @@ export async function DeleteFileFromCodeInterpreter(
   }
 }
 
+/**
+ * Download a file from a Code Interpreter container
+ * Uses the OpenAI SDK's containers.files.content.retrieve() method
+ */
+export async function DownloadContainerFile(
+  containerId: string,
+  fileId: string,
+  filename: string
+): Promise<ServerActionResponse<{ data: Buffer; name: string; contentType: string }>> {
+  try {
+    logInfo("Starting container file download", { containerId, fileId, filename });
+
+    const openai = OpenAIV1Instance();
+    
+    logDebug("OpenAI V1 instance created, calling containers.files.content.retrieve", {
+      containerId,
+      fileId
+    });
+    
+    // Use the SDK's containers API to download the file
+    const response = await openai.containers.files.content.retrieve(fileId, {
+      container_id: containerId
+    });
+    
+    logDebug("Container file API response received", {
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers.get('content-type'),
+      contentLength: response.headers.get('content-length')
+    });
+    
+    // The response is a binary Response object
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    logDebug("Container file buffer created", {
+      bufferSize: buffer.length,
+      filename
+    });
+
+    // Determine content type from filename
+    const extension = filename.split(".").pop()?.toLowerCase() || "";
+    const contentTypeMap: Record<string, string> = {
+      "csv": "text/csv",
+      "json": "application/json",
+      "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "pdf": "application/pdf",
+      "png": "image/png",
+      "jpg": "image/jpeg",
+      "jpeg": "image/jpeg",
+      "gif": "image/gif",
+      "txt": "text/plain",
+      "html": "text/html",
+      "zip": "application/zip"
+    };
+    
+    const contentType = contentTypeMap[extension] || response.headers.get('content-type') || "application/octet-stream";
+
+    logInfo("Container file downloaded successfully", { 
+      containerId,
+      fileId, 
+      filename,
+      size: buffer.length,
+      contentType,
+      extension
+    });
+
+    return {
+      status: "OK",
+      response: {
+        data: buffer,
+        name: filename,
+        contentType
+      }
+    };
+  } catch (error) {
+    logError("Failed to download container file", {
+      error: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      containerId,
+      fileId,
+      filename
+    });
+    
+    return {
+      status: "ERROR",
+      errors: [{ message: `Failed to download container file: ${error instanceof Error ? error.message : String(error)}` }]
+    };
+  }
+}
+
