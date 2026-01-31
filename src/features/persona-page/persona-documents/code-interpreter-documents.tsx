@@ -18,7 +18,7 @@ import { ErrorDocumentItem } from "@/features/ui/persona-documents/error-documen
 import { DocumentItem } from "@/features/ui/persona-documents/document-item";
 
 interface Props {
-  initialCIDocumentIds: string[];
+  initialCIDocumentIds: readonly string[];
 }
 
 export const CodeInterpreterDocuments: FC<Props> = ({ initialCIDocumentIds }) => {
