@@ -18,7 +18,7 @@ import { ErrorDocumentItem } from "@/features/ui/persona-documents/error-documen
 import { DocumentItem } from "@/features/ui/persona-documents/document-item";
 
 interface Props {
-  initialCIDocumentIds: string[];
+  initialCIDocumentIds: readonly string[];
 }
 
 export const CodeInterpreterDocuments: FC<Props> = ({ initialCIDocumentIds }) => {
@@ -46,7 +46,7 @@ export const CodeInterpreterDocuments: FC<Props> = ({ initialCIDocumentIds }) =>
       );
 
       return responses
-        .map((response, index) => {
+        .map((response, index): SharePointFile | null => {
           if (response.status === "OK") {
             return {
               id: response.response.id,
