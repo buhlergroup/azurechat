@@ -46,7 +46,7 @@ export const CodeInterpreterDocuments: FC<Props> = ({ initialCIDocumentIds }) =>
       );
 
       return responses
-        .map((response, index) => {
+        .map((response, index): SharePointFile | null => {
           if (response.status === "OK") {
             return {
               id: response.response.id,

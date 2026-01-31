@@ -148,7 +148,7 @@ export const AddNewPersona: FC<Props> = (props) => {
                   initialPersonaDocumentIds={persona.personaDocumentIds || []}
                 />
                 <CodeInterpreterDocuments
-                  initialCIDocumentIds={persona.codeInterpreterDocumentIds || []}
+                  initialCIDocumentIds={persona.codeInterpreterDocumentIds ? [...persona.codeInterpreterDocumentIds] : []}
                 />
               </div>
             </ScrollArea>

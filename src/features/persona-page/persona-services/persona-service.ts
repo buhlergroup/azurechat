@@ -455,7 +455,7 @@ export const CreatePersonaChat = async (
             const { buffer, name, contentType } = downloadResult.response;
             
             // Create a File object from the buffer
-            const file = new File([buffer], name, { type: contentType });
+            const file = new File([new Uint8Array(buffer)], name, { type: contentType });
             
             // Upload to OpenAI for Code Interpreter
             const uploadResult = await UploadFileForCodeInterpreter(file);
