@@ -25,6 +25,7 @@ import {
 import { ExtensionDetail } from "../chat-page/chat-header/extension-detail";
 import { ExtensionModel } from "../extensions-page/extension-services/models";
 import { PersonaDocuments } from "./persona-documents/persona-documents";
+import { CodeInterpreterDocuments } from "./persona-documents/code-interpreter-documents";
 import { PersonaAccessGroup } from "./persona-access-group/persona-access-group";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { useResetableActionState } from "../common/hooks/useResetableActionState";
@@ -145,6 +146,9 @@ export const AddNewPersona: FC<Props> = (props) => {
                 />
                 <PersonaDocuments
                   initialPersonaDocumentIds={persona.personaDocumentIds || []}
+                />
+                <CodeInterpreterDocuments
+                  initialCIDocumentIds={persona.codeInterpreterDocumentIds || []}
                 />
               </div>
             </ScrollArea>

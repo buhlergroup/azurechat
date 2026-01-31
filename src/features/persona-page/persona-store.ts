@@ -9,6 +9,7 @@ import {
   CreatePersona,
   UpsertPersona,
 } from "./persona-services/persona-service";
+import { UpdateOrAddPersonaCIDocuments } from "./persona-services/persona-ci-documents-service";
 
 class PersonaState {
   private defaultModel: PersonaModel = {
@@ -90,10 +91,24 @@ export const usePersonaState = () => {
 
 export const AddOrUpdatePersona = async (previous: any, formData: FormData) => {
   const sharePointFiles = HandleSharePointFiles(formData);
+  const ciSharePointFiles = HandleCISharePointFiles(formData);
   const persona = FormDataToPersonaModel(formData);
 
   if (personaStore.persona.extensionIds) {
     persona.extensionIds = personaStore.persona.extensionIds.map((e) => e);
+  }
+
+  // Handle Code Interpreter documents
+  const currentCIDocuments = persona.codeInterpreterDocumentIds || [];
+  const ciDocsResponse = await UpdateOrAddPersonaCIDocuments(
+    ciSharePointFiles,
+    currentCIDocuments
+  );
+
+  if (ciDocsResponse.status === "OK") {
+    persona.codeInterpreterDocumentIds = ciDocsResponse.response;
+  } else {
+    return ciDocsResponse;
   }
 
   const response =
@@ -122,10 +137,27 @@ const HandleSharePointFiles = (formData: FormData): DocumentMetadata[] => {
   return Array.isArray(fileObj) ? fileObj : [];
 };
 
+const HandleCISharePointFiles = (formData: FormData): DocumentMetadata[] => {
+  const filesObjStrings = formData.getAll(
+    "selectedCIDocumentIds"
+  ) as string[];
+
+  if (!filesObjStrings || filesObjStrings.length === 0 || filesObjStrings[0].length === 0) return [];
+
+  const fileObj = JSON.parse(filesObjStrings[0]) as DocumentMetadata[];
+  return Array.isArray(fileObj) ? fileObj : [];
+};
+
 const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
   const ids = formData.getAll("personaDocumentIds") as string[];
   const fileObj = JSON.parse(ids[0]) as string[];
   const personaDocumentIds =  Array.isArray(fileObj) ? fileObj : [];
+
+  const ciIds = formData.getAll("ciDocumentIds") as string[];
+  const ciFileObj = ciIds.length > 0 && ciIds[0].length > 0 
+    ? JSON.parse(ciIds[0]) as string[] 
+    : [];
+  const codeInterpreterDocumentIds = Array.isArray(ciFileObj) ? ciFileObj : [];
 
   return {
     id: formData.get("id") as string,
@@ -142,5 +174,6 @@ const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
       source: "SHAREPOINT",
     },
     personaDocumentIds: personaDocumentIds,
+    codeInterpreterDocumentIds: codeInterpreterDocumentIds,
   };
 };

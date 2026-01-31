@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const EXTERNAL_SOURCE = "SHAREPOINT";
 export const PERSONA_DOCUMENT_ATTRIBUTE = "PERSONA_DOCUMENT";
+export const PERSONA_CI_DOCUMENT_ATTRIBUTE = "PERSONA_CI_DOCUMENT"; // Code Interpreter documents
 
 export type PersonaDocument = z.infer<typeof PersonaDocumentSchema>;
 
@@ -40,6 +41,18 @@ export const PersonaDocumentSchema = z.object({
   type: z.literal(PERSONA_DOCUMENT_ATTRIBUTE),
 });
 
+// Code Interpreter document schema - for non-text files that should be uploaded to Code Interpreter
+export const PersonaCIDocumentSchema = z.object({
+  id: z.string(),
+  externalFile: SharePointFileSchema,
+  fileName: z.string(), // Original file name from SharePoint
+  userId: z.string(),
+  source: z.literal(EXTERNAL_SOURCE),
+  type: z.literal(PERSONA_CI_DOCUMENT_ATTRIBUTE),
+});
+
+export type PersonaCIDocument = z.infer<typeof PersonaCIDocumentSchema>;
+
 export const AccessGroupSchema = z.object({
   id: z.string(),
   source: z.literal(EXTERNAL_SOURCE),
@@ -74,6 +87,7 @@ export const PersonaModelSchema = z.object({
   type: z.literal(PERSONA_ATTRIBUTE),
   createdAt: z.date(),
   personaDocumentIds: z.array(z.string()).optional(),
+  codeInterpreterDocumentIds: z.array(z.string()).optional(), // SharePoint documents for Code Interpreter
   accessGroup: AccessGroupSchema.optional(),
 });
 
@@ -98,5 +112,14 @@ export const convertPersonaDocumentToSharePointDocument = (file: PersonaDocument
     id: file.id,
     documentId: file.externalFile.documentId,
     parentReference: file.externalFile.parentReference,
+  };
+}
+
+export const convertPersonaCIDocumentToSharePointDocument = (file: PersonaCIDocument): SharePointFile & { fileName: string } => {
+  return {
+    id: file.id,
+    documentId: file.externalFile.documentId,
+    parentReference: file.externalFile.parentReference,
+    fileName: file.fileName,
   };
 }

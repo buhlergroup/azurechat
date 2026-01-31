@@ -6,6 +6,7 @@ import { UpsertChatThread } from "@/features/chat-page/chat-services/chat-thread
 import {
   CHAT_THREAD_ATTRIBUTE,
   ChatThreadModel,
+  AttachedFileModel,
 } from "@/features/chat-page/chat-services/models";
 import {
   ServerActionResponse,
@@ -26,8 +27,14 @@ import {
   DeletePersonaDocumentsByPersonaId,
   UpdateOrAddPersonaDocuments as AddOrUpdatePersonaDocuments,
 } from "./persona-documents-service";
+import { 
+  PersonaCIDocumentsByIds, 
+  DownloadSharePointFile 
+} from "./persona-ci-documents-service";
+import { UploadFileForCodeInterpreter } from "@/features/chat-page/chat-services/code-interpreter-service";
 import { AccessGroupById, UserAccessGroups } from "./access-group-service";
 import { RevalidateCache } from "@/features/common/navigation-helpers";
+import { logInfo, logError } from "@/features/common/services/logger";
 
 interface PersonaInput {
   name: string;
@@ -39,6 +46,7 @@ interface PersonaInput {
     id: string;
     source: "SHAREPOINT";
   };
+  codeInterpreterDocumentIds?: string[];
 }
 
 export const FindPersonaByID = async (
@@ -136,6 +144,7 @@ export const CreatePersona = async (
       type: "PERSONA",
       personaDocumentIds: personaDocumentIds.response,
       accessGroup: props.accessGroup,
+      codeInterpreterDocumentIds: props.codeInterpreterDocumentIds || [],
     };
 
     const valid = ValidateSchema(modelToSave);
@@ -266,6 +275,7 @@ export const UpsertPersona = async (
         extensionIds: personaInput.extensionIds,
         accessGroup: personaInput.accessGroup,
         personaDocumentIds: personaDocumentIds,
+        codeInterpreterDocumentIds: personaInput.codeInterpreterDocumentIds || [],
       };
 
       const validationResponse = ValidateSchema(modelToUpdate);
@@ -410,6 +420,77 @@ export const CreatePersonaChat = async (
       }
     }
 
+    // Download and upload Code Interpreter documents from SharePoint
+    let attachedFiles: AttachedFileModel[] = [];
+    const ciDocumentIds = persona.codeInterpreterDocumentIds || [];
+    
+    if (ciDocumentIds.length > 0) {
+      logInfo("Loading Code Interpreter documents for persona chat", {
+        personaId,
+        ciDocumentCount: ciDocumentIds.length
+      });
+
+      const ciDocsResponse = await PersonaCIDocumentsByIds(ciDocumentIds);
+      
+      if (ciDocsResponse.status === "OK" && ciDocsResponse.response.length > 0) {
+        const ciDocs = ciDocsResponse.response;
+        
+        for (const doc of ciDocs) {
+          try {
+            // Download file from SharePoint
+            const downloadResult = await DownloadSharePointFile(
+              doc.externalFile.parentReference.driveId,
+              doc.externalFile.documentId
+            );
+            
+            if (downloadResult.status !== "OK") {
+              logError("Failed to download CI document from SharePoint", {
+                documentId: doc.id,
+                fileName: doc.fileName,
+                error: downloadResult.errors
+              });
+              continue;
+            }
+
+            const { buffer, name, contentType } = downloadResult.response;
+            
+            // Create a File object from the buffer
+            const file = new File([buffer], name, { type: contentType });
+            
+            // Upload to OpenAI for Code Interpreter
+            const uploadResult = await UploadFileForCodeInterpreter(file);
+            
+            if (uploadResult.status === "OK") {
+              attachedFiles.push({
+                id: uploadResult.response.id,
+                name: uploadResult.response.name,
+                type: "code-interpreter",
+                uploadedAt: new Date()
+              });
+              
+              logInfo("Successfully uploaded CI document to OpenAI", {
+                documentId: doc.id,
+                fileName: name,
+                openaiFileId: uploadResult.response.id
+              });
+            } else {
+              logError("Failed to upload CI document to OpenAI", {
+                documentId: doc.id,
+                fileName: name,
+                error: uploadResult.errors
+              });
+            }
+          } catch (error) {
+            logError("Error processing CI document", {
+              documentId: doc.id,
+              fileName: doc.fileName,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
+      }
+    }
+
     const response = await UpsertChatThread({
       name: persona.name,
       useName: user.name,
@@ -424,6 +505,7 @@ export const CreatePersonaChat = async (
       personaMessageTitle: persona.name,
       extension: persona.extensionIds || [],
       personaDocumentIds: persona.personaDocumentIds || [],
+      attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
     });
 
     return response;

@@ -77,15 +77,24 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
     let unsuccessful: { documentId: string }[] = [];
     let sizeToBig: DocumentMetadata[] = [];
 
+    // Create a map to look up the original document by SharePoint documentId
+    const documentIdMap = new Map<string, SharePointFile>();
+    for (const doc of documents) {
+      documentIdMap.set(doc.documentId, doc);
+    }
+
     for (const responseItem of response.responses) {
       if (responseItem.status === 200) {
         const document = responseItem.body;
+        // Get the original document to preserve its id
+        const originalDoc = documentIdMap.get(document.id);
 
         if (
           document.size >
           (Number(process.env.MAX_PERSONA_DOCUMENT_SIZE) || 10485760)
         ) {
           sizeToBig.push({
+            id: originalDoc?.id, // Preserve the PersonaDocument id
             documentId: document.id,
             name: document.name,
             createdBy: document.createdBy.user.displayName,
@@ -98,6 +107,7 @@ export async function DocumentDetails(documents: SharePointFile[]): Promise<
         }
 
         successful.push({
+          id: originalDoc?.id, // Preserve the PersonaDocument id
           documentId: document.id,
           name: document.name,
           createdBy: document.createdBy.user.displayName,
