@@ -484,13 +484,17 @@ export const UpdateChatThreadReasoningEffort = async (
 
 export const UpdateChatThreadCodeInterpreterContainer = async (
   chatThreadId: string,
-  containerId: string
+  containerId: string,
+  fileIdsSignature?: string
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
     const response = await FindChatThreadForCurrentUser(chatThreadId);
     if (response.status === "OK") {
       const chatThread = response.response;
       chatThread.codeInterpreterContainerId = containerId;
+      if (fileIdsSignature !== undefined) {
+        chatThread.codeInterpreterFileIdsSignature = fileIdsSignature;
+      }
       return await UpsertChatThread(chatThread);
     }
     return response;

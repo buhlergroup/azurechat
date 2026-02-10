@@ -35,6 +35,10 @@ export const persistBase64Image = async (
     const imageBuffer = base64ToBuffer(data);
     const imageId = uniqueId();
     const fileName = `${imageId}.${mimeType}`;
+    const normalizedContentType =
+      mimeType.toLowerCase() === "jpg"
+        ? "image/jpeg"
+        : `image/${mimeType.toLowerCase()}`;
 
     logDebug("Persisting base64 image to blob storage", {
       threadId,
@@ -44,7 +48,10 @@ export const persistBase64Image = async (
       dataSize: imageBuffer.length
     });
 
-    const uploadResult = await UploadImageToStore(threadId, fileName, imageBuffer);
+    const uploadResult = await UploadImageToStore(threadId, fileName, imageBuffer, {
+      contentType: normalizedContentType,
+      originalFileName: fileName,
+    });
     
     if (uploadResult.status !== "OK") {
       logError("Failed to upload image to blob storage", {
@@ -171,14 +178,18 @@ export const getBase64ImageReference = async (
     }
     
     // Extract mime type from fileName (already parsed in parseImageReference)
-    const { mimeType } = image;
+    let { mimeType } = image;
     
     const response = await GetImageFromStore(image.threadId, image.fileName);
     if (response.status !== "OK") {
       throw new Error("Failed to retrieve image from store");
     }
 
-    const readableStream = response.response as any; // Node.js ReadableStream from Azure SDK
+    if (response.response.contentType) {
+      mimeType = response.response.contentType;
+    }
+
+    const readableStream = response.response.stream as any; // Node.js ReadableStream from Azure SDK
     
     // Convert Node.js stream to Buffer
     const chunks: Buffer[] = [];

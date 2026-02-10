@@ -12,9 +12,10 @@ import {
   CreateChatDocument,
 } from "../../chat-services/chat-document-service";
 import { SupportedFileExtensionsInputImages, AttachedFileModel } from "../../chat-services/models";
+import { isCodeInterpreterSupportedFile } from "../../chat-services/code-interpreter-constants";
 import { chatStore } from "../../chat-store";
 import { InputImageStore } from "@/features/ui/chat/chat-input-area/input-image-store";
-import { AddAttachedFile, RemoveAttachedFile } from "../../chat-services/chat-thread-service";
+import { AddAttachedFile } from "../../chat-services/chat-thread-service";
 
 // File extensions that should be handled by Code Interpreter instead of Azure Search
 // These are data files that are better processed by Python code
@@ -67,7 +68,22 @@ class FileStore {
       }
 
       const fileExtension = file.name.split(".").pop()?.toUpperCase();
-      if (fileExtension && Object.values(SupportedFileExtensionsInputImages).includes(fileExtension as SupportedFileExtensionsInputImages)) {
+      const isInputImage =
+        !!fileExtension &&
+        Object.values(SupportedFileExtensionsInputImages).includes(
+          fileExtension as SupportedFileExtensionsInputImages
+        );
+      const isCodeInterpreterOnly =
+        !!fileExtension && (await shouldUseCodeInterpreter(fileExtension));
+      const isCodeInterpreterSupported = isCodeInterpreterSupportedFile(file.name);
+      const shouldUploadToCodeInterpreter =
+        isCodeInterpreterOnly ||
+        // Manual override: when CI is enabled, route CI-supported non-image files to CI.
+        (chatStore.codeInterpreterEnabled &&
+          isCodeInterpreterSupported &&
+          !isInputImage);
+
+      if (isInputImage) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = () => {
@@ -80,7 +96,7 @@ class FileStore {
       }
 
       // Check if this file should go to Code Interpreter instead of Azure Search
-      if (fileExtension && await shouldUseCodeInterpreter(fileExtension)) {
+      if (shouldUploadToCodeInterpreter) {
         this.uploadButtonLabel = "Uploading for Code Interpreter";
         
         try {

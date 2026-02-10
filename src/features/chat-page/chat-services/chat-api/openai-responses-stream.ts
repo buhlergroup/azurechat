@@ -35,6 +35,21 @@ export const OpenAIResponsesStream = (props: {
 }) => {
   const encoder = new TextEncoder();
   const { stream, chatThread, conversationState, onComplete, onContinue } = props;
+  const codeInterpreterFileIdsSignature = (() => {
+    const tools = conversationState?.context?.requestOptions?.tools;
+    if (!Array.isArray(tools)) {
+      return chatThread.codeInterpreterFileIdsSignature || "";
+    }
+
+    const codeInterpreterTool = tools.find((tool: any) => tool?.type === "code_interpreter");
+    const fileIds = codeInterpreterTool?.container?.file_ids;
+
+    if (!Array.isArray(fileIds) || fileIds.length === 0) {
+      return chatThread.codeInterpreterFileIdsSignature || "";
+    }
+
+    return [...new Set(fileIds)].sort().join(",");
+  })();
 
   // Helper function to save message (including tool call history)
   const saveMessage = async (
@@ -143,7 +158,10 @@ export const OpenAIResponsesStream = (props: {
                   const fileExtension = originalFileName.split(".").pop() || "bin";
                   const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
                   
-                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer);
+                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer, {
+                    contentType,
+                    originalFileName,
+                  });
                   const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
                   
                   // Store mapping for URL replacement - use the annotation's filename
@@ -192,7 +210,10 @@ export const OpenAIResponsesStream = (props: {
                   const fileExtension = originalFileName.split(".").pop() || "bin";
                   const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
                   
-                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer);
+                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer, {
+                    contentType,
+                    originalFileName,
+                  });
                   const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
                   
                   // Store mapping for URL replacement
@@ -235,7 +256,10 @@ export const OpenAIResponsesStream = (props: {
                   const fileExtension = originalFileName.split(".").pop() || "bin";
                   const storedFileName = `code_interpreter_${uniqueId()}.${fileExtension}`;
                   
-                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer);
+                  await UploadImageToStore(chatThread.id, storedFileName, fileBuffer, {
+                    contentType,
+                    originalFileName,
+                  });
                   const fileUrl = await GetImageUrl(chatThread.id, storedFileName);
                   
                   // Store mapping for URL replacement using both the filename and the full sandbox path
@@ -623,7 +647,11 @@ export const OpenAIResponsesStream = (props: {
                     await UploadImageToStore(
                       chatThread.id,
                       imageName,
-                      Buffer.from(event.item.result, "base64")
+                      Buffer.from(event.item.result, "base64"),
+                      {
+                        contentType: "image/png",
+                        originalFileName: imageName,
+                      }
                     );
                     
                     const imageUrl = await GetImageUrl(chatThread.id, imageName);
@@ -674,9 +702,14 @@ export const OpenAIResponsesStream = (props: {
                 if (event.item?.container_id) {
                   try {
                     const { UpdateChatThreadCodeInterpreterContainer } = await import("../chat-thread-service");
-                    await UpdateChatThreadCodeInterpreterContainer(chatThread.id, event.item.container_id);
+                    await UpdateChatThreadCodeInterpreterContainer(
+                      chatThread.id,
+                      event.item.container_id,
+                      codeInterpreterFileIdsSignature
+                    );
                     logInfo("Saved Code Interpreter container ID to chat thread", { 
                       containerId: event.item.container_id,
+                      fileIdsSignature: codeInterpreterFileIdsSignature,
                       threadId: chatThread.id 
                     });
                   } catch (error) {
@@ -755,7 +788,11 @@ export const OpenAIResponsesStream = (props: {
                           await UploadImageToStore(
                             chatThread.id,
                             storedFileName,
-                            fileBuffer
+                            fileBuffer,
+                            {
+                              contentType,
+                              originalFileName,
+                            }
                           );
                           
                           // Get the URL for the stored file
@@ -824,7 +861,11 @@ export const OpenAIResponsesStream = (props: {
                           await UploadImageToStore(
                             chatThread.id,
                             imageName,
-                            imageBuffer
+                            imageBuffer,
+                            {
+                              contentType: imageResponse.headers.get("content-type") || "image/png",
+                              originalFileName: imageName,
+                            }
                           );
                           
                           const imageUrl = await GetImageUrl(chatThread.id, imageName);

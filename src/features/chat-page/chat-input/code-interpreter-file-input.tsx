@@ -93,8 +93,21 @@ export const CodeInterpreterFileInput = () => {
   };
 
   const removeFile = async (fileId: string) => {
-    chatStore.removeAttachedFile(fileId);
-    await RemoveAttachedFile(chatThreadId, fileId);
+    try {
+      const deleteResponse = await fetch(`/api/code-interpreter/file/${encodeURIComponent(fileId)}`, {
+        method: "DELETE",
+      });
+
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse.text();
+        throw new Error(errorText || "Failed to delete file from Code Interpreter");
+      }
+
+      await RemoveAttachedFile(chatThreadId, fileId);
+      chatStore.removeAttachedFile(fileId);
+    } catch (error) {
+      showError(`Failed to remove file: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   return (

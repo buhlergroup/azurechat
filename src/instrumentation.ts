@@ -5,6 +5,10 @@ export function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     // Suppress OpenTelemetry verbose logging
     process.env.OTEL_LOG_LEVEL = 'error';
+    // Avoid async host.id resource detection. It can trigger repeated
+    // "Accessing resource attributes before async attributes settled" logs.
+    // Respect explicit operator configuration when already provided.
+    process.env.OTEL_NODE_RESOURCE_DETECTORS ??= "env,os";
 
     const { useAzureMonitor: azureMonitor } = require("@azure/monitor-opentelemetry");
     const { metrics } = require('@opentelemetry/api');

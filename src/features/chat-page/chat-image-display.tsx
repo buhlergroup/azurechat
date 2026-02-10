@@ -19,14 +19,18 @@ export const ChatImageDisplay: React.FC<ChatImageDisplayProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
+
     if (!imageUrl) {
       setResolvedUrl(undefined);
+      setIsLoading(false);
       return;
     }
 
     // If it's already a URL (not a reference), use it directly
     if (!isImageReference(imageUrl)) {
       setResolvedUrl(imageUrl);
+      setIsLoading(false);
       return;
     }
 
@@ -91,4 +95,4 @@ export const ChatImageDisplay: React.FC<ChatImageDisplayProps> = ({
       onError={() => setError("Failed to load image")}
     />
   );
-}; 
+};

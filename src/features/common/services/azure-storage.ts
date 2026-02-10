@@ -3,6 +3,17 @@ import { ServerActionResponse } from "../server-action-response";
 import { logInfo, logError } from "./logger";
 import { getAzureDefaultCredential } from "./azure-default-credential";
 
+export interface UploadBlobOptions {
+  contentType?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface BlobDownloadResult {
+  stream: ReadableStream<any>;
+  contentType?: string;
+  metadata?: Record<string, string>;
+}
+
 // initialize the blobServiceClient
 const InitBlobServiceClient = () => {
   const acc = process.env.AZURE_STORAGE_ACCOUNT_NAME;
@@ -22,7 +33,8 @@ const InitBlobServiceClient = () => {
 export const UploadBlob = async (
   containerName: string,
   blobName: string,
-  blobData: Buffer
+  blobData: Buffer,
+  options?: UploadBlobOptions
 ): Promise<ServerActionResponse<string>> => {
   const blobServiceClient = InitBlobServiceClient();
 
@@ -31,7 +43,12 @@ export const UploadBlob = async (
 
   try{
     
-  const response = await blockBlobClient.uploadData(blobData);
+  const response = await blockBlobClient.uploadData(blobData, {
+    blobHTTPHeaders: options?.contentType
+      ? { blobContentType: options.contentType }
+      : undefined,
+    metadata: options?.metadata,
+  });
 
   // Check for upload success
   if (response.errorCode !== undefined) {
@@ -74,7 +91,7 @@ export const UploadBlob = async (
 export const GetBlob = async (
   containerName: string,
   blobPath: string
-): Promise<ServerActionResponse<ReadableStream<any>>> => {
+): Promise<ServerActionResponse<BlobDownloadResult>> => {
   const blobServiceClient = InitBlobServiceClient();
 
   const containerClient = blobServiceClient.getContainerClient(containerName);
@@ -97,8 +114,12 @@ export const GetBlob = async (
 
     return {
       status: "OK",
-      response:
-        downloadBlockBlobResponse.readableStreamBody as unknown as ReadableStream<any>,
+      response: {
+        stream:
+          downloadBlockBlobResponse.readableStreamBody as unknown as ReadableStream<any>,
+        contentType: downloadBlockBlobResponse.contentType,
+        metadata: downloadBlockBlobResponse.metadata,
+      },
     };
   } catch (error) {
     if (error instanceof RestError) {

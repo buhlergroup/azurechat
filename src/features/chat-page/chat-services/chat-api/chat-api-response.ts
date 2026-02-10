@@ -4,7 +4,7 @@ import "server-only";
 import { getCurrentUser } from "@/features/auth-page/helpers";
 import { CHAT_DEFAULT_SYSTEM_PROMPT } from "@/features/theme/theme-config";
 import { CreateChatMessage } from "../chat-message-service";
-import { EnsureChatThreadOperation } from "../chat-thread-service";
+import { EnsureChatThreadOperation, UpdateChatThreadCodeInterpreterContainer } from "../chat-thread-service";
 import { UserPrompt, MODEL_CONFIGS, ChatThreadModel } from "../models";
 import { mapOpenAIChatMessages } from "../utils";
 import { FindTopChatMessagesForCurrentUser } from "../chat-message-service";
@@ -21,6 +21,15 @@ import { FindAllExtensionForCurrentUserAndIds, FindSecureHeaderValue } from "@/f
 import { reportUserChatMessage } from "@/features/common/services/chat-metrics-service";
 import { FindAllChatDocuments } from "../chat-document-service";
 import { logDebug, logInfo, logError } from "@/features/common/services/logger";
+
+const getFileIdsSignature = (fileIds?: string[]): string => {
+  if (!fileIds || fileIds.length === 0) {
+    return "";
+  }
+
+  const normalized = [...new Set(fileIds)].sort();
+  return normalized.join(",");
+};
 
 export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) => {
   // Get current chat thread
@@ -113,46 +122,69 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
     }
   }
 
+  const requestedCodeInterpreterFileIds = props.codeInterpreterFileIds || [];
+  const requestedCodeInterpreterFileIdsSignature = getFileIdsSignature(requestedCodeInterpreterFileIds);
+  const currentCodeInterpreterFileIdsSignature = currentChatThread.codeInterpreterFileIdsSignature || "";
+  const codeInterpreterFilesChanged = requestedCodeInterpreterFileIdsSignature !== currentCodeInterpreterFileIdsSignature;
+
+  // If attached files changed, invalidate the previous container and persist the new file signature.
+  if (props.codeInterpreterEnabled && codeInterpreterFilesChanged) {
+    try {
+      await UpdateChatThreadCodeInterpreterContainer(
+        currentChatThread.id,
+        "",
+        requestedCodeInterpreterFileIdsSignature
+      );
+      currentChatThread.codeInterpreterContainerId = "";
+      currentChatThread.codeInterpreterFileIdsSignature = requestedCodeInterpreterFileIdsSignature;
+      logInfo("Code Interpreter files changed - invalidated existing container", {
+        threadId: currentChatThread.id,
+        previousSignature: currentCodeInterpreterFileIdsSignature,
+        newSignature: requestedCodeInterpreterFileIdsSignature,
+        fileCount: requestedCodeInterpreterFileIds.length,
+      });
+    } catch (error) {
+      logError("Failed to invalidate Code Interpreter container after file changes", {
+        error: error instanceof Error ? error.message : String(error),
+        threadId: currentChatThread.id,
+      });
+    }
+  }
+
   // Build code interpreter tool configuration if enabled
-  // Container management: 
-  // - type: "auto" lets the API automatically reuse an active container from the conversation context (within 20 min timeout)
-  // - Only create a new container when new files are added (files can only be added at container creation time)
-  // - The API returns the container_id which we store for reference and reuse in subsequent calls
+  // Container management:
+  // - Reuse existing container when file signature is unchanged
+  // - Create a new container whenever files are changed
+  // - Create a new container when there is no existing container
   const buildCodeInterpreterTool = (useExistingContainer: boolean) => {
     if (!props.codeInterpreterEnabled) return null;
     
-    const hasNewFiles = props.codeInterpreterFileIds && props.codeInterpreterFileIds.length > 0;
-    const hasExistingContainer = useExistingContainer && !!currentChatThread.codeInterpreterContainerId && !hasNewFiles;
+    const hasRequestedFiles = requestedCodeInterpreterFileIds.length > 0;
+    const hasExistingContainer = useExistingContainer && !!currentChatThread.codeInterpreterContainerId;
+    const shouldCreateNewContainer = !hasExistingContainer || codeInterpreterFilesChanged;
     
-    if (hasNewFiles) {
-      // When new files are added, always create a new container session
-      // This allows the new files to be properly integrated
-      // The API will create a fresh container since we're passing file_ids
-      logInfo("Creating new Code Interpreter container session for new files", { 
-        fileCount: props.codeInterpreterFileIds?.length || 0,
-        fileIds: props.codeInterpreterFileIds
-      });
-      return {
-        type: "code_interpreter",
-        container: { 
-          type: "auto",
-          file_ids: props.codeInterpreterFileIds || []
-        }
-      };
-    } else if (hasExistingContainer) {
-      // Reuse existing container by its ID
-      // The API will validate and reuse if still active (within 20 min idle timeout)
-      logInfo("Reusing existing Code Interpreter container", { 
-        containerId: currentChatThread.codeInterpreterContainerId
-      });
-      return {
-        type: "code_interpreter",
-        container: currentChatThread.codeInterpreterContainerId
-      };
-    } else {
+    if (shouldCreateNewContainer) {
+      if (hasRequestedFiles) {
+        logInfo("Creating new Code Interpreter container session", {
+          fileCount: requestedCodeInterpreterFileIds.length,
+          fileIds: requestedCodeInterpreterFileIds,
+          filesChanged: codeInterpreterFilesChanged,
+          hasExistingContainer,
+        });
+        return {
+          type: "code_interpreter",
+          container: {
+            type: "auto",
+            file_ids: requestedCodeInterpreterFileIds
+          }
+        };
+      }
+
       // Create new container without files
-      // type: "auto" will create a new container or reuse if one exists in context (within 20 min timeout)
-      logInfo("Creating new Code Interpreter container without files");
+      logInfo("Creating new Code Interpreter container without files", {
+        filesChanged: codeInterpreterFilesChanged,
+        hasExistingContainer,
+      });
       return {
         type: "code_interpreter",
         container: { 
@@ -160,6 +192,20 @@ export const ChatAPIResponse = async (props: UserPrompt, signal: AbortSignal) =>
         }
       };
     }
+
+    if (hasExistingContainer) {
+      // Reuse existing container by its ID (if still active).
+      logInfo("Reusing existing Code Interpreter container", { 
+        containerId: currentChatThread.codeInterpreterContainerId,
+        fileSignature: currentChatThread.codeInterpreterFileIdsSignature || "",
+      });
+      return {
+        type: "code_interpreter",
+        container: currentChatThread.codeInterpreterContainerId
+      };
+    }
+
+    return null;
   };
 
   let codeInterpreterTool = buildCodeInterpreterTool(true);

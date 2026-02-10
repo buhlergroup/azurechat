@@ -322,6 +322,7 @@ export interface ChatThreadModel {
   reasoningEffort?: ReasoningEffort;
   isTemporary?: boolean;
   codeInterpreterContainerId?: string;
+  codeInterpreterFileIdsSignature?: string;
   attachedFiles?: Array<AttachedFileModel>;
 }
 

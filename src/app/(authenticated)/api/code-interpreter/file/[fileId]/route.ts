@@ -1,10 +1,10 @@
-import { DownloadFileFromCodeInterpreter } from "@/features/chat-page/chat-services/code-interpreter-service";
+import { DeleteFileFromCodeInterpreter, DownloadFileFromCodeInterpreter } from "@/features/chat-page/chat-services/code-interpreter-service";
 import { getCurrentUser } from "@/features/auth-page/helpers";
 import { logError, logDebug } from "@/features/common/services/logger";
 import { NextRequest } from "next/server";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ fileId: string }> }
 ) {
   try {
@@ -40,6 +40,41 @@ export async function GET(
   } catch (error) {
     logError("Error downloading Code Interpreter file", {
       error: error instanceof Error ? error.message : String(error)
+    });
+    return new Response("Internal Server Error", { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ fileId: string }> }
+) {
+  try {
+    // Verify user is authenticated
+    const user = await getCurrentUser();
+    if (!user) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    const { fileId } = await params;
+    if (!fileId) {
+      return new Response("File ID is required", { status: 400 });
+    }
+
+    logDebug("Deleting Code Interpreter file", { fileId, userEmail: user.email });
+
+    const result = await DeleteFileFromCodeInterpreter(fileId);
+    if (result.status !== "OK") {
+      return new Response(result.errors[0].message, { status: 500 });
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    logError("Error deleting Code Interpreter file", {
+      error: error instanceof Error ? error.message : String(error),
     });
     return new Response("Internal Server Error", { status: 500 });
   }
