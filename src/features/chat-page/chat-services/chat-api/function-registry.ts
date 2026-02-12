@@ -232,7 +232,7 @@ async function searchCompanyContent(
         return {
           query: args.query,
           results: [],
-          summary: "Company content search failed: Insufficient permissions. The required permissions are Files.Read.All and Sites.Read.All.",
+          summary: "Company content search failed: Insufficient permissions. The required permission for content search is Files.Read.All.",
           error: true
         };
       }

@@ -6,7 +6,7 @@ import { Provider } from "next-auth/providers/index";
 import { hashValue } from "./helpers";
 import { JWT } from "next-auth/jwt";
 
-const SCOPES = "offline_access openid profile User.Read email Group.Read.All Files.Read.All Sites.Read.All";
+const SCOPES = "offline_access openid profile User.Read email Group.Read.All Files.Read.All";
 
 const configureIdentityProvider = () => {
   const providers: Array<Provider> = [];
