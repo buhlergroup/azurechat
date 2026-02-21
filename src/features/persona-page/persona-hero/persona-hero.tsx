@@ -8,14 +8,14 @@ export const PersonaHero = () => {
     <Hero
       title={
         <>
-          <VenetianMask size={36} strokeWidth={1.5} /> Persona
+          <VenetianMask size={36} strokeWidth={1.5} /> Agent
         </>
       }
-      description={`  Persona is a representation of a personality that you can use to
+      description={`  Agent is a representation of a personality that you can use to
     have a conversation with.`}
     >
       <HeroButton
-        title="New Persona"
+        title="New Agent"
         description="Create a new personality that you can use to have a conversation with."
         icon={<VenetianMask />}
         onClick={() =>

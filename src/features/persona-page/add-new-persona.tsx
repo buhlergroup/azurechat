@@ -74,7 +74,7 @@ export const AddNewPersona: FC<Props> = (props) => {
     >
       <SheetContent className="min-w-[480px] sm:w-[540px] flex flex-col">
         <SheetHeader>
-          <SheetTitle>Persona</SheetTitle>
+          <SheetTitle>Agent</SheetTitle>
           {state && state.status === "OK" ? null : (
             <>
               {state &&
@@ -101,7 +101,7 @@ export const AddNewPersona: FC<Props> = (props) => {
                     required
                     name="name"
                     defaultValue={persona.name}
-                    placeholder="Name of your persona"
+                    placeholder="Name of your agent"
                   />
                 </div>
                 <div className="grid gap-2">
@@ -121,7 +121,7 @@ export const AddNewPersona: FC<Props> = (props) => {
                     required
                     defaultValue={persona.personaMessage}
                     name="personaMessage"
-                    placeholder="Personality of your persona"
+                    placeholder="Personality of your agent"
                   />
                 </div>
                 <div className="grid gap-2">

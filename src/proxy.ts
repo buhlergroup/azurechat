@@ -6,6 +6,7 @@ const requireAuth: string[] = [
   "/api",
   "/reporting",
   "/unauthorized",
+  "/agent",
   "/persona",
   "/prompt"
 ];
@@ -59,6 +60,7 @@ export const config = {
     "/api/chat:path*",
     "/api/images:path*",
     "/chat/:path*",
+    "/agent/:path*",
     "/persona/:path*",
   ],
 };

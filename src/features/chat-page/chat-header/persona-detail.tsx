@@ -149,7 +149,7 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
       const chatThread = await FindChatThreadForCurrentUser(id);
 
       if (chatThread.status !== "OK") {
-        return showError("An error occurred while duplicating the persona.");
+        return showError("An error occurred while duplicating the agent.");
       }
 
       const duplicatePersona = {
@@ -160,9 +160,9 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
       };
 
       personaStore.newPersonaAndOpen(duplicatePersona);
-      router.push("/persona");
+      router.push("/agent");
     } catch {
-      showError("An unexpected error occurred while duplicating the persona.");
+      showError("An unexpected error occurred while duplicating the agent.");
     }
   };
 

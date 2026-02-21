@@ -99,7 +99,7 @@ const ArticlesSection = ({
 
 const PersonasSection = ({ personas }: { personas: PersonaModel[] }) => (
   <div>
-    <h2 className="text-2xl font-bold mb-3">Personas</h2>
+    <h2 className="text-2xl font-bold mb-3">Agents</h2>
     {personas && personas.length > 0 ? (
       <div className="grid grid-cols-3 gap-3">
         {personas.map((persona: PersonaModel) => (
@@ -112,7 +112,7 @@ const PersonasSection = ({ personas }: { personas: PersonaModel[] }) => (
         ))}
       </div>
     ) : (
-      <p className="text-muted-foreground max-w-xl">No personas created</p>
+      <p className="text-muted-foreground max-w-xl">No agents created</p>
     )}
   </div>
 );

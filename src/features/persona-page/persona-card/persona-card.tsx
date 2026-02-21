@@ -51,11 +51,11 @@ export const PersonaCard: FC<Props> = (props) => {
           <Tooltip>
             <TooltipTrigger >
                 <CopyToClipboardButton
-                  relativeLink={`/persona/${persona.id}/chat`}
+                  relativeLink={`/agent/${persona.id}/chat`}
                 />
             </TooltipTrigger>
             <TooltipContent>
-              <p>Copy link to Persona</p>
+              <p>Copy link to Agent</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
