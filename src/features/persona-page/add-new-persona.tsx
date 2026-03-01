@@ -58,7 +58,7 @@ export const AddNewPersona: FC<Props> = (props) => {
   const { data } = useSession();
 
   const [selectedModel, setSelectedModel] = useState<string>(
-    persona.selectedModel || ""
+    persona.selectedModel || "__default__"
   );
   const [selectedSubAgentIds, setSelectedSubAgentIds] = useState<string[]>(
     [...(persona.subAgentIds || [])]
@@ -67,7 +67,7 @@ export const AddNewPersona: FC<Props> = (props) => {
 
   // Reset local state when persona changes
   useEffect(() => {
-    setSelectedModel(persona.selectedModel || "");
+    setSelectedModel(persona.selectedModel || "__default__");
     setSelectedSubAgentIds([...(persona.subAgentIds || [])]);
   }, [persona.id, persona.selectedModel, persona.subAgentIds]);
 
@@ -180,8 +180,12 @@ export const AddNewPersona: FC<Props> = (props) => {
                 </div>
                 <div className="grid gap-2">
                   <Label>Model</Label>
-                  <Select
+                  <input
+                    type="hidden"
                     name="selectedModel"
+                    value={selectedModel === "__default__" ? "" : selectedModel}
+                  />
+                  <Select
                     value={selectedModel}
                     onValueChange={setSelectedModel}
                   >
@@ -189,7 +193,7 @@ export const AddNewPersona: FC<Props> = (props) => {
                       <SelectValue placeholder="Use default model" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Use default model</SelectItem>
+                      <SelectItem value="__default__">Use default model</SelectItem>
                       {Object.values(availableModels).map((model) => (
                         <SelectItem key={model.id} value={model.id}>
                           {model.name}
