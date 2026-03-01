@@ -61,14 +61,14 @@ export const AddNewPersona: FC<Props> = (props) => {
     persona.selectedModel || ""
   );
   const [selectedSubAgentIds, setSelectedSubAgentIds] = useState<string[]>(
-    persona.subAgentIds || []
+    [...(persona.subAgentIds || [])]
   );
   const [availableModels, setAvailableModels] = useState<Record<string, ModelConfig>>(MODEL_CONFIGS);
 
   // Reset local state when persona changes
   useEffect(() => {
     setSelectedModel(persona.selectedModel || "");
-    setSelectedSubAgentIds(persona.subAgentIds || []);
+    setSelectedSubAgentIds([...(persona.subAgentIds || [])]);
   }, [persona.id, persona.selectedModel, persona.subAgentIds]);
 
   useEffect(() => {
