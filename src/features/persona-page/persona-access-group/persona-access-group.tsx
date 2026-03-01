@@ -40,13 +40,13 @@ export const PersonaAccessGroup: FC<Props> = (props) => {
     <div className="grid gap-2">
       <div className="flex items-center space-x-2 justify-between">
         <div className="flex items-center space-x-4">
-          <Label>Access to Persona</Label>
+          <Label>Access to Agent</Label>
           <Tooltip>
             <TooltipTrigger asChild>
               <Info size={15} />
             </TooltipTrigger>
             <TooltipContent>
-              <p>Defines who can view your persona</p>
+              <p>Defines who can view your agent</p>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -79,7 +79,7 @@ export const PersonaAccessGroup: FC<Props> = (props) => {
             />
           ) : (
             <input
-              value="Everyone can view this persona"
+              value="Everyone can view this agent"
               readOnly
               className="w-full bg-transparent text-muted-foreground"
               disabled

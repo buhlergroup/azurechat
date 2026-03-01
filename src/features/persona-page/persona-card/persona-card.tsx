@@ -18,11 +18,14 @@ import {
   TooltipTrigger,
 } from "@/features/ui/tooltip";
 import { PersonaVisibilityInfo } from "./persona-visibility-info";
+import { FavoriteAgentButton } from "./favorite-agent-button";
 
 interface Props {
   persona: PersonaModel;
   showContextMenu: boolean;
   showActionMenu: boolean;
+  isFavorited?: boolean;
+  onToggleFavorite?: (agentId: string) => void;
 }
 
 export const PersonaCard: FC<Props> = (props) => {
@@ -34,6 +37,13 @@ export const PersonaCard: FC<Props> = (props) => {
         <div className="flex flex-1 items-center gap-2">
           <CardTitle className="flex-1 line-clamp-1">{persona.name}</CardTitle>
           <PersonaVisibilityInfo persona={persona} />
+          {props.onToggleFavorite && (
+            <FavoriteAgentButton
+              agentId={persona.id}
+              isFavorited={props.isFavorited ?? false}
+              onToggle={props.onToggleFavorite}
+            />
+          )}
         </div>
         {props.showActionMenu && (
           <div>
@@ -51,11 +61,11 @@ export const PersonaCard: FC<Props> = (props) => {
           <Tooltip>
             <TooltipTrigger >
                 <CopyToClipboardButton
-                  relativeLink={`/persona/${persona.id}/chat`}
+                  relativeLink={`/agent/${persona.id}/chat`}
                 />
             </TooltipTrigger>
             <TooltipContent>
-              <p>Copy link to Persona</p>
+              <p>Copy link to Agent</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

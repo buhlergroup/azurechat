@@ -20,7 +20,7 @@ const CreatePersonaChatPage = () => {
   useEffect(() => {
     const fetchPersona = async (): Promise<void> => {
       if (!personaId) {
-        setErrors(["Persona ID is missing"]);
+        setErrors(["Agent ID is missing"]);
         return;
       }
 
@@ -28,7 +28,7 @@ const CreatePersonaChatPage = () => {
         const personasResponse = await FindPersonaByID(personaId as string);
 
         if (personasResponse.status === "UNAUTHORIZED") {
-          router.push("/persona/access-denied");
+          router.push("/agent/access-denied");
           return;
         }
 
@@ -39,7 +39,7 @@ const CreatePersonaChatPage = () => {
 
         setPersona(personasResponse.response);
       } catch (error) {
-        setErrors(["An unexpected error occurred while fetching the persona"]);
+        setErrors(["An unexpected error occurred while fetching the agent"]);
       }
     };
 
@@ -56,7 +56,7 @@ const CreatePersonaChatPage = () => {
         if (response.status === "OK") {
           router.push(`/chat/${response.response.id}`);
         } else if (response.status === "UNAUTHORIZED") {
-          router.push("/persona/access-denied");
+          router.push("/agent/access-denied");
         } else {
           showError(response.errors.map((error) => error.message).join(", "));
         }

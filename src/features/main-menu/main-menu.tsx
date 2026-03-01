@@ -44,10 +44,10 @@ export const MainMenu = ({ user }: MainMenuProps) => {
               <MessageCircle {...menuIconProps} />
             </MenuLink>
           </MenuItem>
-          <MenuItem tooltip="Persona">
+          <MenuItem tooltip="Agent">
             <MenuLink
-              href="/persona"
-              ariaLabel="Go to the Persona configuration page"
+              href="/agent"
+              ariaLabel="Go to the Agent configuration page"
             >
               <VenetianMask {...menuIconProps} />
             </MenuLink>

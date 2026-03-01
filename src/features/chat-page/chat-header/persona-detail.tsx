@@ -139,7 +139,7 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
     if (response.unsuccessful.length > 0) {
       displayToastWarning(
         "Some documents are not accessible",
-        "Your persona chat experience may suffer from the lack of documents."
+        "Your agent chat experience may suffer from the lack of documents."
       );
     }
   };
@@ -149,7 +149,7 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
       const chatThread = await FindChatThreadForCurrentUser(id);
 
       if (chatThread.status !== "OK") {
-        return showError("An error occurred while duplicating the persona.");
+        return showError("An error occurred while duplicating the agent.");
       }
 
       const duplicatePersona = {
@@ -160,9 +160,9 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
       };
 
       personaStore.newPersonaAndOpen(duplicatePersona);
-      router.push("/persona");
+      router.push("/agent");
     } catch {
-      showError("An unexpected error occurred while duplicating the persona.");
+      showError("An unexpected error occurred while duplicating the agent.");
     }
   };
 
@@ -194,14 +194,14 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
         <Button
           variant="outline"
           size="icon"
-          aria-label="Current Chat Persona Menu"
+          aria-label="Current Chat Agent Menu"
         >
           <VenetianMask size={16} />
         </Button>
       </SheetTrigger>
       <SheetContent className="min-w-[480px] sm:w-[540px] flex flex-col">
         <SheetHeader>
-          <SheetTitle>Persona</SheetTitle>
+          <SheetTitle>Agent</SheetTitle>
         </SheetHeader>
         <ScrollArea className="flex-1 -mx-6 flex" type="always">
           <div className="pb-6 px-6 flex gap-8 flex-col flex-1">
@@ -210,7 +210,7 @@ export const PersonaDetail: FC<Props> = ({ chatThread }) => {
               <div>{personaMessageTitle}</div>
             </div>
             <div className="grid gap-2 flex-1">
-              <Label>Personality</Label>
+              <Label>Instructions</Label>
               <div className="whitespace-pre-wrap">
                 {CHAT_DEFAULT_SYSTEM_PROMPT}
               </div>
@@ -244,13 +244,13 @@ const PersonaDocumentsSection: FC<{
 }> = ({ documents, noAccessDocumentsCount }) => {
   return (
     <div className="grid gap-2 flex-1">
-      <Label>Persona Documents</Label>
+      <Label>Agent Documents</Label>
       <TooltipProvider>
         {noAccessDocumentsCount > 0 && (
           <ErrorDocumentItem
-            title={`You don't have access to ${noAccessDocumentsCount} persona document(s)`}
-            description="Ask the persona owner to share the document(s) with you"
-            tooltipContent="Your persona chat experience may suffer from the lack of documents."
+            title={`You don't have access to ${noAccessDocumentsCount} agent document(s)`}
+            description="Ask the agent owner to share the document(s) with you"
+            tooltipContent="Your agent chat experience may suffer from the lack of documents."
           />
         )}
         {documents.length === 0 && (

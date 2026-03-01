@@ -1,13 +1,13 @@
 "use client";
 
 import { ExtensionModel } from "@/features/extensions-page/extension-services/models";
-import { PersonaCard } from "@/features/persona-page/persona-card/persona-card";
+import { AgentList } from "@/features/persona-page/agent-list";
 import { PersonaModel } from "@/features/persona-page/persona-services/models";
 import { AI_DESCRIPTION, AI_NAME } from "@/features/theme/theme-config";
 import { Hero } from "@/features/ui/hero";
 import { ScrollArea } from "@/features/ui/scroll-area";
 import Image from "next/image";
-import { FC, useState, useEffect } from "react";
+import { FC, useState } from "react";
 import { NewsArticleModel } from "@/features/common/services/news-service/news-model";
 import { NewsArticle } from "./news-article";
 import { Button } from "../ui/button";
@@ -18,6 +18,8 @@ interface ChatPersonaProps {
   personas: PersonaModel[];
   extensions: ExtensionModel[];
   news: NewsArticleModel[];
+  favoriteAgentIds: string[];
+  currentUserId: string;
 }
 
 const FeedbackButton = ({ feedBackLink }: { feedBackLink: string }) => (
@@ -97,27 +99,7 @@ const ArticlesSection = ({
   </div>
 );
 
-const PersonasSection = ({ personas }: { personas: PersonaModel[] }) => (
-  <div>
-    <h2 className="text-2xl font-bold mb-3">Personas</h2>
-    {personas && personas.length > 0 ? (
-      <div className="grid grid-cols-3 gap-3">
-        {personas.map((persona: PersonaModel) => (
-          <PersonaCard
-            persona={persona}
-            key={persona.id}
-            showContextMenu={false}
-            showActionMenu={false}
-          />
-        ))}
-      </div>
-    ) : (
-      <p className="text-muted-foreground max-w-xl">No personas created</p>
-    )}
-  </div>
-);
-
-export const ChatHome: FC<ChatPersonaProps> = ({ personas, news }) => {
+export const ChatHome: FC<ChatPersonaProps> = ({ personas, news, favoriteAgentIds, currentUserId }) => {
   const [showChangelog, setShowChangelog] = useState<boolean>(false);
 
   return (
@@ -147,7 +129,11 @@ export const ChatHome: FC<ChatPersonaProps> = ({ personas, news }) => {
                 news={news}
                 setShowChangelog={setShowChangelog}
               />
-              <PersonasSection personas={personas} />
+              <AgentList
+                personas={personas}
+                initialFavoriteIds={favoriteAgentIds}
+                currentUserId={currentUserId}
+              />
             </>
           )}
         </div>

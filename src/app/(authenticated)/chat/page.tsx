@@ -1,14 +1,18 @@
+import { userHashedId } from "@/features/auth-page/helpers";
 import { ChatHome } from "@/features/chat-home-page/chat-home";
 import { FindAllNewsArticles } from "@/features/common/services/news-service/news-service";
 import { FindAllExtensionForCurrentUser } from "@/features/extensions-page/extension-services/extension-service";
+import { GetUserFavoriteAgents } from "@/features/persona-page/persona-services/agent-favorite-service";
 import { FindAllPersonaForCurrentUser } from "@/features/persona-page/persona-services/persona-service";
 import { DisplayError } from "@/features/ui/error/display-error";
 
 export default async function Home() {
-  const [personaResponse, extensionResponse, newsResponse] = await Promise.all([
+  const [personaResponse, extensionResponse, newsResponse, favoriteAgentIds, currentUserId] = await Promise.all([
     FindAllPersonaForCurrentUser(),
     FindAllExtensionForCurrentUser(),
     FindAllNewsArticles(),
+    GetUserFavoriteAgents(),
+    userHashedId(),
   ]);
 
   if (personaResponse.status !== "OK") {
@@ -28,6 +32,8 @@ export default async function Home() {
       personas={personaResponse.response}
       extensions={extensionResponse.response}
       news={newsResponse.response}
+      favoriteAgentIds={favoriteAgentIds}
+      currentUserId={currentUserId}
     />
   );
 }

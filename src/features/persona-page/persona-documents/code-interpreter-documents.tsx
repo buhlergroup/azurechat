@@ -160,7 +160,7 @@ export const CodeInterpreterDocuments: FC<Props> = ({ initialCIDocumentIds }) =>
             description={
               "The document(s) may have been deleted or you don't have access to them anymore."
             }
-            tooltipContent="Your persona chat experience may suffer from the lack of documents."
+            tooltipContent="Your agent chat experience may suffer from the lack of documents."
           />
         )}
 
