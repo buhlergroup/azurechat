@@ -8,27 +8,26 @@ export const PersonaHero = () => {
     <Hero
       title={
         <>
-          <VenetianMask size={36} strokeWidth={1.5} /> Agent
+          <VenetianMask size={36} strokeWidth={1.5} /> Agents
         </>
       }
-      description={`  Agent is a representation of a personality that you can use to
-    have a conversation with.`}
+      description={`Agents are pre-configured assistants with specific instructions that you can use to have a conversation with.`}
     >
       <HeroButton
         title="New Agent"
-        description="Create a new personality that you can use to have a conversation with."
+        description="Create a new agent with custom instructions to have a conversation with."
         icon={<VenetianMask />}
         onClick={() =>
           personaStore.newPersonaAndOpen({
             name: "",
-            personaMessage: `Personality:
-[Describe the personality e.g. the tone of voice, the way they speak, the way they act, etc.]
+            personaMessage: `Instructions:
+[Describe the instructions e.g. the tone of voice, the way the agent should respond, etc.]
 
 Expertise:
-[Describe the expertise of the personality e.g. Customer service, Marketing copywriter, etc.]
+[Describe the expertise of the agent e.g. Customer service, Marketing copywriter, etc.]
 
 Example:
-[Describe an example of the personality e.g. a Marketing copywriter who can write catchy headlines.]`,
+[Describe an example of the agent e.g. a Marketing copywriter who can write catchy headlines.]`,
             description: "",
             extensionIds: []
           })
@@ -80,7 +79,7 @@ Input.displayName = "Input";
 export { Input };
 
               `,
-            description: "Customer service persona.",
+            description: "ReactJs expert who can write clean functional components.",
             extensionIds: []
           })
         }

@@ -39,7 +39,7 @@ export const ViewPersona: FC<Props> = (props) => {
                 className="min-h-[300px]"
                 defaultValue={persona.personaMessage}
                 name="personaMessage"
-                placeholder="Personality of your agent"
+                placeholder="Instructions for your agent"
               />
               <p className="text-xs text-muted-foreground">
                 {persona.isPublished

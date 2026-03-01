@@ -96,11 +96,11 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-xl font-semibold">
-              Access to Persona
+              Access to Agent
             </DialogTitle>
 
             <p className="text-sm text-muted-foreground mb-4">
-              Browse and select the desired access group for your persona.
+              Browse and select the desired access group for your agent.
             </p>
           </DialogHeader>
 

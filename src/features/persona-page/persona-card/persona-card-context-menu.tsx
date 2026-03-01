@@ -69,6 +69,9 @@ const useDropdownAction = (props: { persona: PersonaModel }) => {
           RevalidateCache({
             page: "persona",
           });
+          RevalidateCache({
+            page: "agent",
+          });
         }
 
         break;

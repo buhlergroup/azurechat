@@ -121,6 +121,9 @@ export const AddOrUpdatePersona = async (previous: any, formData: FormData) => {
     RevalidateCache({
       page: "persona",
     });
+    RevalidateCache({
+      page: "agent",
+    });
   }
 
   return response;

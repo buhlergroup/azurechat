@@ -115,13 +115,13 @@ export const AddNewPersona: FC<Props> = (props) => {
                   />
                 </div>
                 <div className="grid gap-2 flex-1 ">
-                  <Label htmlFor="personaMessage">Personality</Label>
+                  <Label htmlFor="personaMessage">Instructions</Label>
                   <Textarea
                     className="min-h-[300px]"
                     required
                     defaultValue={persona.personaMessage}
                     name="personaMessage"
-                    placeholder="Personality of your agent"
+                    placeholder="Instructions for your agent"
                   />
                 </div>
                 <div className="grid gap-2">

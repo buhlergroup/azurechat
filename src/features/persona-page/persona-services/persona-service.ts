@@ -292,6 +292,9 @@ export const UpsertPersona = async (
         RevalidateCache({
           page: "persona",
         });
+        RevalidateCache({
+          page: "agent",
+        });
 
         return {
           status: "ERROR",

@@ -151,13 +151,13 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
     <div className="grid gap-2">
       <div className="flex items-center justify-between space-x-2">
         <div className="flex items-center space-x-4">
-          <Label>Persona Documents</Label>
+          <Label>Agent Documents</Label>
           <Tooltip>
             <TooltipTrigger asChild>
               <Info size={15} />
             </TooltipTrigger>
             <TooltipContent>
-              <p>Documents that are used when chatting with the persona</p>
+              <p>Documents that are used when chatting with the agent</p>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -181,11 +181,11 @@ export const PersonaDocuments: FC<Props> = ({ initialPersonaDocumentIds }) => {
 
         {noAccessDocuments.length > 0 && (
           <ErrorDocumentItem
-            title={`You don't have access to ${noAccessDocuments.length} persona document(s)`}
+            title={`You don't have access to ${noAccessDocuments.length} agent document(s)`}
             description={
               "The document(s) may have been deleted or you don't have access to them anymore."
             }
-            tooltipContent="Your persona chat experience may suffer from the lack of documents."
+            tooltipContent="Your agent chat experience may suffer from the lack of documents."
             actionIcon={<Trash size={15} className="text-red-500" />}
             action={() => removeNoAccessDocument(noAccessDocuments[0])}
           />

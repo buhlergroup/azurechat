@@ -84,10 +84,10 @@ export const PersonaVisibilityInfo = (
         return loadError;
       }
 
-      return "This persona is shared with one of your access groups.";
+      return "This agent is shared with one of your access groups.";
     }
 
-    return "This persona is public, so everyone in your organization can see it.";
+    return "This agent is public, so everyone in your organization can see it.";
   };
 
   return (
@@ -96,7 +96,7 @@ export const PersonaVisibilityInfo = (
         <TooltipTrigger asChild>
           <button
             type="button"
-            aria-label="Why you can see this persona"
+            aria-label="Why you can see this agent"
             className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <Info className="h-4 w-4" />

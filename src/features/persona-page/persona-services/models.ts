@@ -78,7 +78,7 @@ export const PersonaModelSchema = z.object({
     .refine(refineFromEmpty, "Description cannot be empty"),
   personaMessage: z
     .string({
-      invalid_type_error: "Invalid persona Message",
+      invalid_type_error: "Invalid agent message",
     })
     .min(1)
     .refine(refineFromEmpty, "System message cannot be empty"),
@@ -114,6 +114,15 @@ export const convertPersonaDocumentToSharePointDocument = (file: PersonaDocument
     parentReference: file.externalFile.parentReference,
   };
 }
+
+export const AGENT_FAVORITE_ATTRIBUTE = "AGENT_FAVORITE";
+
+export type AgentFavoriteModel = {
+  id: string;
+  userId: string;
+  type: typeof AGENT_FAVORITE_ATTRIBUTE;
+  agentIds: string[];
+};
 
 export const convertPersonaCIDocumentToSharePointDocument = (file: PersonaCIDocument): SharePointFile & { fileName: string } => {
   return {
