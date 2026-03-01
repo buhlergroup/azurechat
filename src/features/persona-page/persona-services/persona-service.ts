@@ -47,6 +47,8 @@ interface PersonaInput {
     source: "SHAREPOINT";
   };
   codeInterpreterDocumentIds?: string[];
+  selectedModel?: string;
+  subAgentIds?: string[];
 }
 
 export const FindPersonaByID = async (
@@ -145,6 +147,8 @@ export const CreatePersona = async (
       personaDocumentIds: personaDocumentIds.response,
       accessGroup: props.accessGroup,
       codeInterpreterDocumentIds: props.codeInterpreterDocumentIds || [],
+      selectedModel: props.selectedModel,
+      subAgentIds: props.subAgentIds || [],
     };
 
     const valid = ValidateSchema(modelToSave);
@@ -276,6 +280,8 @@ export const UpsertPersona = async (
         accessGroup: personaInput.accessGroup,
         personaDocumentIds: personaDocumentIds,
         codeInterpreterDocumentIds: personaInput.codeInterpreterDocumentIds || [],
+        selectedModel: personaInput.selectedModel,
+        subAgentIds: personaInput.subAgentIds || [],
       };
 
       const validationResponse = ValidateSchema(modelToUpdate);
@@ -509,6 +515,8 @@ export const CreatePersonaChat = async (
       extension: persona.extensionIds || [],
       personaDocumentIds: persona.personaDocumentIds || [],
       attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
+      selectedModel: persona.selectedModel as any,
+      subAgentIds: persona.subAgentIds || [],
     });
 
     return response;
