@@ -162,7 +162,8 @@ const FormDataToPersonaModel = (formData: FormData): PersonaModel => {
     : [];
   const codeInterpreterDocumentIds = Array.isArray(ciFileObj) ? ciFileObj : [];
 
-  const selectedModel = formData.get("selectedModel") as string || undefined;
+  const selectedModelRaw = formData.get("selectedModel") as string | null;
+  const selectedModel = selectedModelRaw || undefined;
   
   const subAgentIdsRaw = formData.get("subAgentIds") as string;
   const subAgentIds = subAgentIdsRaw

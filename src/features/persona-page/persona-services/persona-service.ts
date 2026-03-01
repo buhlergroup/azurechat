@@ -6,6 +6,7 @@ import { UpsertChatThread } from "@/features/chat-page/chat-services/chat-thread
 import {
   CHAT_THREAD_ATTRIBUTE,
   ChatThreadModel,
+  ChatModel,
   AttachedFileModel,
 } from "@/features/chat-page/chat-services/models";
 import {
@@ -515,7 +516,7 @@ export const CreatePersonaChat = async (
       extension: persona.extensionIds || [],
       personaDocumentIds: persona.personaDocumentIds || [],
       attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
-      selectedModel: persona.selectedModel as any,
+      selectedModel: persona.selectedModel as ChatModel | undefined,
       subAgentIds: persona.subAgentIds || [],
     });
 
