@@ -17,7 +17,7 @@ import type {
   HTMLAttributes,
   KeyboardEventHandler,
 } from 'react';
-import { Children } from 'react';
+import { Children, useRef, useCallback, useLayoutEffect, useState } from 'react';
 
 export type PromptInputProps = HTMLAttributes<HTMLFormElement>;
 
@@ -44,6 +44,99 @@ export const PromptInputTextarea = ({
   maxHeight = 164,
   ...props
 }: PromptInputTextareaProps) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const manualHeightRef = useRef<number | null>(null);
+  const isDraggingRef = useRef(false);
+  const prevValueLenRef = useRef(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    const valueLen = typeof props.value === 'string' ? props.value.length : 0;
+    const prevLen = prevValueLenRef.current;
+    prevValueLenRef.current = valueLen;
+    const isGrowing = valueLen >= prevLen;
+
+    // If the user manually dragged the handle, respect that
+    const manual = manualHeightRef.current;
+    if (manual !== null) {
+      // Only do the expensive reflow if content might have outgrown manual size
+      if (isGrowing && el.scrollHeight > manual) {
+        // Content outgrew manual height — fall through to auto-grow
+        manualHeightRef.current = null;
+      } else if (!isGrowing) {
+        // Shrinking text — recalc to see if manual is still valid
+        el.style.height = 'auto';
+        const contentHeight = el.scrollHeight;
+        if (manual >= contentHeight) {
+          el.style.height = `${manual}px`;
+          el.style.overflowY = 'hidden';
+          return;
+        }
+        manualHeightRef.current = null;
+      } else {
+        // Manual height still fine, no reflow needed
+        el.style.height = `${manual}px`;
+        el.style.overflowY = 'hidden';
+        return;
+      }
+    }
+
+    // Fast path: when typing, check if content still fits without collapsing
+    if (isGrowing && el.scrollHeight <= el.offsetHeight) {
+      return; // height is fine, skip the expensive reflow
+    }
+
+    // Slow path: full recalc (new line wrapped, or text deleted)
+    el.style.height = 'auto';
+    const contentHeight = el.scrollHeight;
+    const clamped = Math.min(Math.max(contentHeight, minHeight), maxHeight);
+    el.style.height = `${clamped}px`;
+    el.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+  }, [minHeight, maxHeight, props.value]);
+
+  // Synchronously adjust before paint so there's no flicker
+  useLayoutEffect(() => {
+    // Reset manual override when input is cleared (e.g. after submit)
+    if (!props.value || (typeof props.value === 'string' && props.value.length === 0)) {
+      manualHeightRef.current = null;
+    }
+    adjustHeight();
+  }, [props.value, adjustHeight]);
+
+  // Custom top-center drag handle logic
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    const startY = e.clientY;
+    const el = textareaRef.current;
+    if (!el) return;
+    const startHeight = el.offsetHeight;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      // Dragging up (negative deltaY) = bigger
+      const deltaY = startY - ev.clientY;
+      const newHeight = Math.max(minHeight, startHeight + deltaY);
+      manualHeightRef.current = newHeight;
+      el.style.height = `${newHeight}px`;
+      el.style.overflowY = newHeight < el.scrollHeight ? 'auto' : 'hidden';
+    };
+
+    const onPointerUp = () => {
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+    };
+
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+  }, [minHeight]);
+
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
     if (e.key === 'Enter') {
       // Don't submit if IME composition is in progress
@@ -66,21 +159,36 @@ export const PromptInputTextarea = ({
   };
 
   return (
-    <Textarea
-      className={cn(
-        'w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0',
-        'field-sizing-content max-h-[6lh] bg-transparent dark:bg-transparent',
-        'focus-visible:ring-0',
-        className
-      )}
-      name="message"
-      onChange={(e) => {
-        onChange?.(e);
-      }}
-      onKeyDown={handleKeyDown}
-      placeholder={placeholder}
-      {...props}
-    />
+    <div className="flex flex-col">
+      {/* Top-center drag handle */}
+      <div
+        onPointerDown={handlePointerDown}
+        className={cn(
+          'flex items-center justify-center cursor-ns-resize py-1 select-none',
+          isDragging ? 'bg-muted/50' : 'hover:bg-muted/30'
+        )}
+      >
+        <div className="w-8 h-1 rounded-full bg-muted-foreground/30" />
+      </div>
+      <Textarea
+        ref={textareaRef}
+        className={cn(
+          'w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0',
+          'bg-transparent dark:bg-transparent',
+          'focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-none',
+          className
+        )}
+        style={{ minHeight }}
+        rows={1}
+        name="message"
+        onChange={(e) => {
+          onChange?.(e);
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        {...props}
+      />
+    </div>
   );
 };
 

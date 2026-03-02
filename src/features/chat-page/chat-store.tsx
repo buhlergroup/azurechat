@@ -12,7 +12,6 @@ import { proxy, useSnapshot } from "valtio";
 import { RevalidateCache } from "../common/navigation-helpers";
 import { InputImageStore } from "../ui/chat/chat-input-area/input-image-store";
 import { textToSpeechStore } from "./chat-input/speech/use-text-to-speech";
-import { ResetInputRows } from "./chat-input/use-chat-input-dynamic-height";
 import { logDebug, logInfo, logWarn, logError } from "../common/services/logger";
 import {
   AddExtensionToChatThread,
@@ -339,7 +338,6 @@ class ChatState {
 
   private reset() {
     this.input = "";
-    ResetInputRows();
     InputImageStore.Reset();
   }
 
