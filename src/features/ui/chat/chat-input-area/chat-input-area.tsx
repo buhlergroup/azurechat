@@ -14,7 +14,7 @@ export const ChatInputForm = React.forwardRef<
   <div className="absolute bottom-0 left-0 right-0 py-2 px-3">
     <div className="w-full max-w-3xl mx-auto flex flex-col gap-1">
       <ChatInputStatus status={status} />
-      <div className="backdrop-blur-xl bg-background/70 rounded-md overflow-hidden focus-within:border-primary border">
+      <div className="backdrop-blur-xl bg-background/70 rounded-md overflow-clip focus-within:border-primary border">
         <form ref={ref} className="p-[2px]" {...props}>
           {props.children}
         </form>

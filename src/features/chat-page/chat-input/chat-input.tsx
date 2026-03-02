@@ -4,7 +4,6 @@ import {
   ResetInputRows,
   onKeyDown,
   onKeyUp,
-  useChatInputDynamicHeight,
 } from "@/features/chat-page/chat-input/use-chat-input-dynamic-height";
 import { AttachFile } from "@/features/ui/chat/chat-input-area/attach-file";
 import {
@@ -53,7 +52,6 @@ export const ChatInput = ({
   const { uploadButtonLabel } = useFileStore();
   const { isPlaying } = useTextToSpeech();
   const { isMicrophoneReady } = useSpeechToText();
-  const { rows } = useChatInputDynamicHeight();
 
   const submitButton = React.useRef<HTMLButtonElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -135,7 +133,6 @@ export const ChatInput = ({
           onKeyUp(e);
         }}
         value={input}
-        rows={rows}
         onChange={(e) => {
           chatStore.updateInput(e.currentTarget.value);
         }}
