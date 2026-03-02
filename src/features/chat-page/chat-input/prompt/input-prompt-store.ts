@@ -2,7 +2,6 @@ import { PromptModel } from "@/features/prompt-page/models";
 import { FindAllPrompts } from "@/features/prompt-page/prompt-service";
 import { proxy, useSnapshot } from "valtio";
 import { chatStore } from "../../chat-store";
-import { SetInputRowsToMax } from "../use-chat-input-dynamic-height";
 
 class InputPromptState {
   public errors: string[] = [];
@@ -38,7 +37,6 @@ class InputPromptState {
     chatStore.updateInput(prompt.description);
     this.isOpened = false;
     this.errors = [];
-    SetInputRowsToMax();
   }
 }
 
