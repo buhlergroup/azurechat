@@ -324,6 +324,7 @@ export interface ChatThreadModel {
   codeInterpreterContainerId?: string;
   codeInterpreterFileIdsSignature?: string;
   attachedFiles?: Array<AttachedFileModel>;
+  subAgentIds?: string[];
 }
 
 export interface UserPrompt {
