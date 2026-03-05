@@ -61,7 +61,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.3 Chat",
     description: "Latest GPT-5.3 Chat model optimized for conversational interactions",
     getInstance: () => OpenAIV1Instance(),
-    supportsReasoning: false,
+    supportsReasoning: true,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT53_CHAT_DEPLOYMENT_NAME,
     defaultReasoningEffort: "medium"
