@@ -19,6 +19,7 @@ export type ChatModel =
   | "gpt-5.1"
   | "gpt-5.2"
   | "gpt-5.3-chat"
+  | "gpt-5.4"
   | "gpt-4o" 
   | "gpt-4o-mini" 
   | "gpt-4.1" 
@@ -54,6 +55,17 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT52_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "low"
+  },
+  "gpt-5.4": {
+    id: "gpt-5.4",
+    name: "GPT-5.4",
+    description: "Latest GPT-5.4 model with enhanced reasoning capabilities",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    supportsImageGeneration: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT54_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low"
   },
   "gpt-5.3-chat": {
