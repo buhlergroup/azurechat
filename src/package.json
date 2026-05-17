@@ -88,7 +88,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.7.0",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^4.1.6",
     "autoprefixer": "^10.4.22",
     "baseline-browser-mapping": "^2.9.19",
     "cross-env": "^7.0.3",
@@ -98,6 +98,6 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.6"
   }
 }
