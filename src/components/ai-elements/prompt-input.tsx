@@ -174,6 +174,7 @@ export const PromptInputTextarea = ({
         ref={textareaRef}
         className={cn(
           'w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0',
+          'text-base md:text-sm',
           'bg-transparent dark:bg-transparent',
           'focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-none',
           className
