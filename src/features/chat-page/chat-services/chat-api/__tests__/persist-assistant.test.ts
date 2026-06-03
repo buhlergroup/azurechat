@@ -31,6 +31,19 @@ vi.mock("@/features/common/services/usage-service", () => ({
   IncrementUsage: (...a: unknown[]) => mockIncrementUsage(...a),
 }));
 
+// ── Cosmos ────────────────────────────────────────────────────────────────────
+// persistThread's atomic-turn path calls HistoryContainer().items.batch(); left
+// unmocked it drives the real Cosmos SDK against the fake test endpoint, whose
+// retry/backoff blows past the 5s test timeout. Make batch reject so the
+// documented sequential-upsert fallback (UpsertChatMessage, mocked above) runs —
+// the path these tests assert on.
+const mockBatch = vi.fn(async () => {
+  throw new Error("batch unavailable in test");
+});
+vi.mock("@/features/common/services/cosmos", () => ({
+  HistoryContainer: () => ({ items: { batch: (...a: unknown[]) => mockBatch(...a) } }),
+}));
+
 import { persistThread } from "../persist-assistant";
 import { MODEL_CONFIGS } from "../../models";
 import type { UIMessage } from "ai";

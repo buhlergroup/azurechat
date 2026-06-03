@@ -47,6 +47,20 @@ export async function reportCompletionTokens(tokenCount: number, model: string, 
         completionsTokensUsed.record(tokenCount, combinedAttributes);
 }
 
+export async function reportCachedTokens(tokenCount: number, model: string, attributes: any = {}) {
+
+    const meter = getChatMeter();
+
+    const cachedTokensUsed = meter.createHistogram("cachedTokensUsed", {
+        description: "Number of prompt tokens served from the model's prompt cache",
+        unit: "tokens",
+    });
+
+    let combinedAttributes = { ...attributes, ...await getAttributes(model) };
+
+    cachedTokensUsed.record(tokenCount, combinedAttributes);
+}
+
 export async function reportUserChatMessage(model: string, attributes: any = {}) {
 
     const meter = getChatMeter();

@@ -29,6 +29,12 @@ import { createIdGenerator } from "ai";
 import { userHashedId } from "@/features/auth-page/helpers";
 import { logError, logInfo, logWarn } from "@/features/common/services/logger";
 import { IncrementUsage } from "@/features/common/services/usage-service";
+import {
+  reportPromptTokens,
+  reportCompletionTokens,
+  reportCachedTokens,
+  reportUserChatMessage,
+} from "@/features/common/services/chat-metrics-service";
 import { UpsertChatMessage } from "../chat-message-service";
 import { UpdateChatThreadUsage } from "../chat-thread-service";
 import { HistoryContainer } from "@/features/common/services/cosmos";
@@ -329,6 +335,30 @@ export async function persistThread({
       error: err instanceof Error ? err.message : String(err),
     })
   );
+
+  // Emit App Insights custom metrics (OpenTelemetry) consumed by the
+  // "Bühler GPT Usage" monitoring workbook. These were dropped when the
+  // legacy orchestrator stack was removed (commit 8f818d6); the streamText
+  // finish path replaced them with the Cosmos-only IncrementUsage above.
+  // Re-wired here (fire-and-forget) so the workbook's per-model token /
+  // cache / user tiles keep populating. chatModel/email/name are resolved
+  // from the session inside chat-metrics-service.
+  const model = modelConfig.id;
+  const metricAttrs = { threadId };
+  Promise.all([
+    reportPromptTokens(inputTokens, model, "user", metricAttrs),
+    reportCompletionTokens(outputTokens, model, {
+      ...metricAttrs,
+      totalTokens: inputTokens + outputTokens,
+      inputTokens,
+    }),
+    reportCachedTokens(cachedTokens, model, metricAttrs),
+    reportUserChatMessage(model, metricAttrs),
+  ]).catch((err: unknown) =>
+    logError("Failed to emit chat usage metrics", {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -440,9 +470,24 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
   // Cosmos row → the UI renders nothing and the user thinks they hit a
   // ghost (architect2 SEV-1 B4). Inject a visible "no content" text part
   // so polling stops, the bubble renders, and the failure is auditable.
+  // streamText's onFinish `event.toolResults` is ONLY the LAST step's tool
+  // results (AI SDK semantics — index.d.ts: "results of the tool calls from
+  // the last step"). A client-executed custom tool such as get_current_time
+  // resolves in a NON-final step — the model needs a later step to turn the
+  // result into prose — so its result never appears in event.toolResults and
+  // was silently dropped from persistence: the tool card rendered live but
+  // vanished on reload. Provider-executed built-in tools (web_search,
+  // code_interpreter, image_generation) resolve within the final step, which
+  // is why only custom-tool cards disappeared. Aggregate across ALL steps,
+  // mirroring the onAbort persist path in route.ts.
+  const allToolResults =
+    event.steps && event.steps.length > 0
+      ? event.steps.flatMap((s) => s.toolResults)
+      : event.toolResults;
+
   const hasText = !!event.text;
   const hasReasoning = !!event.reasoningText;
-  const hasTools = event.toolResults.length > 0;
+  const hasTools = allToolResults.length > 0;
   const isEmptyFinish = !hasText && !hasReasoning && !hasTools;
   if (isEmptyFinish) {
     logWarn("persistAssistantFromFinishEvent: empty finish — writing sentinel row", {
@@ -465,21 +510,21 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
   // details; pre-migration this was handled by processMessageForImagePersistence
   // running on assistant `content`, which no longer sees the image bytes
   // now that they live in a structured tool output.
+  // TypedToolResult<TOOLS> (both the static and dynamic union members)
+  // already exposes toolName/toolCallId/input/output, so it satisfies
+  // ingestImageGenerationResults' structural parameter directly — no cast
+  // needed. The generic flows through, so the result stays typed as
+  // TypedToolResult<TOOLS>[] for buildAssistantUIMessage too.
   const ingestedToolResults = await ingestImageGenerationResults(
     threadId,
-    event.toolResults as unknown as {
-      toolName: string;
-      toolCallId?: string;
-      input?: unknown;
-      output?: unknown;
-    }[],
+    allToolResults,
   );
 
   const assistant = buildAssistantUIMessage(
     {
       text: isEmptyFinish ? sentinelText : event.text,
       reasoningText: event.reasoningText,
-      toolResults: ingestedToolResults as typeof event.toolResults,
+      toolResults: ingestedToolResults,
     },
     messageId ?? assistantMessageIdGenerator(),
     reasoningDurationMs,

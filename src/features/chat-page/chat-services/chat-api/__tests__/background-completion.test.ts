@@ -37,6 +37,15 @@ vi.mock("@/features/common/services/logger", () => ({
   logError: vi.fn(),
   logWarn: vi.fn(),
 }));
+// persistThread's atomic-batch path calls HistoryContainer().items.batch();
+// unmocked it drives the real Cosmos SDK against the fake test endpoint and its
+// retry/backoff exceeds the 5s test timeout. Reject batch so the sequential
+// UpsertChatMessage fallback (stubbed above) runs deterministically.
+vi.mock("@/features/common/services/cosmos", () => ({
+  HistoryContainer: () => ({
+    items: { batch: vi.fn(async () => { throw new Error("batch unavailable in test"); }) },
+  }),
+}));
 
 // A LanguageModelV3 that streams `words` with `delayMs` between each delta.
 function makeSlowModel(words: string[], delayMs: number) {

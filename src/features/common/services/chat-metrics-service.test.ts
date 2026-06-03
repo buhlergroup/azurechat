@@ -77,6 +77,31 @@ describe("common.unit.chat-metrics — reportCompletionTokens", () => {
   });
 });
 
+describe("common.unit.chat-metrics — reportCachedTokens", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("common.unit.chat-metrics.007: creates cachedTokensUsed histogram and records with default attributes", async () => {
+    const { reportCachedTokens } = await import("./chat-metrics-service");
+    await reportCachedTokens(200, "gpt-4");
+    expect(mockCreateHistogram).toHaveBeenCalledWith("cachedTokensUsed", expect.any(Object));
+    expect(mockRecord).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({ email: "user@example.com", chatModel: "gpt-4" })
+    );
+  });
+
+  it("common.unit.chat-metrics.008: merges extra attributes for cached tokens", async () => {
+    const { reportCachedTokens } = await import("./chat-metrics-service");
+    await reportCachedTokens(64, "gpt-4", { threadId: "thread-9" });
+    expect(mockRecord).toHaveBeenCalledWith(
+      64,
+      expect.objectContaining({ threadId: "thread-9" })
+    );
+  });
+});
+
 describe("common.unit.chat-metrics — reportUserChatMessage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
