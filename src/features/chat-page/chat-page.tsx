@@ -144,6 +144,30 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
     };
   }, [generatingInBackground, router]);
 
+  // Sidebar title refresh: the thread title is generated fire-and-forget on
+  // the server right AFTER the first turn's stream closes (route.ts onFinish
+  // → UpdateChatTitle), so at the moment the client sees status flip to
+  // "ready" the Cosmos write usually hasn't landed yet. Refresh the route
+  // (layout included — that's where the chat menu lives) shortly after the
+  // first turn completes so the generated name replaces "New chat" without
+  // a manual page reload. Two staggered refreshes cover slow title
+  // generations; subsequent turns don't re-title, so this only fires once.
+  const userTurnCount = messages.filter((m) => m.role === "user").length;
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const wasStreaming =
+      prevStatusRef.current === "streaming" ||
+      prevStatusRef.current === "submitted";
+    prevStatusRef.current = status;
+    if (!wasStreaming || status !== "ready" || userTurnCount !== 1) return;
+    const early = setTimeout(() => router.refresh(), 1_500);
+    const late = setTimeout(() => router.refresh(), 5_000);
+    return () => {
+      clearTimeout(early);
+      clearTimeout(late);
+    };
+  }, [status, userTurnCount, router]);
+
   return (
     <Conversation>
       <ConversationContent className="max-w-4xl mx-auto w-full">
