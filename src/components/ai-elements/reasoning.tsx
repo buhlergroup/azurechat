@@ -62,6 +62,7 @@ export const Reasoning = memo(
     });
 
     const [hasAutoClosedRef, setHasAutoClosedRef] = useState(false);
+    const [hasStreamed, setHasStreamed] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
 
     // Track duration when streaming starts and ends
@@ -76,9 +77,22 @@ export const Reasoning = memo(
       }
     }, [isStreaming, startTime, setDuration]);
 
-    // Auto-open when streaming starts, auto-close when streaming ends (once only)
+    // Remember that reasoning actually streamed in this session so we can
+    // auto-close once it ends. We can't gate the close on `defaultOpen`: the
+    // caller flips `defaultOpen`/`isStreaming` to false together the instant
+    // the answer text begins, so a `defaultOpen` guard would never fire.
     useEffect(() => {
-      if (defaultOpen && !isStreaming && isOpen && !hasAutoClosedRef) {
+      if (isStreaming) {
+        setHasStreamed(true);
+      }
+    }, [isStreaming]);
+
+    // Auto-close once, shortly after reasoning streaming ends, so the user
+    // sees where reasoning stops and the answer begins. Only triggers after a
+    // real streaming→done transition — historical or manually-opened panels
+    // (which never streamed) are left untouched.
+    useEffect(() => {
+      if (hasStreamed && !isStreaming && isOpen && !hasAutoClosedRef) {
         // Add a small delay before closing to allow user to see the content
         const timer = setTimeout(() => {
           setIsOpen(false);
@@ -87,7 +101,7 @@ export const Reasoning = memo(
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosedRef]);
+    }, [hasStreamed, isStreaming, isOpen, setIsOpen, hasAutoClosedRef]);
 
     const handleOpenChange = (newOpen: boolean) => {
       setIsOpen(newOpen);

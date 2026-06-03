@@ -103,9 +103,13 @@ function makeFinishReason(unified: "stop" | "tool-calls" | "error" = "stop") {
 }
 
 // Build a ReadableStream from an array of LanguageModelV3StreamPart objects.
-// text-delta parts are paced so abort-mid-stream specs have time to click
-// the stop button before the stream finishes. Other part types flush
-// immediately so the test runtime stays bounded.
+// text-delta and reasoning-delta parts are paced so the client paints
+// intermediate streaming frames: abort-mid-stream specs need time to click
+// the stop button, and the reasoning panel needs a "reasoning is the last
+// part" frame to open before the answer arrives (otherwise React coalesces
+// the whole stream into one render and the panel never opens). Other part
+// types flush immediately so the test runtime stays bounded.
+const PACED_PART_TYPES = new Set(["text-delta", "reasoning-delta"]);
 function chunkStream(parts: unknown[]): ReadableStream<unknown> {
   return new ReadableStream({
     async start(controller) {
@@ -114,7 +118,7 @@ function chunkStream(parts: unknown[]): ReadableStream<unknown> {
         if (
           typeof part === "object" &&
           part !== null &&
-          (part as { type?: string }).type === "text-delta"
+          PACED_PART_TYPES.has((part as { type?: string }).type ?? "")
         ) {
           await new Promise((r) => setTimeout(r, 20));
         }
