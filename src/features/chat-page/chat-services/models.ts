@@ -16,7 +16,11 @@ export type ChatModel =
   | "gpt-5.5"
   | "gpt-5.4"
   | "gpt-5.4-mini"
-  | "gpt-5.3-chat";
+  | "gpt-5.3-chat"
+  | "claude-opus-4-8"
+  | "claude-sonnet-4-6"
+  | "grok-4.3"
+  | "deepseek-v4-pro";
 
 export interface ModelPricing {
   inputPerMillion: number;
@@ -111,6 +115,66 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     pricing: { inputPerMillion: 1.75, outputPerMillion: 14.00, cachedInputPerMillion: 0.175 },
     contextWindow: 128000,
     fallbackModel: "gpt-5.4-mini",
+  },
+  // --- Foundry partner models (multi-model testing) -----------------------
+  // Claude is served via the Anthropic-native Messages API on
+  // *.services.ai.azure.com/anthropic — NOT the OpenAI-compatible endpoint.
+  // provider: "anthropic" routes these through the @ai-sdk/anthropic branch
+  // in provider-seam.ts. Grok/DeepSeek go through the standard
+  // OpenAI-compatible /openai/v1 endpoint like the gpt-5.* models.
+  "claude-opus-4-8": {
+    id: "claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    description: "Anthropic's most intelligent Opus model for coding and agents (preview)",
+    getInstance: () => OpenAIV1Instance(), // unused for anthropic-provider models
+    supportsReasoning: true,
+    supportsResponsesAPI: false,
+    provider: "anthropic",
+    deploymentName: process.env.AZURE_ANTHROPIC_OPUS48_DEPLOYMENT_NAME,
+    // Opus 4.8 defaults to effort=high server-side; we forward the user's
+    // selection via providerOptions.anthropic.effort in provider-seam.ts.
+    defaultReasoningEffort: "high",
+    pricing: { inputPerMillion: 5, outputPerMillion: 25.00, cachedInputPerMillion: 0.5 },
+    contextWindow: 1000000,
+  },
+  "claude-sonnet-4-6": {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
+    description: "Anthropic's frontier intelligence at scale for coding and agents (preview)",
+    getInstance: () => OpenAIV1Instance(), // unused for anthropic-provider models
+    supportsReasoning: true,
+    supportsResponsesAPI: false,
+    provider: "anthropic",
+    deploymentName: process.env.AZURE_ANTHROPIC_SONNET46_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium",
+    pricing: { inputPerMillion: 3, outputPerMillion: 15.00, cachedInputPerMillion: 0.3 },
+    contextWindow: 1000000,
+  },
+  "grok-4.3": {
+    id: "grok-4.3",
+    name: "Grok 4.3",
+    description: "xAI's Grok 4.3 model (preview)",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GROK43_DEPLOYMENT_NAME,
+    // TODO: verify Foundry pricing for grok-4.3 — placeholder from grok-4 tier.
+    pricing: { inputPerMillion: 3, outputPerMillion: 15.00, cachedInputPerMillion: 0.75 },
+    contextWindow: 256000,
+  },
+  "deepseek-v4-pro": {
+    id: "deepseek-v4-pro",
+    name: "DeepSeek V4 Pro",
+    description: "DeepSeek V4 Pro model (preview). Reasoning output may be intermittent.",
+    getInstance: () => OpenAIV1Instance(),
+    // Foundry caveat: the reasoning output item is emitted on only ~half of
+    // requests and reasoning_tokens reports 0 — keep reasoning off in the UI.
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_DEEPSEEK_V4_DEPLOYMENT_NAME,
+    // TODO: verify Foundry pricing for DeepSeek-V4-Pro — placeholder.
+    pricing: { inputPerMillion: 1.2, outputPerMillion: 5.00, cachedInputPerMillion: 0.3 },
+    contextWindow: 128000,
   },
 };
 

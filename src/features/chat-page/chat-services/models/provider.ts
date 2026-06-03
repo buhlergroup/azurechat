@@ -20,12 +20,19 @@ import { getAzureCognitiveServicesTokenProvider } from "@/features/common/servic
 import { MODEL_CONFIGS, type ChatModel } from "../models";
 
 /** The shape stored under SERVICE_KEYS.aiProvider: a function that maps a
- *  deployment name to a LanguageModelV3. */
-export type AiProviderFn = (deploymentName: string) => LanguageModelV3;
+ *  deployment name to a LanguageModelV3. `api` selects the Azure surface:
+ *  "responses" (default) or "chat" (chat-completions, for models that don't
+ *  support the Responses API). Test fakes that ignore the second arg keep
+ *  working. */
+export type AiProviderFn = (
+  deploymentName: string,
+  api?: "responses" | "chat",
+) => LanguageModelV3;
 
 /**
  * Returns the LanguageModelV3 for the given ChatModel by looking up the
  * deployment name in MODEL_CONFIGS and delegating to the registered aiProvider.
+ * Models with supportsResponsesAPI=false get the chat-completions surface.
  */
 export function resolveAzureModel(modelId: ChatModel): LanguageModelV3 {
   const config = MODEL_CONFIGS[modelId];
@@ -40,7 +47,7 @@ export function resolveAzureModel(modelId: ChatModel): LanguageModelV3 {
     );
   }
   const provider = resolve<AiProviderFn>(SERVICE_KEYS.aiProvider);
-  return provider(deploymentName);
+  return provider(deploymentName, config.supportsResponsesAPI ? "responses" : "chat");
 }
 
 /**
@@ -89,7 +96,8 @@ export function createProductionAzureProvider(): AiProviderFn {
       apiVersion,
       headers: imageGenHeader,
     });
-    return (deploymentName) => azure(deploymentName);
+    return (deploymentName, api) =>
+      api === "chat" ? azure.chat(deploymentName) : azure(deploymentName);
   }
 
   // Azure AD path.
@@ -120,7 +128,8 @@ export function createProductionAzureProvider(): AiProviderFn {
     headers: imageGenHeader,
   });
 
-  return (deploymentName) => azure(deploymentName);
+  return (deploymentName, api) =>
+    api === "chat" ? azure.chat(deploymentName) : azure(deploymentName);
 }
 
 // Register production binding at module init (skipped if already registered,

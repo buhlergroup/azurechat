@@ -30,7 +30,9 @@
 
 import type { LanguageModelV3, JSONValue } from "@ai-sdk/provider";
 import { azure } from "@ai-sdk/azure";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { resolveAzureModel } from "./provider";
+import { getAzureAiFoundryTokenProvider } from "@/features/common/services/azure-default-credential";
 import {
   MODEL_CONFIGS,
   type ChatModel,
@@ -117,19 +119,96 @@ export function resolveProvider(args: ResolveProviderArgs): ResolvedProvider {
     case "azure":
       return resolveAzureBackedProvider(args);
     case "anthropic":
-      // Reserved for the follow-up Anthropic PR. Throw a descriptive
-      // error rather than silently fall back, so the missing wiring is
-      // surfaced when the user first picks an Anthropic model.
-      throw new Error(
-        `resolveProvider: model "${args.modelId}" is provider="anthropic", ` +
-          `but the Anthropic seam is not yet wired. Install @ai-sdk/anthropic ` +
-          `and implement the anthropic branch in provider-seam.ts.`
-      );
+      return resolveAnthropicBackedProvider(args, config);
     default:
       throw new Error(
         `resolveProvider: unhandled provider "${providerTag}" for model "${args.modelId}"`
       );
   }
+}
+
+/**
+ * Anthropic Claude served by Azure AI Foundry.
+ *
+ * Foundry exposes Claude via the Anthropic-NATIVE Messages API at
+ *   https://<resource>.services.ai.azure.com/anthropic/v1/messages
+ * (NOT the OpenAI-compatible /openai/v1 endpoint), so we use
+ * @ai-sdk/anthropic with a custom baseURL instead of @ai-sdk/azure.
+ *
+ * Auth, in precedence order (mirrors the Azure provider):
+ *   1. AZURE_ANTHROPIC_API_KEY → sent as `x-api-key` by the SDK.
+ *   2. Entra ID via DefaultAzureCredential with the FOUNDRY scope
+ *      `https://ai.azure.com/.default` (cognitive-services scope is
+ *      rejected on *.services.ai.azure.com). A fetch wrapper swaps the
+ *      placeholder x-api-key for `Authorization: Bearer <token>`.
+ *
+ * Model-specific constraints baked in here (per Anthropic's Foundry docs,
+ * verified 2026-06-03):
+ *   - Opus 4.8 / 4.7 reject temperature/top_p/top_k with 400 — the route
+ *     never sends sampling params, so nothing to strip.
+ *   - thinking: Opus 4.8 supports only `adaptive`/`disabled`; Sonnet 4.6
+ *     also `enabled`. We always send `adaptive` and let the model decide.
+ *   - effort: low/medium/high (+ max/xhigh on 4.6+). Mapped from the
+ *     user's ReasoningEffort selection; "minimal" maps to "low".
+ *   - No Azure-native built-in tools here: web search / code interpreter /
+ *     image generation are Responses-API features. Custom tools (RAG,
+ *     extensions, sub-agents) flow through as standard tool calls.
+ */
+function resolveAnthropicBackedProvider(
+  args: ResolveProviderArgs,
+  config: ModelConfig,
+): ResolvedProvider {
+  const deploymentName = config.deploymentName;
+  if (!deploymentName) {
+    throw new Error(
+      `resolveProvider: no deploymentName configured for anthropic model ` +
+        `"${args.modelId}". Check the AZURE_ANTHROPIC_*_DEPLOYMENT_NAME env var.`,
+    );
+  }
+
+  const resourceName =
+    process.env.AZURE_ANTHROPIC_RESOURCE_NAME ??
+    process.env.AZURE_OPENAI_API_INSTANCE_NAME;
+  if (!resourceName) {
+    throw new Error(
+      "resolveProvider(anthropic): neither AZURE_ANTHROPIC_RESOURCE_NAME nor " +
+        "AZURE_OPENAI_API_INSTANCE_NAME is set.",
+    );
+  }
+  const baseURL = `https://${resourceName}.services.ai.azure.com/anthropic/v1`;
+
+  const apiKey = process.env.AZURE_ANTHROPIC_API_KEY;
+  const anthropic = apiKey
+    ? createAnthropic({ baseURL, apiKey })
+    : (() => {
+        const getToken = getAzureAiFoundryTokenProvider();
+        const aadFetch: typeof fetch = async (input, init) => {
+          const token = await getToken();
+          const headers = new Headers(init?.headers);
+          headers.delete("x-api-key");
+          headers.set("Authorization", `Bearer ${token}`);
+          return fetch(input, { ...init, headers });
+        };
+        // Placeholder key satisfies the SDK's loadApiKey check; aadFetch
+        // replaces authentication at call time (same trick as provider.ts).
+        return createAnthropic({ baseURL, apiKey: " ", fetch: aadFetch });
+      })();
+
+  const anthropicOptions: Record<string, JSONValue> = {
+    // Let Claude decide whether/how much to think — supported across
+    // Opus 4.8 (adaptive/disabled only) and Sonnet 4.6.
+    thinking: { type: "adaptive" },
+  };
+  if (args.reasoning.supported && args.reasoning.effort) {
+    anthropicOptions.effort =
+      args.reasoning.effort === "minimal" ? "low" : args.reasoning.effort;
+  }
+
+  return {
+    model: anthropic(deploymentName),
+    builtInTools: {},
+    providerOptions: { anthropic: anthropicOptions },
+  };
 }
 
 function resolveAzureBackedProvider(args: ResolveProviderArgs): ResolvedProvider {
