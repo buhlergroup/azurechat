@@ -346,7 +346,7 @@ export async function POST(req: Request) {
     system,
     messages: await convertToModelMessages(ctx.history),
     tools: allTools,
-    stopWhen: stepCountIs(8),
+    stopWhen: stepCountIs(15),
     abortSignal: abortController.signal,
     experimental_transform: (() => {
       // Shared map populated by the code-interpreter rewriter when it
