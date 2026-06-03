@@ -51,9 +51,13 @@ interface NormalizedToolPart {
   /**
    * The Tool component's state input. Mapped from AI SDK part type +
    * presence of `output` so we never show a "Running" widget for a part
-   * that already has a result.
+   * that already has a result — including failed parts, which carry
+   * `errorText` but no `output` and must surface as "Error", not an
+   * eternally-running widget.
    */
-  state: "input-available" | "output-available";
+  state: "input-available" | "output-available" | "output-error";
+  /** Error message when the tool call failed (AI SDK `output-error` parts). */
+  errorText: string | undefined;
 }
 
 /**
@@ -86,6 +90,7 @@ export function normalizeToolPart(
     input?: unknown;
     output?: unknown;
     state?: string;
+    errorText?: string;
   };
 
   // For `tool-<name>` parts the toolName isn't a separate field — derive
@@ -97,11 +102,14 @@ export function normalizeToolPart(
       : "tool");
 
   const hasOutput = p.output !== undefined && p.output !== null;
-  const state: NormalizedToolPart["state"] = hasOutput
-    ? "output-available"
-    : p.state === "output-available"
+  const hasError = p.state === "output-error" || p.errorText !== undefined;
+  const state: NormalizedToolPart["state"] = hasError
+    ? "output-error"
+    : hasOutput
       ? "output-available"
-      : "input-available";
+      : p.state === "output-available"
+        ? "output-available"
+        : "input-available";
 
   return {
     id: p.toolCallId ?? `idx-${index}`,
@@ -109,6 +117,7 @@ export function normalizeToolPart(
     input: p.input,
     output: p.output ?? null,
     state,
+    errorText: hasError ? (p.errorText ?? "Tool call failed") : undefined,
   };
 }
 
@@ -254,7 +263,9 @@ export function renderToolOutput(output: unknown, toolName?: string): ReactNode 
 export function ToolPartView({ part, index }: { part: UIMessagePart; index: number }) {
   const normalized = normalizeToolPart(part, index);
   return (
-    <Tool>
+    // Failed calls open expanded so the error message is visible without a
+    // click; successful calls stay collapsed as before.
+    <Tool defaultOpen={normalized.state === "output-error"}>
       <ToolHeader
         type={`tool-${normalized.toolName}` as `tool-${string}`}
         state={normalized.state}
@@ -263,7 +274,7 @@ export function ToolPartView({ part, index }: { part: UIMessagePart; index: numb
         <ToolInput input={normalized.input} />
         <ToolOutput
           output={renderToolOutput(normalized.output, normalized.toolName)}
-          errorText={undefined}
+          errorText={normalized.errorText}
         />
       </ToolContent>
     </Tool>

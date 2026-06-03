@@ -73,6 +73,48 @@ describe("normalizeToolPart", () => {
     );
     expect(out.state).toBe("output-available");
   });
+
+  it("maps SDK output-error state to output-error, not Running", () => {
+    const out = normalizeToolPart(
+      {
+        type: "tool-comos_search",
+        state: "output-error",
+        input: { query: "x" },
+        errorText: 'Extension "comos_search" failed with status 403',
+      } as never,
+      0,
+    );
+    expect(out.state).toBe("output-error");
+    expect(out.errorText).toBe(
+      'Extension "comos_search" failed with status 403',
+    );
+  });
+
+  it("treats a part with errorText but no state as output-error", () => {
+    const out = normalizeToolPart(
+      { type: "tool-call", input: {}, errorText: "boom" } as never,
+      0,
+    );
+    expect(out.state).toBe("output-error");
+    expect(out.errorText).toBe("boom");
+  });
+
+  it("falls back to a generic error message when output-error has no errorText", () => {
+    const out = normalizeToolPart(
+      { type: "tool-call", state: "output-error", input: {} } as never,
+      0,
+    );
+    expect(out.state).toBe("output-error");
+    expect(out.errorText).toBe("Tool call failed");
+  });
+
+  it("leaves errorText undefined for successful parts", () => {
+    const out = normalizeToolPart(
+      { type: "tool-call", output: { hits: [] } } as never,
+      0,
+    );
+    expect(out.errorText).toBeUndefined();
+  });
 });
 
 describe("renderToolOutput", () => {
