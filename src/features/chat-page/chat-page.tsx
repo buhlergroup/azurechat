@@ -304,7 +304,7 @@ const ChatMessages = memo(function ChatMessages({ profilePicture }: { profilePic
           user (architect2 SEV-1 B6).
         */}
         {error && (
-          <div className="flex items-center gap-3 py-4 px-4 mx-auto max-w-md rounded-md bg-destructive/10 border border-destructive/30 text-destructive-foreground text-sm">
+          <div className="flex items-center gap-3 py-4 px-4 mx-auto max-w-md rounded-md bg-destructive/10 border border-destructive/30 text-foreground text-sm">
             <span>
               {error instanceof Error ? error.message : String(error)}
             </span>
