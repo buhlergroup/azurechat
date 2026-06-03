@@ -22,7 +22,7 @@
     "@azure/cosmos": "^4.9.0",
     "@azure/identity": "^4.13.0",
     "@azure/keyvault-secrets": "^4.10.0",
-    "@azure/monitor-opentelemetry": "^1.14.2",
+    "@azure/monitor-opentelemetry": "^1.18.1",
     "@azure/search-documents": "^12.2.0",
     "@azure/storage-blob": "^12.29.1",
     "@codemirror/lang-javascript": "^6.2.4",
@@ -35,7 +35,6 @@
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/instrumentation": "^0.54.0",
     "@opentelemetry/instrumentation-http": "^0.54.2",
-    "@opentelemetry/sdk-node": "^0.54.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -107,5 +106,12 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.5",
     "vitest": "^4.1.6"
+  },
+  "overrides": {
+    "uuid": "^11.1.1",
+    "ws": "^8.20.1",
+    "@nevware21/ts-utils": "^0.14.0",
+    "fast-xml-builder": "^1.2.0",
+    "postcss": "$postcss"
   }
 }
