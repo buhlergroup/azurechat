@@ -36,6 +36,7 @@ import {
 } from "./chat-store-factory";
 import { setActiveChatStore } from "./active-chat-store";
 import type { ChatModel, ChatThreadModel, ReasoningEffort } from "./chat-services/models";
+import type { ChatMessageMetadata } from "./chat-services/chat-api/usage-data";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -283,6 +284,22 @@ export function ChatStoreProvider({
     // while a stream is still in flight). The server replies 204 when
     // there's nothing to resume, so this is cheap-and-safe to leave on.
     resume: true,
+    // Live token-usage: the route attaches the turn's usage to the assistant
+    // message metadata (see toUIMessageStreamResponse messageMetadata). Feed
+    // it into the store so the header updates every turn without a reload.
+    // Thread running totals are accumulated client-side here (the per-request
+    // block carries only this turn); a reload reconciles from persisted usage.
+    onFinish: ({ message }) => {
+      const usage = (message.metadata as ChatMessageMetadata | undefined)?.usage;
+      if (!usage) return;
+      const s = store.getState();
+      const prev = s.lastUsageData;
+      s.setUsageData({
+        ...usage,
+        threadTotalTokens: (prev?.threadTotalTokens ?? 0) + usage.totalTokens,
+        threadTotalCostUsd: (prev?.threadTotalCostUsd ?? 0) + usage.costUsd,
+      });
+    },
   });
 
   /**

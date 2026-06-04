@@ -241,6 +241,12 @@ export interface ThreadUsage {
   totalCachedTokens: number;
   totalCostUsd: number;
   lastUpdated: string;
+  // Most-recent turn's token counts. Persisted so a reloaded thread can show
+  // the same "Last input/output" the header showed live, instead of 0.
+  // Optional for backward compatibility with rows written before this existed.
+  lastInputTokens?: number;
+  lastOutputTokens?: number;
+  lastCachedTokens?: number;
 }
 
 export interface DefaultTools {

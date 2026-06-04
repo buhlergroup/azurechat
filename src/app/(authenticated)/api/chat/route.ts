@@ -26,6 +26,7 @@ import { createSandboxUrlTransform } from "@/features/chat-page/chat-services/ch
 import { createImageGenerationStreamRewriter } from "@/features/chat-page/chat-services/chat-api/image-generation-stream-rewriter";
 import { createCodeInterpreterStreamRewriter } from "@/features/chat-page/chat-services/chat-api/code-interpreter-stream-rewriter";
 import { resolveProvider, getFileIdsSignature } from "@/features/chat-page/chat-services/models/provider-seam";
+import { computeRequestUsage, type ChatMessageMetadata } from "@/features/chat-page/chat-services/chat-api/usage-data";
 import {
   UpdateChatTitle,
   UpdateChatThreadCodeInterpreterContainer,
@@ -670,6 +671,23 @@ export async function POST(req: Request) {
     originalMessages: ctx.history,
     generateMessageId: createIdGenerator({ prefix: "msg", size: 16 }),
     onError: (err) => (err instanceof Error ? err.message : String(err)),
+    // Ship the turn's token usage on the assistant message metadata so the
+    // header's live usage display updates every turn (the chat session's
+    // onFinish reads this). Provider-agnostic: the SDK normalises usage to
+    // inputTokens/outputTokens for both Azure (Responses) and Anthropic
+    // (Messages) before it reaches us. Fires on the terminal `finish` part.
+    messageMetadata: ({ part }): ChatMessageMetadata | undefined => {
+      if (part.type !== "finish") return undefined;
+      const u = part.totalUsage;
+      return {
+        usage: computeRequestUsage({
+          inputTokens: u.inputTokens ?? 0,
+          outputTokens: u.outputTokens ?? 0,
+          cachedTokens: u.inputTokenDetails?.cacheReadTokens ?? 0,
+          modelConfig,
+        }),
+      };
+    },
   });
   if (!framedResponse.body) {
     unregisterPublisher(ctx.thread.id);

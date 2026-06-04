@@ -644,6 +644,9 @@ export const UpdateChatThreadUsage = async (
         totalCachedTokens: existing.totalCachedTokens + cachedTokens,
         totalCostUsd: existing.totalCostUsd + costUsd,
         lastUpdated: new Date().toISOString(),
+        lastInputTokens: inputTokens,
+        lastOutputTokens: outputTokens,
+        lastCachedTokens: cachedTokens,
       };
       return await UpsertChatThread(chatThread);
     }

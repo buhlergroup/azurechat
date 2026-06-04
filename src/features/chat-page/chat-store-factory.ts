@@ -102,20 +102,27 @@ export function createChatStore(options: CreateChatStoreOptions) {
   const hasCodeInterpreterFiles =
     (chatThread?.attachedFiles ?? []).some((f) => f.type === "code-interpreter");
 
-  // Resolve initial usage data
+  // Resolve initial usage data. Seed the "last turn" input/output from the
+  // persisted per-turn counts (lastInputTokens/…) so a reloaded thread shows
+  // the same values the header showed live, not 0. Older rows without these
+  // fields fall back to 0 (only the thread totals are shown for them).
   let initialUsageData: UsageDataResponse | null = null;
   if (chatThread?.usage) {
+    const u = chatThread.usage;
+    const contextWindowSize = modelCfg?.contextWindow ?? 128000;
+    const lastInput = u.lastInputTokens ?? 0;
+    const lastOutput = u.lastOutputTokens ?? 0;
     initialUsageData = {
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      totalTokens: 0,
+      inputTokens: lastInput,
+      outputTokens: lastOutput,
+      cachedTokens: u.lastCachedTokens ?? 0,
+      totalTokens: lastInput + lastOutput,
       costUsd: 0,
-      threadTotalCostUsd: chatThread.usage.totalCostUsd,
-      threadTotalTokens:
-        chatThread.usage.totalInputTokens + chatThread.usage.totalOutputTokens,
-      contextWindowSize: modelCfg?.contextWindow ?? 128000,
-      contextUsagePercent: 0,
+      threadTotalCostUsd: u.totalCostUsd,
+      threadTotalTokens: u.totalInputTokens + u.totalOutputTokens,
+      contextWindowSize,
+      contextUsagePercent:
+        contextWindowSize > 0 ? (lastInput / contextWindowSize) * 100 : 0,
       model: initialModel,
     };
   }
