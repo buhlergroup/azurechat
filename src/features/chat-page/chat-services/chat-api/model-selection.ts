@@ -77,16 +77,28 @@ export interface ModelSelectionResult {
  * tools we prefer an eligible model that can host them (else the cheapest).
  * Returns undefined when no eligible+deployed target exists (caller fails safe).
  */
-function pickHardCapTarget(opts: { preferResponsesAPI: boolean }): ChatModel | undefined {
+function pickHardCapTarget(opts: {
+  preferResponsesAPI: boolean;
+  requireVision: boolean;
+}): ChatModel | undefined {
   const { hardCapSet } = getDowngradeTargets();
-  if (hardCapSet.length === 0) return undefined;
+  // When the turn carries an image, only vision-capable targets are eligible.
+  // The cheapest hard-cap target (Foundry DeepSeek) is text-only, so routing an
+  // image turn there fails the request. Gating to vision-capable models means
+  // an image turn downgrades to the cheapest model that can actually see it
+  // (e.g. Kimi before gpt-5.4-mini). If none qualify we return undefined and
+  // the caller fails safe (no downgrade) rather than break the turn.
+  const candidates = opts.requireVision
+    ? hardCapSet.filter((id) => MODEL_CONFIGS[id].capabilities?.includes("vision"))
+    : hardCapSet;
+  if (candidates.length === 0) return undefined;
   if (opts.preferResponsesAPI) {
-    const responsesCapable = hardCapSet.find(
+    const responsesCapable = candidates.find(
       (id) => MODEL_CONFIGS[id].supportsResponsesAPI,
     );
     if (responsesCapable) return responsesCapable;
   }
-  return hardCapSet[0];
+  return candidates[0];
 }
 
 export async function resolveModelAndLimits(
@@ -96,6 +108,9 @@ export async function resolveModelAndLimits(
     webSearchEnabled?: boolean;
     imageGenerationEnabled?: boolean;
     codeInterpreterEnabled?: boolean;
+    /** Images attached to THIS turn — gates the cap downgrade to vision-capable
+     *  targets so an image turn never lands on a text-only model. */
+    multimodalImages?: string[];
   },
   thread: ChatThreadModel
 ): Promise<ModelSelectionResult> {
@@ -125,7 +140,8 @@ export async function resolveModelAndLimits(
         (payload.imageGenerationEnabled ?? thread.defaultTools?.imageGeneration) ||
         (payload.webSearchEnabled ?? thread.defaultTools?.webSearch)
       );
-      const target = pickHardCapTarget({ preferResponsesAPI: wantsBuiltInTools });
+      const requireVision = (payload.multimodalImages?.length ?? 0) > 0;
+      const target = pickHardCapTarget({ preferResponsesAPI: wantsBuiltInTools, requireVision });
       const targetConfig = target ? MODEL_CONFIGS[target] : undefined;
       if (target && targetConfig?.deploymentName && target !== selectedModel) {
         fallbackInfo = {

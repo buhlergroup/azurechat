@@ -228,3 +228,49 @@ describe("resolveModelAndLimits — intent-based downgrade", () => {
     expect(result.selectedModel).toBe("gpt-5.4-mini");
   });
 });
+
+describe("resolveModelAndLimits — cap downgrade respects vision capability", () => {
+  // Cheapest hard-cap target first (DeepSeek, text-only) then a vision-capable
+  // one (Kimi). A text turn should take the cheapest; an image turn must skip
+  // the text-only model and take the cheapest VISION-capable target instead —
+  // otherwise the image turn would be routed to a model that can't see it.
+  const VISIONLESS = "DeepSeek-V4-Pro" as const;
+  const VISION_CHEAP = "Kimi-K2.6" as const;
+  let savedVisionless: string | undefined;
+  let savedVision: string | undefined;
+
+  beforeEach(() => {
+    savedVisionless = (MODEL_CONFIGS[VISIONLESS] as any).deploymentName;
+    savedVision = (MODEL_CONFIGS[VISION_CHEAP] as any).deploymentName;
+    (MODEL_CONFIGS[VISIONLESS] as any).deploymentName = "deepseek-test";
+    (MODEL_CONFIGS[VISION_CHEAP] as any).deploymentName = "kimi-test";
+    // Sanity: the fix relies on these real capability flags.
+    expect(MODEL_CONFIGS[VISIONLESS].capabilities ?? []).not.toContain("vision");
+    expect(MODEL_CONFIGS[VISION_CHEAP].capabilities ?? []).toContain("vision");
+    mockCheckUserBudget.mockResolvedValue({ exceeded: true, window: "weekly", currentUsd: 9, limitUsd: 7 });
+    mockGetDowngradeTargets.mockReturnValue({
+      hardCapSet: [VISIONLESS, VISION_CHEAP],
+      intentByClass: {},
+    });
+  });
+  afterEach(() => {
+    (MODEL_CONFIGS[VISIONLESS] as any).deploymentName = savedVisionless;
+    (MODEL_CONFIGS[VISION_CHEAP] as any).deploymentName = savedVision;
+  });
+
+  it("routes a TEXT-only capped turn to the cheapest target (text-only allowed)", async () => {
+    const thread = makeThread({ selectedModel: "gpt-5.5" });
+    const result = await resolveModelAndLimits({ selectedModel: "gpt-5.5" }, thread);
+    expect(result.selectedModel).toBe(VISIONLESS);
+  });
+
+  it("routes an IMAGE-bearing capped turn to the cheapest VISION target, NOT the text-only one", async () => {
+    const thread = makeThread({ selectedModel: "gpt-5.5" });
+    const result = await resolveModelAndLimits(
+      { selectedModel: "gpt-5.5", multimodalImages: ["data:image/png;base64,AAAA"] },
+      thread,
+    );
+    expect(result.selectedModel).toBe(VISION_CHEAP);
+    expect(result.selectedModel).not.toBe(VISIONLESS);
+  });
+});
