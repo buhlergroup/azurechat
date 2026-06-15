@@ -64,8 +64,20 @@ function parse(content: string): Segment[] {
   return segments;
 }
 
-export const RichResponse: React.FC<RichResponseProps> = ({ content, streaming }) => {
-  const segments = React.useMemo(() => parse(content), [content]);
+const RichResponseImpl: React.FC<RichResponseProps> = ({ content, streaming }) => {
+  // While the turn is still streaming, render the whole message through
+  // Streamdown only. Streamdown highlights code incrementally per block and
+  // does NOT re-highlight the full message each chunk, so it stays smooth.
+  // We must NOT mount the react-syntax-highlighter CodeBlock split mid-stream:
+  // the moment a fenced block closes, CodeBlock highlights the entire block
+  // (twice — light + dark) in one synchronous render, pinning the main thread
+  // for >1s on a large block (the page can't even scroll). The heavy split —
+  // and the genui card — only mount once the turn completes. Reproduced and
+  // guarded by e2e/markdown-stream-jank.spec.ts (big-code-block fixture).
+  if (streaming) {
+    return <Response>{resolveBlobRefsInMarkdown(content)}</Response>;
+  }
+  const segments = parse(content);
   // If no code segments, render whole content once to preserve full markdown context
   const hasCode = segments.some(s => s.type === 'code');
   if (!hasCode) {
@@ -100,3 +112,15 @@ export const RichResponse: React.FC<RichResponseProps> = ({ content, streaming }
     </div>
   );
 };
+
+// Memoize so a COMPLETED prior message does not re-render — and re-highlight
+// its code blocks — every time a NEW message streams. The chat list re-renders
+// every message on each ~60ms chunk (chat-page.tsx maps messages inline with no
+// per-item memo); without this, a thread with earlier code-heavy answers
+// re-highlights ALL of their blocks on every chunk → multi-second main-thread
+// freeze that starts on the first chunk, before the new answer's own content
+// even appears (reproduced: 6.1s timer drift; e2e/markdown-stream-jank.spec.ts
+// "followup"). `content` (string) + `streaming` (bool) are the only props, so
+// React.memo's shallow equality skips any message whose text is unchanged.
+export const RichResponse = React.memo(RichResponseImpl);
+RichResponse.displayName = "RichResponse";
