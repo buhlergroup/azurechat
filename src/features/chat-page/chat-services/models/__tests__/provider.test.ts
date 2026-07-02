@@ -94,7 +94,7 @@ describe("resolveAnthropicModel — DI seam", () => {
   });
 
   it("throws when no deploymentName is configured for the Anthropic model", () => {
-    const modelId: ChatModel = "claude-sonnet-4-6-2";
+    const modelId: ChatModel = "claude-sonnet-5";
     (MODEL_CONFIGS[modelId] as any).deploymentName = undefined;
 
     expect(() => resolveAnthropicModel(modelId)).toThrow(/no deploymentName/);

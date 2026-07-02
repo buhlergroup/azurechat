@@ -26,7 +26,7 @@ export type ChatModel =
   // Anthropic Claude models served via the Azure /anthropic surface
   // (Messages API) through the "anthropic" provider seam.
   | "claude-opus-4-8"
-  | "claude-sonnet-4-6-2";
+  | "claude-sonnet-5";
 
 export interface ModelPricing {
   inputPerMillion: number;
@@ -236,9 +236,9 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // API). Can't call the Azure built-ins (image gen etc.).
     capabilities: ["vision", "webSearch"],
   },
-  "claude-sonnet-4-6-2": {
-    id: "claude-sonnet-4-6-2",
-    name: "Claude Sonnet 4.6",
+  "claude-sonnet-5": {
+    id: "claude-sonnet-5",
+    name: "Claude Sonnet 5",
     description: "Balanced Anthropic model — fast, strong general performance",
     getInstance: () => {
       throw new Error(
@@ -248,7 +248,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     provider: "anthropic",
     supportsReasoning: true,
     supportsResponsesAPI: false,
-    deploymentName: process.env.AZURE_ANTHROPIC_SONNET46_DEPLOYMENT_NAME,
+    deploymentName: process.env.AZURE_ANTHROPIC_SONNET5_DEPLOYMENT_NAME,
     pricing: { inputPerMillion: 3.0, outputPerMillion: 15.0, cachedInputPerMillion: 0.3 },
     contextWindow: 1000000,
     // Image input + native web search/fetch (wired in the anthropic seam).

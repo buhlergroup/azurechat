@@ -247,7 +247,7 @@ describe("provider-seam — Anthropic branch", () => {
 
   it("enables adaptive thinking + mapped effort; no Azure-Responses keys; no tools when toggles off", () => {
     const r = resolveProvider({
-      modelId: "claude-sonnet-4-6-2",
+      modelId: "claude-sonnet-5",
       thread: { id: "thread-xyz", codeInterpreterContainerId: undefined },
       toggles: offToggles,
       reasoning: { supported: true, effort: "high" },
