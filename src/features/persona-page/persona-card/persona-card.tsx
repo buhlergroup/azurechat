@@ -66,14 +66,13 @@ export const PersonaCard: FC<Props> = (props) => {
       {/* line-clamp on an inner element: clamping the padded CardContent
           itself lets a clipped extra line bleed into its bottom padding.
           The badge/stats band always renders (min-h) so descriptions align
-          across a card grid row. */}
+          across a card grid row; stats sit on their own line below the
+          badge so they can't overflow narrow cards. */}
       <CardContent className="text-muted-foreground flex-1">
-        <div className="flex items-center gap-2 mb-2 min-h-6">
+        <div className="flex flex-col items-start gap-1 mb-2 min-h-6">
           {trustLevel && <TrustBadge level={trustLevel} />}
           {stats && (
-            <span
-              className={`text-xs whitespace-nowrap ${trustLevel ? "ml-auto" : ""}`}
-            >
+            <span className="text-xs">
               {formatCount(stats.chatCount)}{" "}
               {stats.chatCount === 1 ? "chat" : "chats"} ·{" "}
               {formatCount(stats.messageCount)}{" "}
