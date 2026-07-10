@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentStatsModel } from "@/features/common/services/agent-stats-models";
 import { FC } from "react";
 import { ScrollArea } from "../ui/scroll-area";
 import { AddNewPersona } from "./add-new-persona";
@@ -13,6 +14,8 @@ interface ChatPersonaProps {
   extensions: ExtensionModel[];
   initialFavoriteIds: string[];
   currentUserId: string;
+  agentStats?: Record<string, AgentStatsModel>;
+  isVerifier?: boolean;
 }
 
 export const ChatPersonaPage: FC<ChatPersonaProps> = (props) => {
@@ -25,6 +28,8 @@ export const ChatPersonaPage: FC<ChatPersonaProps> = (props) => {
             personas={props.personas}
             initialFavoriteIds={props.initialFavoriteIds}
             currentUserId={props.currentUserId}
+            agentStats={props.agentStats}
+            isVerifier={props.isVerifier}
             showContextMenu
           />
         </div>

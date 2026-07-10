@@ -28,6 +28,7 @@ import type {
 import { createIdGenerator } from "ai";
 import { userHashedId } from "@/features/auth-page/helpers";
 import { logError, logInfo, logWarn } from "@/features/common/services/logger";
+import { RecordAgentInteraction } from "@/features/common/services/agent-stats-service";
 import { IncrementUsage } from "@/features/common/services/usage-service";
 import {
   reportPromptTokens,
@@ -148,6 +149,8 @@ export interface PersistPayload {
   };
   /** Token usage from the top-level streamText finish callback */
   usage: UsagePayload;
+  /** Agent (persona) the thread was started from — attributes per-agent stats. */
+  personaId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +176,7 @@ export async function persistThread({
   messages,
   modelConfig,
   usage,
+  personaId,
 }: PersistPayload): Promise<void> {
   const userId = await userHashedId();
 
@@ -336,6 +340,23 @@ export async function persistThread({
     })
   );
 
+  // Per-agent usage counters (atomic Cosmos Patch increments on the
+  // agent-stats doc). Only threads started from an agent carry a personaId.
+  // Note: aborted turns arrive here with zero usage and still count as one
+  // interaction — accepted, the user did see a partial answer.
+  if (personaId) {
+    RecordAgentInteraction(personaId, {
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+    }).catch((err: unknown) =>
+      logError("Failed to record agent interaction", {
+        personaId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    );
+  }
+
   // Emit App Insights custom metrics (OpenTelemetry) consumed by the
   // "Bühler GPT Usage" monitoring workbook. These were dropped when the
   // legacy orchestrator stack was removed (commit 8f818d6); the streamText
@@ -447,6 +468,8 @@ export interface PersistAssistantFromFinishParams<TOOLS extends ToolSet> {
    * hidden behind boilerplate.
    */
   streamError?: { message: string; name?: string };
+  /** Agent (persona) the thread was started from — attributes per-agent stats. */
+  personaId?: string;
 }
 
 /**
@@ -463,6 +486,7 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
   messageId,
   streamError,
   reasoningDurationMs,
+  personaId,
 }: PersistAssistantFromFinishParams<TOOLS>): Promise<void> {
   // Detect an empty finish — Azure content-filter trips, aborted streams
   // before any output, or a model error that resolves without text/tools.
@@ -582,5 +606,6 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
       outputTokens: usageDetails.outputTokens ?? 0,
       cachedTokens,
     },
+    personaId,
   });
 }

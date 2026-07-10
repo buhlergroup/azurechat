@@ -460,6 +460,12 @@ export interface ChatThreadModel {
    * downgrade-config.ts). Absent on threads created before this field existed.
    */
   intent?: ChatIntent;
+  /**
+   * Id of the agent (persona) this thread was started from. Absent on
+   * default/extension/temporary chats and on threads created before this
+   * field existed. Used to attribute per-agent usage statistics.
+   */
+  personaId?: string;
 }
 
 export interface UserPrompt {

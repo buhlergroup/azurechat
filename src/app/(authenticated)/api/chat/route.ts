@@ -472,6 +472,7 @@ export async function POST(req: Request) {
           modelConfig,
           fallbackInfo: fallbackInfo.fellBack ? fallbackInfo : undefined,
           reasoningDurationMs: computeReasoningDurationMs(),
+          personaId: ctx.thread.isTemporary ? undefined : ctx.thread.personaId,
         });
       } catch (err) {
         logError("/api/chat onAbort persist failed", {
@@ -521,6 +522,7 @@ export async function POST(req: Request) {
           fallbackInfo: fallbackInfo.fellBack ? fallbackInfo : undefined,
           streamError: lastStreamError,
           reasoningDurationMs: computeReasoningDurationMs(),
+          personaId: ctx.thread.isTemporary ? undefined : ctx.thread.personaId,
         });
         // Generate a thread title from the first user message. ctx.history
         // has just the user message we appended in loadThreadContext when
@@ -578,6 +580,9 @@ export async function POST(req: Request) {
             fallbackInfo: fallbackInfo.fellBack ? fallbackInfo : undefined,
             streamError: lastStreamError,
             reasoningDurationMs: computeReasoningDurationMs(),
+            personaId: ctx.thread.isTemporary
+              ? undefined
+              : ctx.thread.personaId,
           });
         } catch (retryErr) {
           logError("/api/chat persistAssistantFromFinishEvent retry failed", {

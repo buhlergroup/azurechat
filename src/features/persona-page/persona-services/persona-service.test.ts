@@ -4,7 +4,6 @@ import { defaultSession, adminSession, setSession } from "@/__tests__/helpers/se
 
 const hashEmail = (e: string) => createHash("sha256").update(e).digest("hex");
 const USER_HASH = hashEmail(defaultSession!.user.email);
-const ADMIN_HASH = hashEmail(adminSession!.user.email);
 
 // ── Cosmos mock (direct module mock, bypasses singleton) ─────────────────────
 let historyItems: any[] = [];
@@ -162,26 +161,30 @@ beforeEach(() => {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe("persona-service.ts", () => {
-  // 001 – CreatePersona forces isPublished=false for non-admin
-  it("001 CreatePersona forces isPublished=false for non-admin", async () => {
+  // 001 – CreatePersona lets any user publish; fresh publish starts as community
+  it("001 CreatePersona lets any user publish as community", async () => {
     await setSession(defaultSession);
     const result = await CreatePersona({ ...validPersonaInput(), isPublished: true }, []);
     expect(result.status).toBe("OK");
     if (result.status === "OK") {
-      expect(result.response.isPublished).toBe(false);
+      expect(result.response.isPublished).toBe(true);
+      expect(result.response.trustLevel).toBe("community");
+      expect(result.response.publishedAt).toBeInstanceOf(Date);
       expect(result.response.userId).toBe(USER_HASH);
       expect(result.response.id).toBeTruthy();
       expect(result.response.type).toBe("PERSONA");
     }
   });
 
-  // 002 – CreatePersona allows admin to publish
-  it("002 CreatePersona allows admin to publish", async () => {
-    await setSession(adminSession);
-    const result = await CreatePersona({ ...validPersonaInput(), isPublished: true }, []);
+  // 002 – CreatePersona without publish stores no trust metadata
+  it("002 CreatePersona unpublished has no trustLevel/publishedAt", async () => {
+    await setSession(defaultSession);
+    const result = await CreatePersona(validPersonaInput(), []);
     expect(result.status).toBe("OK");
     if (result.status === "OK") {
-      expect(result.response.isPublished).toBe(true);
+      expect(result.response.isPublished).toBe(false);
+      expect(result.response.trustLevel).toBeUndefined();
+      expect(result.response.publishedAt).toBeUndefined();
     }
   });
 
@@ -314,15 +317,79 @@ describe("persona-service.ts", () => {
     expect(historyItems.find((i: any) => i.id === "p-del")).toBeUndefined();
   });
 
-  // 012 – UpsertPersona preserves existing isPublished for non-admin
-  it("012 UpsertPersona preserves existing isPublished for non-admin", async () => {
+  // 012 – UpsertPersona lets the owner publish/unpublish
+  it("012a UpsertPersona fresh publish stamps community + publishedAt", async () => {
     await setSession(defaultSession);
-    const p = seedPersona({ id: "p-upsert", isPublished: true });
+    const p = seedPersona({ id: "p-upsert", isPublished: false });
+
+    const result = await UpsertPersona({ ...p, isPublished: true }, []);
+    expect(result.status).toBe("OK");
+    if (result.status === "OK") {
+      expect(result.response.isPublished).toBe(true);
+      expect(result.response.trustLevel).toBe("community");
+      expect(result.response.publishedAt).toBeInstanceOf(Date);
+    }
+  });
+
+  it("012b UpsertPersona owner can unpublish; trustLevel is retained", async () => {
+    await setSession(defaultSession);
+    const p = seedPersona({
+      id: "p-unpub",
+      isPublished: true,
+      trustLevel: "community",
+      publishedAt: new Date("2026-01-01"),
+    });
 
     const result = await UpsertPersona({ ...p, isPublished: false }, []);
     expect(result.status).toBe("OK");
     if (result.status === "OK") {
-      expect(result.response.isPublished).toBe(true);
+      expect(result.response.isPublished).toBe(false);
+      // Stored classification survives an unpublish/republish cycle.
+      expect(result.response.trustLevel).toBe("community");
+      expect(result.response.publishedAt).toEqual(new Date("2026-01-01"));
+    }
+  });
+
+  it("012c UpsertPersona materializes legacy published agents as verified", async () => {
+    await setSession(defaultSession);
+    // Legacy: published via the old admin-only gate, before trustLevel existed.
+    const p = seedPersona({ id: "p-legacy", isPublished: true });
+
+    const result = await UpsertPersona({ ...p, isPublished: true }, []);
+    expect(result.status).toBe("OK");
+    if (result.status === "OK") {
+      expect(result.response.trustLevel).toBe("verified");
+    }
+  });
+
+  it("012d UpsertPersona keeps a stored verified level on edit", async () => {
+    await setSession(defaultSession);
+    const p = seedPersona({
+      id: "p-verified",
+      isPublished: true,
+      trustLevel: "verified",
+    });
+
+    const result = await UpsertPersona({ ...p, name: "Renamed" }, []);
+    expect(result.status).toBe("OK");
+    if (result.status === "OK") {
+      expect(result.response.trustLevel).toBe("verified");
+    }
+  });
+
+  it("012e UpsertPersona preserves createdAt and stamps updatedAt", async () => {
+    await setSession(defaultSession);
+    const created = new Date("2025-03-03T12:00:00Z");
+    const p = seedPersona({ id: "p-times", createdAt: created.toISOString() });
+
+    const result = await UpsertPersona({ ...p, createdAt: created }, []);
+    expect(result.status).toBe("OK");
+    if (result.status === "OK") {
+      expect(result.response.createdAt).toEqual(created);
+      expect(result.response.updatedAt).toBeInstanceOf(Date);
+      expect(result.response.updatedAt!.getTime()).toBeGreaterThan(
+        created.getTime()
+      );
     }
   });
 

@@ -61,6 +61,25 @@ export const AccessGroupSchema = z.object({
 export const PERSONA_ATTRIBUTE = "PERSONA";
 export type PersonaModel = z.infer<typeof PersonaModelSchema>;
 
+// Trust classification of published agents. "verified" = reviewed by the
+// agent-governance Entra ID group; "community" = published by a user,
+// unreviewed. Only group members may change it (see agent-trust-service).
+export const TRUST_LEVELS = ["verified", "community"] as const;
+export type TrustLevel = (typeof TRUST_LEVELS)[number];
+
+/**
+ * Effective trust tier of an agent, or null when not published.
+ * Legacy rule: agents published before trust tiers existed went through the
+ * admin-only publish gate, so a published agent without a stored trustLevel
+ * counts as "verified". UpsertPersona materializes the field on save, so the
+ * legacy branch shrinks over time.
+ */
+export const effectiveTrustLevel = (persona: {
+  isPublished: boolean;
+  trustLevel?: TrustLevel;
+}): TrustLevel | null =>
+  !persona.isPublished ? null : persona.trustLevel ?? "verified";
+
 export const DefaultToolsSchema = z.object({
   webSearch: z.boolean().optional(),
   imageGeneration: z.boolean().optional(),
@@ -94,7 +113,10 @@ export const PersonaModelSchema = z.object({
   extensionIds: z.array(z.string()),
   isPublished: z.boolean(),
   type: z.literal(PERSONA_ATTRIBUTE),
-  createdAt: z.date(),
+  createdAt: z.coerce.date(), // coerce: Cosmos round-trips dates as ISO strings
+  updatedAt: z.coerce.date().optional(), // last modification (createdAt is no longer overwritten on update)
+  publishedAt: z.coerce.date().optional(), // first false→true publish transition
+  trustLevel: z.enum(TRUST_LEVELS).optional(), // see effectiveTrustLevel for the legacy default
   personaDocumentIds: z.array(z.string()).optional(),
   codeInterpreterDocumentIds: z.array(z.string()).optional(), // SharePoint documents for Code Interpreter
   accessGroup: AccessGroupSchema.optional(),
