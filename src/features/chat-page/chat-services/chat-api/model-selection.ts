@@ -149,7 +149,10 @@ export async function resolveModelAndLimits(
           reason: "cap",
           originalModel: selectedModel,
           fallbackModel: target,
-          message: `${budget.window === "weekly" ? "Weekly" : "Daily"} cost budget reached. Using ${targetConfig.name} until it resets.`,
+          message:
+            budget.window === "weekly"
+              ? `Rolling 7-day cost budget reached. Using ${targetConfig.name} until your usage from the last 7 days drops below the cap.`
+              : `Daily cost budget reached. Using ${targetConfig.name} until it resets.`,
           limitType: "cost",
           currentUsage: budget.currentUsd ?? 0,
           limit: budget.limitUsd ?? 0,

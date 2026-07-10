@@ -1,6 +1,6 @@
 # Release Notes
 
-## [Unreleased]
+## [v2.4.0] – 2026-07-10
 
 ### Agent Publishing & Statistics
 - **Added:** You can now publish your agents to the whole organization — find the switch in the agent's "Access to Agent" section.
@@ -9,6 +9,12 @@
 - **Added:** Sort agents by most used (default), recently updated, newest, or name, plus a trust-level filter on the Agents page.
 - **Changed:** The home page now shows only your favorite agents; discover and manage all agents on the Agents page ("Browse all agents").
 - **Fixed:** Editing an agent no longer bumps it to the top of the "Newest" sort order.
+
+### Model Updates
+- **Added:** GPT-5.6 Sol, Terra, and Luna are now available, deployed to both dev and prod.
+- **Changed:** GPT-5.6 Sol is now the default model.
+- **Changed:** GPT-5.6 Luna replaces GPT-5.4 Mini as the automatic cost-cap downgrade target.
+- **Removed:** GPT-5.3 Chat is no longer available.
 
 ### Logging Improvements
 - **Enhanced:** Replaced console.log statements with centralized logging utility across the entire codebase

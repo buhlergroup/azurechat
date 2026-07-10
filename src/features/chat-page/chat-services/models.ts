@@ -5,7 +5,7 @@ import {
 } from "@/features/common/services/openai";
 import { logError } from "@/features/common/services/logger";
 
-export const DEFAULT_MODEL: ChatModel = "gpt-5.5";
+export const DEFAULT_MODEL: ChatModel = "gpt-5.6-sol";
 
 export const CHAT_DOCUMENT_ATTRIBUTE = "CHAT_DOCUMENT";
 export const CHAT_THREAD_ATTRIBUTE = "CHAT_THREAD";
@@ -13,10 +13,12 @@ export const MESSAGE_ATTRIBUTE = "CHAT_MESSAGE";
 export const CHAT_CITATION_ATTRIBUTE = "CHAT_CITATION";
 
 export type ChatModel =
+  | "gpt-5.6-sol"
+  | "gpt-5.6-terra"
+  | "gpt-5.6-luna"
   | "gpt-5.5"
   | "gpt-5.4"
   | "gpt-5.4-mini"
-  | "gpt-5.3-chat"
   // Foundry-hosted (OpenAI-compatible) models. Served via the "foundry"
   // provider seam, not Azure Responses. DeepSeek/Kimi double as downgrade
   // targets; Grok is a selectable option.
@@ -96,6 +98,54 @@ export interface ModelConfig {
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
+  // ── GPT-5.6 family (2026-07-09) ─────────────────────────────────────────
+  // Pricing mirrors the equivalent GPT-5.5-era tier as a placeholder — Azure's
+  // model catalog doesn't expose $/token pricing (cost field is null for every
+  // model, including gpt-5.5 below). Confirm against the real Bühler contract.
+  "gpt-5.6-sol": {
+    id: "gpt-5.6-sol",
+    name: "GPT-5.6 Sol",
+    description: "Flagship GPT-5.6 model with state-of-the-art capabilities",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    supportsImageGeneration: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "low",
+    pricing: { inputPerMillion: 5, outputPerMillion: 30.00, cachedInputPerMillion: 0.5 },
+    contextWindow: 1050000,
+    fallbackModel: "gpt-5.6-luna",
+    capabilities: ["vision", "imageGen", "webSearch", "code"],
+  },
+  "gpt-5.6-terra": {
+    id: "gpt-5.6-terra",
+    name: "GPT-5.6 Terra",
+    description: "Balanced GPT-5.6 model for everyday advanced tasks",
+    getInstance: () => OpenAIV1ReasoningInstance(),
+    supportsReasoning: true,
+    supportsResponsesAPI: true,
+    supportsImageGeneration: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "low",
+    pricing: { inputPerMillion: 2.50, outputPerMillion: 15.00, cachedInputPerMillion: 0.25 },
+    contextWindow: 1050000,
+    fallbackModel: "gpt-5.6-luna",
+    capabilities: ["vision", "imageGen", "webSearch", "code"],
+  },
+  "gpt-5.6-luna": {
+    id: "gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
+    description: "Fast and efficient GPT-5.6 model for everyday tasks",
+    getInstance: () => OpenAIV1Instance(),
+    supportsReasoning: false,
+    supportsResponsesAPI: true,
+    deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
+    defaultReasoningEffort: "medium",
+    pricing: { inputPerMillion: 0.75, outputPerMillion: 4.50, cachedInputPerMillion: 0.075 },
+    contextWindow: 400000,
+    hardCapEligible: true,
+    capabilities: ["vision", "webSearch", "code"],
+  },
   "gpt-5.5": {
     id: "gpt-5.5",
     name: "GPT-5.5",
@@ -108,7 +158,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "low",
     pricing: { inputPerMillion: 5, outputPerMillion: 30.00, cachedInputPerMillion: 0.5 },
     contextWindow: 1050000,
-    fallbackModel: "gpt-5.4-mini",
+    fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
   "gpt-5.4": {
@@ -123,7 +173,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "low",
     pricing: { inputPerMillion: 2.50, outputPerMillion: 15.00, cachedInputPerMillion: 0.25 },
     contextWindow: 1050000,
-    fallbackModel: "gpt-5.4-mini",
+    fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
   "gpt-5.4-mini": {
@@ -137,21 +187,6 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "medium",
     pricing: { inputPerMillion: 0.75, outputPerMillion: 4.50, cachedInputPerMillion: 0.075 },
     contextWindow: 400000,
-    hardCapEligible: true,
-    capabilities: ["vision", "webSearch", "code"],
-  },
-  "gpt-5.3-chat": {
-    id: "gpt-5.3-chat",
-    name: "GPT-5.3 Chat",
-    description: "GPT-5.3 Chat model optimized for conversational interactions",
-    getInstance: () => OpenAIV1Instance(),
-    supportsReasoning: true,
-    supportsResponsesAPI: true,
-    deploymentName: process.env.AZURE_OPENAI_API_GPT53_CHAT_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "medium",
-    pricing: { inputPerMillion: 1.75, outputPerMillion: 14.00, cachedInputPerMillion: 0.175 },
-    contextWindow: 128000,
-    fallbackModel: "gpt-5.4-mini",
     capabilities: ["vision", "webSearch", "code"],
   },
   // ── Foundry-hosted low-cost downgrade targets ──────────────────────────

@@ -68,12 +68,12 @@ describe("createChatStore — isolation", () => {
     storeA.subscribe(listenerA);
     storeB.subscribe(listenerB);
 
-    storeA.getState().setSelectedModel("gpt-5.3-chat");
+    storeA.getState().setSelectedModel("gpt-5.4");
 
     expect(listenerA).toHaveBeenCalledOnce();
     expect(listenerB).not.toHaveBeenCalled();
-    expect(storeA.getState().selectedModel).toBe("gpt-5.3-chat");
-    expect(storeB.getState().selectedModel).not.toBe("gpt-5.3-chat");
+    expect(storeA.getState().selectedModel).toBe("gpt-5.4");
+    expect(storeB.getState().selectedModel).not.toBe("gpt-5.4");
   });
 
   // Tool-call-history restoration was deleted with the dead Zustand subsystem

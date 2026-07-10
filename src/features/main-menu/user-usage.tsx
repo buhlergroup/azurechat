@@ -49,22 +49,6 @@ function getDailyResetLabel(): string {
   return `${minutes}m`;
 }
 
-function getWeeklyResetLabel(): string {
-  const now = new Date();
-  const friday = new Date(now);
-  const dayOfWeek = now.getDay();
-  let daysUntilFri = (5 - dayOfWeek + 7) % 7;
-  if (daysUntilFri === 0 && now.getHours() >= 17) daysUntilFri = 7;
-  friday.setDate(now.getDate() + daysUntilFri);
-  friday.setHours(17, 0, 0, 0);
-  const diffMs = friday.getTime() - now.getTime();
-  const days = Math.floor(diffMs / 86_400_000);
-  const hours = Math.floor((diffMs % 86_400_000) / 3_600_000);
-  if (days > 1) return `Fri 17:00 (${days}d)`;
-  if (days === 1) return `1d ${hours}h`;
-  return `${hours}h`;
-}
-
 /**
  * Usage-toward-budget bar. Hidden when no limit is configured (limit <= 0).
  * Green under 80%, amber 80–99%, red once the cap is hit (the point at which
@@ -159,8 +143,8 @@ export const UserUsage = () => {
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="font-normal py-2">
               <div className="flex items-baseline justify-between mb-2">
-                <p className="text-sm font-semibold tracking-tight">This Week</p>
-                <span className="text-[10px] text-muted-foreground/70">resets {getWeeklyResetLabel()}</span>
+                <p className="text-sm font-semibold tracking-tight">Last 7 Days</p>
+                <span className="text-[10px] text-muted-foreground/70">rolling 7-day sum</span>
               </div>
               <div className="flex gap-4 text-xs">
                 <div>
