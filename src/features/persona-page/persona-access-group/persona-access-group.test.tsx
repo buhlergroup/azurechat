@@ -16,10 +16,15 @@ vi.mock("@/features/auth-page/logout-on-session-expired", () => ({
 }));
 
 vi.mock("./persona-access-group-selector", () => ({
-  PersonaAccessGroupSelector: ({ onSelectGroup, selectedAccessGroupId }: any) => (
+  PersonaAccessGroupSelector: ({
+    onSelectGroup,
+    selectedAccessGroupId,
+    disabled,
+  }: any) => (
     <button
       data-testid="group-selector"
       data-selected={selectedAccessGroupId}
+      disabled={disabled}
       onClick={() =>
         onSelectGroup({ id: "g99", name: "Test Group", description: "tg" })
       }
@@ -31,35 +36,40 @@ vi.mock("./persona-access-group-selector", () => ({
 
 vi.mock("@/features/ui/tooltip", () => ({
   Tooltip: ({ children }: any) => <>{children}</>,
-  TooltipTrigger: ({ children, asChild }: any) => <>{children}</>,
+  TooltipTrigger: ({ children }: any) => <>{children}</>,
   TooltipContent: ({ children }: any) => <div>{children}</div>,
+  TooltipProvider: ({ children }: any) => <>{children}</>,
 }));
 
 import { PersonaAccessGroup } from "./persona-access-group";
+
+const defaultProps = {
+  initialSelectedGroup: null,
+  initialIsPublished: false,
+  trustLevel: null,
+};
 
 describe("persona-page.unit.components.008 — PersonaAccessGroup", () => {
   beforeEach(() => vi.clearAllMocks());
 
   // ── No initial group ──────────────────────────────────────────────────────
 
-  it("renders 'Everyone can view this agent' when no initial group", () => {
-    render(<PersonaAccessGroup initialSelectedGroup={null} />);
-    expect(screen.getByDisplayValue("Everyone can view this agent")).toBeInTheDocument();
+  it("renders 'Only you can access this agent' when no group and unpublished", () => {
+    render(<PersonaAccessGroup {...defaultProps} />);
+    expect(
+      screen.getByDisplayValue("Only you can access this agent")
+    ).toBeInTheDocument();
   });
 
   it("Trash button is disabled when no group selected", () => {
-    render(<PersonaAccessGroup initialSelectedGroup={null} />);
-    // Find the trash button (ghost icon button)
+    render(<PersonaAccessGroup {...defaultProps} />);
     const buttons = screen.getAllByRole("button");
-    // The first icon-button variant is the trash button
     const trashBtn = buttons.find((b) => b.hasAttribute("disabled"));
     expect(trashBtn).toBeDefined();
   });
 
   it("hidden accessGroupId input is empty when no group selected", () => {
-    const { container } = render(
-      <PersonaAccessGroup initialSelectedGroup={null} />
-    );
+    const { container } = render(<PersonaAccessGroup {...defaultProps} />);
     const hidden = container.querySelector<HTMLInputElement>(
       'input[name="accessGroupId"]'
     );
@@ -73,7 +83,9 @@ describe("persona-page.unit.components.008 — PersonaAccessGroup", () => {
       status: "OK",
       response: { id: "g1", name: "Finance", description: "" },
     });
-    render(<PersonaAccessGroup initialSelectedGroup="g1" />);
+    render(
+      <PersonaAccessGroup {...defaultProps} initialSelectedGroup="g1" />
+    );
     await waitFor(() => {
       expect(screen.getByDisplayValue("Finance")).toBeInTheDocument();
     });
@@ -85,10 +97,12 @@ describe("persona-page.unit.components.008 — PersonaAccessGroup", () => {
       status: "ERROR",
       errors: [{ message: "not found" }],
     });
-    render(<PersonaAccessGroup initialSelectedGroup="g-bad" />);
+    render(
+      <PersonaAccessGroup {...defaultProps} initialSelectedGroup="g-bad" />
+    );
     await waitFor(() => {
       expect(
-        screen.getByDisplayValue("Everyone can view this agent")
+        screen.getByDisplayValue("Only you can access this agent")
       ).toBeInTheDocument();
     });
   });
@@ -96,40 +110,74 @@ describe("persona-page.unit.components.008 — PersonaAccessGroup", () => {
   // ── Selecting a group via selector ────────────────────────────────────────
 
   it("shows the newly selected group name after selector fires onSelectGroup", async () => {
-    render(<PersonaAccessGroup initialSelectedGroup={null} />);
+    render(<PersonaAccessGroup {...defaultProps} />);
     await userEvent.click(screen.getByTestId("group-selector"));
     await waitFor(() => {
       expect(screen.getByDisplayValue("Test Group")).toBeInTheDocument();
     });
   });
 
-  it("enables Trash button after a group is selected", async () => {
-    render(<PersonaAccessGroup initialSelectedGroup={null} />);
-    await userEvent.click(screen.getByTestId("group-selector"));
-    await waitFor(() => {
-      const buttons = screen.getAllByRole("button");
-      const trashBtn = buttons.find(
-        (b) => !b.hasAttribute("disabled") && b !== screen.getByTestId("group-selector")
-      );
-      expect(trashBtn).toBeDefined();
-    });
-  });
-
   it("clears group when Trash button is clicked", async () => {
-    render(<PersonaAccessGroup initialSelectedGroup={null} />);
-    // First select a group
+    render(<PersonaAccessGroup {...defaultProps} />);
     await userEvent.click(screen.getByTestId("group-selector"));
     await waitFor(() => screen.getByDisplayValue("Test Group"));
 
-    // Click the first non-disabled button that isn't the selector — the trash icon
-    const trashButtons = screen.getAllByRole("button").filter(
-      (b) => !b.hasAttribute("disabled") && b !== screen.getByTestId("group-selector")
-    );
+    const trashButtons = screen
+      .getAllByRole("button")
+      .filter(
+        (b) =>
+          !b.hasAttribute("disabled") &&
+          b !== screen.getByTestId("group-selector")
+      );
     await userEvent.click(trashButtons[0]);
     await waitFor(() => {
       expect(
-        screen.getByDisplayValue("Everyone can view this agent")
+        screen.getByDisplayValue("Only you can access this agent")
       ).toBeInTheDocument();
     });
+  });
+
+  // ── Publishing ────────────────────────────────────────────────────────────
+
+  it("shows the published summary and disables group controls when published", () => {
+    render(
+      <PersonaAccessGroup
+        {...defaultProps}
+        initialIsPublished
+        trustLevel="community"
+      />
+    );
+    expect(
+      screen.getByDisplayValue("Published — everyone can use this agent")
+    ).toBeInTheDocument();
+    // Publish switch is on; group selector and trash are deactivated.
+    expect(screen.getByRole("switch")).toBeChecked();
+    expect(screen.getByTestId("group-selector")).toBeDisabled();
+    expect(screen.getByText("Community")).toBeInTheDocument();
+  });
+
+  it("toggling the publish switch updates summary and re-enables the selector", async () => {
+    render(<PersonaAccessGroup {...defaultProps} />);
+    const publishSwitch = screen.getByRole("switch");
+    expect(publishSwitch).not.toBeChecked();
+
+    await userEvent.click(publishSwitch);
+    expect(
+      screen.getByDisplayValue("Published — everyone can use this agent")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("group-selector")).toBeDisabled();
+
+    await userEvent.click(publishSwitch);
+    expect(
+      screen.getByDisplayValue("Only you can access this agent")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("group-selector")).not.toBeDisabled();
+  });
+
+  it("publish switch has an accessible name", () => {
+    render(<PersonaAccessGroup {...defaultProps} />);
+    expect(
+      screen.getByRole("switch", { name: "Publish to the whole organization" })
+    ).toBeInTheDocument();
   });
 });

@@ -109,7 +109,9 @@ export async function GetWeeklyUsage(
   const uid = userId || (await userHashedId());
   const today = new Date();
   const weekAgo = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 7);
+  // -6, not -7: with an inclusive >= comparison below, this yields exactly a
+  // 7-calendar-day window (today and the preceding 6 days).
+  weekAgo.setDate(weekAgo.getDate() - 6);
   const weekAgoStr = weekAgo.toISOString().split("T")[0];
 
   try {

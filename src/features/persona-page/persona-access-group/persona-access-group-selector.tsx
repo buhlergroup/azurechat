@@ -20,6 +20,7 @@ import { logoutOnSessionExpired } from "@/features/auth-page/logout-on-session-e
 interface Props {
   onSelectGroup: (group: AccessGroup) => void;
   selectedAccessGroupId: string;
+  disabled?: boolean;
 }
 
 type SelectedAccessGroup = AccessGroup & {
@@ -85,10 +86,11 @@ export const PersonaAccessGroupSelector: FC<Props> = (props) => {
     <>
       <Button
         onClick={() => setOpen(true)}
-        className="p-1 cursor-pointer"
+        className="p-1 cursor-pointer disabled:cursor-not-allowed"
         variant={"ghost"}
         type="button"
         size={"icon"}
+        disabled={props.disabled}
       >
         <Edit size={15} />
       </Button>

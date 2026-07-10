@@ -87,7 +87,7 @@ export const PersonaVisibilityInfo = (
       return "This agent is shared with one of your access groups.";
     }
 
-    return "This agent is public, so everyone in your organization can see it.";
+    return "This agent is published, so everyone in your organization can find and use it.";
   };
 
   return (

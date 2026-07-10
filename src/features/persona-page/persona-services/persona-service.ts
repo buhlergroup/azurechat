@@ -36,6 +36,10 @@ import {
 import { UploadFileForCodeInterpreter } from "@/features/chat-page/chat-services/code-interpreter-service";
 import { AccessGroupById, UserAccessGroups } from "./access-group-service";
 import { RevalidateCache } from "@/features/common/navigation-helpers";
+import {
+  DeleteAgentStats,
+  RecordAgentChatStarted,
+} from "@/features/common/services/agent-stats-service";
 import { logInfo, logError } from "@/features/common/services/logger";
 
 interface PersonaInput {
@@ -122,8 +126,6 @@ export const CreatePersona = async (
   sharePointFiles: DocumentMetadata[]
 ): Promise<ServerActionResponse<PersonaModel>> => {
   try {
-    const user = await getCurrentUser();
-
     // TODO: check if the user is part of the access group
 
     const personaDocumentIds = await AddOrUpdatePersonaDocuments(
@@ -142,9 +144,14 @@ export const CreatePersona = async (
       name: props.name,
       description: props.description,
       personaMessage: props.personaMessage,
-      isPublished: user.isAdmin ? props.isPublished : false,
+      // Any user may publish their agent to the marketplace; fresh publishes
+      // start as "community" until the governance group verifies them.
+      isPublished: props.isPublished,
+      trustLevel: props.isPublished ? "community" : undefined,
+      publishedAt: props.isPublished ? new Date() : undefined,
       userId: await userHashedId(),
       createdAt: new Date(),
+      updatedAt: new Date(),
       extensionIds: props.extensionIds,
       type: "PERSONA",
       personaDocumentIds: personaDocumentIds.response,
@@ -228,6 +235,9 @@ export const DeletePersona = async (
         .item(personaId, personaResponse.response.userId)
         .delete();
 
+      // Best-effort cleanup of the agent's usage counters.
+      await DeleteAgentStats(personaId);
+
       return {
         status: "OK",
         response: deletedPersona,
@@ -258,7 +268,6 @@ export const UpsertPersona = async (
 
     if (personaResponse.status === "OK") {
       const { response: persona } = personaResponse;
-      const user = await getCurrentUser();
 
       const personaDocumentIdsResponse = await AddOrUpdatePersonaDocuments(
         sharePointFiles,
@@ -271,15 +280,39 @@ export const UpsertPersona = async (
         personaDocumentIds = personaDocumentIdsResponse.response;
       }
 
+      const wasPublished = persona.isPublished;
+      const willPublish = personaInput.isPublished;
+
+      // Trust stamping: a published agent without a stored trustLevel is a
+      // legacy admin-published one (effectively "verified") — materialize
+      // that on save. A fresh publish (or republish) starts as "community";
+      // only the governance group can raise it (agent-trust-service).
+      const trustLevel =
+        willPublish && !persona.trustLevel
+          ? wasPublished
+            ? ("verified" as const)
+            : ("community" as const)
+          : persona.trustLevel;
+
       const modelToUpdate: PersonaModel = {
         ...persona,
         name: personaInput.name,
         description: personaInput.description,
         personaMessage: personaInput.personaMessage,
-        isPublished: user.isAdmin
-          ? personaInput.isPublished
-          : persona.isPublished,
-        createdAt: new Date(),
+        // Owners publish their own agents to the marketplace themselves
+        // (EnsurePersonaOperation already restricts edits to owner/admin).
+        isPublished: willPublish,
+        trustLevel,
+        publishedAt:
+          willPublish && !wasPublished
+            ? new Date()
+            : persona.publishedAt
+              ? new Date(persona.publishedAt)
+              : undefined,
+        // Preserve the original creation time (Cosmos round-trips it as an
+        // ISO string, hence the coercion); track modifications in updatedAt.
+        createdAt: new Date(persona.createdAt),
+        updatedAt: new Date(),
         extensionIds: personaInput.extensionIds,
         accessGroup: personaInput.accessGroup,
         personaDocumentIds: personaDocumentIds,
@@ -517,6 +550,7 @@ export const CreatePersonaChat = async (
       type: CHAT_THREAD_ATTRIBUTE,
       personaMessage: persona.personaMessage,
       personaMessageTitle: persona.name,
+      personaId: persona.id,
       extension: persona.extensionIds || [],
       personaDocumentIds: persona.personaDocumentIds || [],
       attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
@@ -524,6 +558,11 @@ export const CreatePersonaChat = async (
       subAgentIds: persona.subAgentIds || [],
       defaultTools: persona.defaultTools,
     });
+
+    if (response.status === "OK") {
+      // Fire-and-forget: stats must never block or fail chat creation.
+      RecordAgentChatStarted(persona.id).catch(() => {});
+    }
 
     return response;
   }

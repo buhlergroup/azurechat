@@ -60,6 +60,10 @@ class InMemoryContainer {
             this.docs[idx][key] = op.value;
           } else if (op.op === "remove") {
             delete this.docs[idx][key];
+          } else if (op.op === "incr") {
+            const current = this.docs[idx][key];
+            this.docs[idx][key] =
+              (typeof current === "number" ? current : 0) + (op.value ?? 0);
           }
         }
         return { resource: this.docs[idx] };

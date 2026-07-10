@@ -318,7 +318,7 @@ This is the largest feature folder with complex state management and streaming.
 
 **Models:**
 - `chat-services/models.ts`
-  - `ChatModel` type (gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-chat)
+  - `ChatModel` type (gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini)
   - `MODEL_CONFIGS` record with pricing, context window, reasoning support
   - `ChatThreadModel`, `ChatMessageModel`, `ChatDocumentModel`, `AttachedFileModel`
   - `UserPrompt`, `AzureChatCompletion` response types
@@ -911,7 +911,7 @@ This folder contains shadcn/ui and custom UI primitives. Most are pure presentat
 
 **Completions API** (main LLM)
 - Used in: chat-api-response.ts, openai-responses-stream.ts
-- Models: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-chat
+- Models: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini
 - Test strategy: Mock streaming response
 
 **Embeddings API**

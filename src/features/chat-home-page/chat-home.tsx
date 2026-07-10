@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentStatsModel } from "@/features/common/services/agent-stats-models";
 import { ExtensionModel } from "@/features/extensions-page/extension-services/models";
 import { AgentList } from "@/features/persona-page/agent-list";
 import { AddNewPersona } from "@/features/persona-page/add-new-persona";
@@ -21,6 +22,7 @@ interface ChatPersonaProps {
   news: NewsArticleModel[];
   favoriteAgentIds: string[];
   currentUserId: string;
+  agentStats?: Record<string, AgentStatsModel>;
 }
 
 const FeedbackButton = ({ feedBackLink }: { feedBackLink: string }) => (
@@ -100,7 +102,7 @@ const ArticlesSection = ({
   </div>
 );
 
-export const ChatHome: FC<ChatPersonaProps> = ({ personas, extensions, news, favoriteAgentIds, currentUserId }) => {
+export const ChatHome: FC<ChatPersonaProps> = ({ personas, extensions, news, favoriteAgentIds, currentUserId, agentStats }) => {
   const [showChangelog, setShowChangelog] = useState<boolean>(false);
 
   return (
@@ -134,6 +136,8 @@ export const ChatHome: FC<ChatPersonaProps> = ({ personas, extensions, news, fav
                 personas={personas}
                 initialFavoriteIds={favoriteAgentIds}
                 currentUserId={currentUserId}
+                agentStats={agentStats}
+                favoritesOnly
               />
             </>
           )}

@@ -1,6 +1,5 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { FC, startTransition, useState, useEffect } from "react";
 import { ServerActionResponse } from "../common/server-action-response";
 import { Button } from "../ui/button";
@@ -15,7 +14,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../ui/sheet";
-import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import {
   Select,
@@ -31,14 +29,18 @@ import {
 } from "./persona-store";
 import { ExtensionDetail } from "../chat-page/chat-header/extension-detail";
 import { ExtensionModel } from "../extensions-page/extension-services/models";
-import { PersonaModel, DefaultTools } from "./persona-services/models";
+import {
+  PersonaModel,
+  DefaultTools,
+  effectiveTrustLevel,
+} from "./persona-services/models";
 import { PersonaDocuments } from "./persona-documents/persona-documents";
 import { CodeInterpreterDocuments } from "./persona-documents/code-interpreter-documents";
 import { PersonaAccessGroup } from "./persona-access-group/persona-access-group";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { useResetableActionState } from "../common/hooks/useResetableActionState";
 import { AdvancedLoadingIndicator } from "../ui/advanced-loading-indicator";
-import { MODEL_CONFIGS, getAvailableModels, ChatModel, ModelConfig } from "../chat-page/chat-services/models";
+import { MODEL_CONFIGS, getAvailableModels, ModelConfig } from "../chat-page/chat-services/models";
 
 interface Props {
   extensions: Array<ExtensionModel>;
@@ -54,8 +56,6 @@ export const AddNewPersona: FC<Props> = (props) => {
     AddOrUpdatePersona,
     initialState
   );
-
-  const { data } = useSession();
 
   const [selectedModel, setSelectedModel] = useState<string>(
     persona.selectedModel || "__default__"
@@ -99,19 +99,6 @@ export const AddNewPersona: FC<Props> = (props) => {
   const availableSubAgents = props.personas.filter(
     (p) => p.id !== persona.id
   );
-
-  const PublicSwitch = () => {
-    if (data === undefined || data === null) return null;
-
-    if (data?.user?.isAdmin) {
-      return (
-        <div className="flex items-center space-x-2">
-          <Switch name="isPublished" defaultChecked={persona.isPublished} />
-          <Label htmlFor="description">Publish</Label>
-        </div>
-      );
-    }
-  };
 
   return (
     <Sheet
@@ -316,6 +303,8 @@ export const AddNewPersona: FC<Props> = (props) => {
                 )}
                 <PersonaAccessGroup
                   initialSelectedGroup={persona.accessGroup?.id || null}
+                  initialIsPublished={persona.isPublished}
+                  trustLevel={effectiveTrustLevel(persona)}
                 />
                 <PersonaDocuments
                   initialPersonaDocumentIds={persona.personaDocumentIds || []}
@@ -325,8 +314,8 @@ export const AddNewPersona: FC<Props> = (props) => {
                 />
               </div>
             </ScrollArea>
-            <SheetFooter className="py-2 flex sm:justify-between flex-row">
-              <PublicSwitch /> <Submit isLoading={isLoading} />
+            <SheetFooter className="py-2 flex justify-end flex-row">
+              <Submit isLoading={isLoading} />
             </SheetFooter>
           </form>
         </TooltipProvider>

@@ -52,7 +52,13 @@ vi.mock("./persona-documents/code-interpreter-documents", () => ({
 }));
 
 vi.mock("./persona-access-group/persona-access-group", () => ({
-  PersonaAccessGroup: () => <div data-testid="persona-access-group" />,
+  PersonaAccessGroup: (props: any) => (
+    <div
+      data-testid="persona-access-group"
+      data-published={String(props.initialIsPublished)}
+      data-trust={props.trustLevel ?? ""}
+    />
+  ),
 }));
 
 vi.mock("../chat-page/chat-services/models", async () => {
@@ -94,15 +100,38 @@ describe("persona-page.unit.components.001/002 — AddNewPersona", () => {
     expect(screen.getByPlaceholderText(/short description/i)).toBeInTheDocument();
   });
 
-  it("does NOT show Publish switch for non-admin", () => {
+  it("passes publish state into the access section (unpublished, no trust)", () => {
     render(<AddNewPersona extensions={[]} personas={[]} />);
-    expect(screen.queryByText("Publish")).not.toBeInTheDocument();
+    const access = screen.getByTestId("persona-access-group");
+    expect(access.dataset.published).toBe("false");
+    expect(access.dataset.trust).toBe("");
   });
 
-  it("shows Publish switch for admin", () => {
-    mockUseSession.mockReturnValue({ data: { user: { isAdmin: true } } });
+  it("passes the legacy-verified trust level when published without trustLevel", () => {
+    (usePersonaState as any).mockReturnValue({
+      ...mockPersonaState,
+      persona: { ...mockPersonaState.persona, isPublished: true },
+    });
     render(<AddNewPersona extensions={[]} personas={[]} />);
-    expect(screen.getByText("Publish")).toBeInTheDocument();
+    const access = screen.getByTestId("persona-access-group");
+    // Published without a stored trustLevel = legacy admin publish → verified.
+    expect(access.dataset.published).toBe("true");
+    expect(access.dataset.trust).toBe("verified");
+  });
+
+  it("passes the community trust level for community-published agents", () => {
+    (usePersonaState as any).mockReturnValue({
+      ...mockPersonaState,
+      persona: {
+        ...mockPersonaState.persona,
+        isPublished: true,
+        trustLevel: "community",
+      },
+    });
+    render(<AddNewPersona extensions={[]} personas={[]} />);
+    expect(screen.getByTestId("persona-access-group").dataset.trust).toBe(
+      "community"
+    );
   });
 
   it("does not render the sheet when isOpened is false", () => {

@@ -69,10 +69,12 @@ export default defineConfig({
       // at process start; without them chat-api-response.ts returns
       // "Missing deployment configuration" before the fake OpenAI is invoked.
       // The fake is wired via webpack alias regardless of the value here.
+      AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME: "gpt-test",
+      AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME: "gpt-test",
+      AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME: "gpt-test",
       AZURE_OPENAI_API_GPT55_DEPLOYMENT_NAME: "gpt-test",
       AZURE_OPENAI_API_GPT54_DEPLOYMENT_NAME: "gpt-test",
       AZURE_OPENAI_API_GPT54_MINI_DEPLOYMENT_NAME: "gpt-test",
-      AZURE_OPENAI_API_GPT53_CHAT_DEPLOYMENT_NAME: "gpt-test",
       AZURE_OPENAI_API_VERSION: "2024-10-21",
       AZURE_SEARCH_API_KEY: "test-search-key",
       AZURE_SEARCH_NAME: "test-search",
