@@ -99,9 +99,10 @@ export interface ModelConfig {
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
   // ── GPT-5.6 family (2026-07-09) ─────────────────────────────────────────
-  // Pricing mirrors the equivalent GPT-5.5-era tier as a placeholder — Azure's
-  // model catalog doesn't expose $/token pricing (cost field is null for every
-  // model, including gpt-5.5 below). Confirm against the real Bühler contract.
+  // Pricing per the OpenAI GPT-5.6 announcement: Sol $5/$30, Terra $2.50/$15,
+  // Luna $1/$6 per 1M tokens; cache reads keep the 90% cached-input discount.
+  // NOTE: gpt-5.6+ bills cache WRITES at 1.25× the uncached input rate — not
+  // yet modelled here, so totalCostUsd slightly underestimates on cache writes.
   "gpt-5.6-sol": {
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",
@@ -141,7 +142,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
     defaultReasoningEffort: "medium",
-    pricing: { inputPerMillion: 0.75, outputPerMillion: 4.50, cachedInputPerMillion: 0.075 },
+    pricing: { inputPerMillion: 1.00, outputPerMillion: 6.00, cachedInputPerMillion: 0.10 },
     contextWindow: 400000,
     hardCapEligible: true,
     capabilities: ["vision", "webSearch", "code"],
