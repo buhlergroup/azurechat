@@ -63,7 +63,7 @@ describe("getBudgetConfig", () => {
 
 describe("getDowngradeTargets — hardCapSet", () => {
   it("includes flagged+deployed models, sorted cheapest-first by output price", () => {
-    // output prices: DeepSeek 1.20 < Kimi 2.50 < luna 4.50
+    // output prices: DeepSeek 1.20 < Kimi 2.50 < luna 6.00
     const { hardCapSet } = getDowngradeTargets();
     expect(hardCapSet).toEqual(["DeepSeek-V4-Pro", "Kimi-K2.6", "gpt-5.6-luna"]);
   });
