@@ -171,6 +171,7 @@ describe("persona-service.ts", () => {
       expect(result.response.trustLevel).toBe("community");
       expect(result.response.publishedAt).toBeInstanceOf(Date);
       expect(result.response.userId).toBe(USER_HASH);
+      expect(result.response.creatorName).toBe("Test User");
       expect(result.response.id).toBeTruthy();
       expect(result.response.type).toBe("PERSONA");
     }
