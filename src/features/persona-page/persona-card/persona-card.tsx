@@ -18,6 +18,7 @@ import { StartNewPersonaChat } from "./start-new-persona-chat";
 import { CopyAgentLinksMenu } from "./copy-agent-links-menu";
 import { PersonaVisibilityInfo } from "./persona-visibility-info";
 import { FavoriteAgentButton } from "./favorite-agent-button";
+import { PersonaCardMetadata } from "./persona-card-metadata";
 
 interface Props {
   persona: PersonaModel;
@@ -40,10 +41,16 @@ export const PersonaCard: FC<Props> = (props) => {
   );
 
   return (
-    <Card key={persona.id} data-persona-id={persona.id} className="flex flex-col">
+    <Card
+      key={persona.id}
+      data-persona-id={persona.id}
+      className="flex min-w-0 flex-col overflow-hidden"
+    >
       <CardHeader className="flex flex-row gap-2 items-start">
-        <div className="flex flex-1 items-center gap-2">
-          <CardTitle className="flex-1 line-clamp-1">{persona.name}</CardTitle>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <CardTitle className="min-w-0 flex-1 line-clamp-1">
+            {persona.name}
+          </CardTitle>
           <PersonaVisibilityInfo persona={persona} />
           {props.onToggleFavorite && (
             <FavoriteAgentButton
@@ -54,7 +61,7 @@ export const PersonaCard: FC<Props> = (props) => {
           )}
         </div>
         {(props.showActionMenu || showVerifierActions) && (
-          <div>
+          <div className="shrink-0">
             <PersonaCardContextMenu
               persona={persona}
               showOwnerActions={props.showActionMenu}
@@ -83,6 +90,9 @@ export const PersonaCard: FC<Props> = (props) => {
           )}
         </div>
         <p className="line-clamp-3">{persona.description}</p>
+        <div className="mt-3">
+          <PersonaCardMetadata persona={persona} />
+        </div>
       </CardContent>
       <CardFooter className="gap-1 content-stretch f">
         {props.showContextMenu && <ViewPersona persona={persona} />}

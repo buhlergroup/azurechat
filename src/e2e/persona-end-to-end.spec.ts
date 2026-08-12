@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
 // in-memory Cosmos history container.
 test.describe("persona-end-to-end", () => {
   test("create persona → appears in library → start chat → composer ready", async ({ page }) => {
-    const personaName = `E2E Robot ${Date.now()}`;
+    const personaName = `E2E Robot ${Date.now()} ${"with a deliberately long title ".repeat(5)}`;
     const personaDescription = "Robot persona for e2e test";
     const personaInstructions =
       "You are a robot. Always respond starting with the literal word BEEP.";
@@ -37,15 +37,41 @@ test.describe("persona-end-to-end", () => {
     // The new persona shows up in the library grid as a card with the chosen name.
     const personaHeading = page.getByText(personaName, { exact: true }).first();
     await expect(personaHeading).toBeVisible({ timeout: 10_000 });
+    const personaCard = page
+      .locator("[data-persona-id]")
+      .filter({ hasText: personaName })
+      .first();
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    const overflow = await personaCard.evaluate((card) => ({
+      card: card.scrollWidth > card.clientWidth,
+      page: document.documentElement.scrollWidth > window.innerWidth,
+    }));
+    expect(overflow).toEqual({ card: false, page: false });
+
+    const creator = personaCard.getByLabel("Creator: Test User");
+    await creator.hover();
+    await expect(page.getByRole("tooltip")).toContainText("Creator: Test User");
+
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toBeHidden();
+    const created = personaCard.getByLabel(/^Created:/);
+    await created.hover();
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: /^Created:/ })
+    ).toContainText(/\((now|\d+[mhd] ago)\)/);
+
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toBeHidden();
+    const changed = personaCard.getByLabel(/^Last changed:/);
+    await changed.hover();
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: /^Last changed:/ })
+    ).toContainText(/\((now|\d+[mhd] ago)\)/);
 
     // "Start chat" on that card creates a chat thread (CreatePersonaChat) and
     // navigates to /chat/<threadId>. The card with our persona has a
     // sibling "Start chat" button; scope by the closest card containing the name.
-    const personaCard = page
-      .locator("div")
-      .filter({ hasText: personaName })
-      .filter({ has: page.getByRole("button", { name: /start chat/i }) })
-      .first();
     await personaCard.getByRole("button", { name: /start chat/i }).click();
 
     await page.waitForURL(/\/chat\/[^/]+$/, { timeout: 30_000 });

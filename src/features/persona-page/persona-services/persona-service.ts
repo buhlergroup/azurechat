@@ -150,6 +150,7 @@ export const CreatePersona = async (
       trustLevel: props.isPublished ? "community" : undefined,
       publishedAt: props.isPublished ? new Date() : undefined,
       userId: await userHashedId(),
+      creatorName: (await getCurrentUser()).name,
       createdAt: new Date(),
       updatedAt: new Date(),
       extensionIds: props.extensionIds,

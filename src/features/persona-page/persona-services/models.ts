@@ -92,6 +92,7 @@ export type DefaultTools = z.infer<typeof DefaultToolsSchema>;
 export const PersonaModelSchema = z.object({
   id: z.string(),
   userId: z.string(),
+  creatorName: z.string().optional(),
   name: z
     .string({
       error: "Invalid title",

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 // Stub every leaf component that adds heavy deps
@@ -56,11 +56,18 @@ const basePersona: PersonaModel = {
   isPublished: false,
   type: "PERSONA",
   userId: "u1",
+  creatorName: "Ada Lovelace",
   extensionIds: [],
 };
 
 describe("persona-page.unit.components.006 — PersonaCard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T12:00:00Z"));
+  });
+
+  afterEach(() => vi.useRealTimers());
 
   it("renders persona name and description", () => {
     render(
@@ -180,5 +187,45 @@ describe("persona-page.unit.components.006 — PersonaCard", () => {
       />
     );
     expect(screen.getByTestId("visibility-info")).toBeInTheDocument();
+  });
+
+  it("renders creator, created, and last-changed metadata as icon tooltips", () => {
+    render(
+      <PersonaCard
+        persona={{
+          ...basePersona,
+          createdAt: new Date("2026-07-23T12:00:00Z"),
+          updatedAt: new Date("2026-08-11T12:00:00Z"),
+        }}
+        showContextMenu={false}
+        showActionMenu={false}
+      />
+    );
+
+    expect(screen.getByLabelText("Creator: Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Created: .+ \(20d ago\)/)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Last changed: .+ \(1d ago\)/)
+    ).toBeInTheDocument();
+  });
+
+  it("uses the creation date and a safe creator fallback for legacy agents", () => {
+    render(
+      <PersonaCard
+        persona={{
+          ...basePersona,
+          creatorName: undefined,
+          createdAt: new Date("2026-08-11T12:00:00Z"),
+          updatedAt: undefined,
+        }}
+        showContextMenu={false}
+        showActionMenu={false}
+      />
+    );
+
+    expect(screen.getByLabelText("Creator: Unknown creator")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Last changed: .+ \(1d ago\)/)
+    ).toBeInTheDocument();
   });
 });
