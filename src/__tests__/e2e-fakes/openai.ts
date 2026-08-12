@@ -93,7 +93,9 @@ function makeClient() {
       content: async (id: string) => {
         const file = files.get(id);
         if (!file) throw new Error(`Fake OpenAI file not found: ${id}`);
-        return new Response(file.data, {
+        const data = new ArrayBuffer(file.data.byteLength);
+        new Uint8Array(data).set(file.data);
+        return new Response(data, {
           headers: { "content-type": file.contentType },
         });
       },

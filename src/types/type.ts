@@ -23,7 +23,11 @@ const azureEnvVars = [
   "AZURE_CLIENT_ID",
 ] as const;
 
-type RequiredServerEnvKeys = (typeof azureEnvVars)[number];
+// next-auth already declares these two keys as optional on ProcessEnv.
+type RequiredServerEnvKeys = Exclude<
+  (typeof azureEnvVars)[number],
+  "NEXTAUTH_SECRET" | "NEXTAUTH_URL"
+>;
 
 declare global {
   namespace NodeJS {
