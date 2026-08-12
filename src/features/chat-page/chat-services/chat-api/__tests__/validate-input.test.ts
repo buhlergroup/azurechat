@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import {
   validateCodeInterpreterFileIds,
   validateMultimodalInput,
@@ -140,6 +140,20 @@ describe("mixed images", () => {
 });
 
 describe("Code Interpreter files", () => {
+  const originalLimit = process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT;
+
+  beforeEach(() => {
+    process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT = "20";
+  });
+
+  afterEach(() => {
+    if (originalLimit === undefined) {
+      delete process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT;
+    } else {
+      process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT = originalLimit;
+    }
+  });
+
   it("accepts exactly 20 file IDs", () => {
     const fileIds = Array.from({ length: 20 }, (_, index) => `file-${index}`);
     expect(validateCodeInterpreterFileIds(fileIds)).toEqual({ ok: true });
