@@ -53,13 +53,21 @@ test.describe("persona-end-to-end", () => {
     await creator.hover();
     await expect(page.getByRole("tooltip")).toContainText("Creator: Test User");
 
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toBeHidden();
     const created = personaCard.getByLabel(/^Created:/);
     await created.hover();
-    await expect(page.getByRole("tooltip")).toContainText(/\((now|\d+[mhd] ago)\)/);
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: /^Created:/ })
+    ).toContainText(/\((now|\d+[mhd] ago)\)/);
 
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toBeHidden();
     const changed = personaCard.getByLabel(/^Last changed:/);
     await changed.hover();
-    await expect(page.getByRole("tooltip")).toContainText(/\((now|\d+[mhd] ago)\)/);
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: /^Last changed:/ })
+    ).toContainText(/\((now|\d+[mhd] ago)\)/);
 
     // "Start chat" on that card creates a chat thread (CreatePersonaChat) and
     // navigates to /chat/<threadId>. The card with our persona has a
