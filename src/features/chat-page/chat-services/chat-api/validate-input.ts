@@ -38,38 +38,6 @@ export function validateMultimodalInput(
     return { ok: true };
   }
 
-  export function validateCodeInterpreterFileIds(
-    fileIds: unknown
-  ): ValidationResult {
-    if (fileIds === undefined) {
-      return { ok: true };
-    }
-
-    if (
-      !Array.isArray(fileIds) ||
-      fileIds.some((fileId) => typeof fileId !== "string" || fileId.length === 0)
-    ) {
-      return {
-        ok: false,
-        error: "Code Interpreter file IDs must be non-empty strings.",
-        status: 400,
-      };
-    }
-
-    const maxFileCount = getCodeInterpreterFileLimit(
-      process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT
-    );
-    if (fileIds.length > maxFileCount) {
-      return {
-        ok: false,
-        error: `Too many Code Interpreter files: ${fileIds.length} supplied, maximum is ${maxFileCount}.`,
-        status: 400,
-      };
-    }
-
-    return { ok: true };
-  }
-
   if (images.length > MAX_IMAGE_COUNT) {
     return {
       ok: false,
@@ -120,6 +88,38 @@ export function validateMultimodalInput(
         status: 400,
       };
     }
+  }
+
+  return { ok: true };
+}
+
+export function validateCodeInterpreterFileIds(
+  fileIds: unknown
+): ValidationResult {
+  if (fileIds === undefined) {
+    return { ok: true };
+  }
+
+  if (
+    !Array.isArray(fileIds) ||
+    fileIds.some((fileId) => typeof fileId !== "string" || fileId.length === 0)
+  ) {
+    return {
+      ok: false,
+      error: "Code Interpreter file IDs must be non-empty strings.",
+      status: 400,
+    };
+  }
+
+  const maxFileCount = getCodeInterpreterFileLimit(
+    process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT
+  );
+  if (fileIds.length > maxFileCount) {
+    return {
+      ok: false,
+      error: `Too many Code Interpreter files: ${fileIds.length} supplied, maximum is ${maxFileCount}.`,
+      status: 400,
+    };
   }
 
   return { ok: true };
