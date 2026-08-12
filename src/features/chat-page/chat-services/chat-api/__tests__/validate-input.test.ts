@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { validateMultimodalInput } from "../validate-input";
+import {
+  validateCodeInterpreterFileIds,
+  validateMultimodalInput,
+} from "../validate-input";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -132,6 +135,29 @@ describe("mixed images", () => {
       "data:image/gif;base64,abc123",
     ];
     const result = validateMultimodalInput(images);
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("Code Interpreter files", () => {
+  it("accepts exactly 20 file IDs", () => {
+    const fileIds = Array.from({ length: 20 }, (_, index) => `file-${index}`);
+    expect(validateCodeInterpreterFileIds(fileIds)).toEqual({ ok: true });
+  });
+
+  it("rejects more than 20 file IDs", () => {
+    const fileIds = Array.from({ length: 21 }, (_, index) => `file-${index}`);
+    const result = validateCodeInterpreterFileIds(fileIds);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(400);
+      expect(result.error).toMatch(/maximum is 20/i);
+    }
+  });
+
+  it("rejects invalid file IDs", () => {
+    const result = validateCodeInterpreterFileIds(["file-1", ""]);
     expect(result.ok).toBe(false);
   });
 });

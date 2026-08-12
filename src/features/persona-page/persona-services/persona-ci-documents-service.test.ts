@@ -72,6 +72,7 @@ beforeEach(() => {
   historyItems.length = 0;
   vi.clearAllMocks();
   setSession(defaultSession);
+  process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT = "20";
   historyContainer.items.upsert.mockImplementation(async (doc: any) => ({
     resource: { ...doc },
     item: { id: doc.id },
@@ -187,5 +188,36 @@ describe("persona-ci-documents-service.ts", () => {
     const firstUpserted = historyContainer.items.upsert.mock.calls[0][0];
     expect(firstUpserted.userId).toBe(USER_HASH);
     expect(firstUpserted.type).toBe("PERSONA_CI_DOCUMENT");
+  });
+
+  it("008 accepts exactly 20 Code Interpreter documents", async () => {
+    const files = Array.from({ length: 20 }, (_, index) => ({
+      documentId: `sp-${index}`,
+      name: `file${index}.csv`,
+      createdBy: "user",
+      createdDateTime: "2024-01-01",
+      parentReference: { driveId: "d1" },
+    }));
+
+    const result = await UpdateOrAddPersonaCIDocuments(files as any, []);
+    expect(result.status).toBe("OK");
+    expect(historyContainer.items.upsert).toHaveBeenCalledTimes(20);
+  });
+
+  it("009 rejects more than 20 Code Interpreter documents", async () => {
+    const files = Array.from({ length: 21 }, (_, index) => ({
+      documentId: `sp-${index}`,
+      name: `file${index}.csv`,
+      createdBy: "user",
+      createdDateTime: "2024-01-01",
+      parentReference: { driveId: "d1" },
+    }));
+
+    const result = await UpdateOrAddPersonaCIDocuments(files as any, []);
+    expect(result.status).toBe("ERROR");
+    if (result.status === "ERROR") {
+      expect(result.errors[0].message).toMatch(/maximum is 20/i);
+    }
+    expect(historyContainer.items.upsert).not.toHaveBeenCalled();
   });
 });

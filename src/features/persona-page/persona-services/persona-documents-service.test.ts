@@ -95,7 +95,7 @@ describe("DocumentDetails — issue #113: CI size limit handling", () => {
 
     const result = await DocumentDetails([sharepointDoc("ci-pdf")], {
       maxSize: 512 * 1024 * 1024,
-      maxCount: 5,
+      maxCount: 20,
     });
 
     expect(result.status).toBe("OK");
@@ -110,7 +110,7 @@ describe("DocumentDetails — issue #113: CI size limit handling", () => {
 
     const result = await DocumentDetails([sharepointDoc("huge")], {
       maxSize: 512 * 1024 * 1024,
-      maxCount: 5,
+      maxCount: 20,
     });
 
     expect(result.status).toBe("OK");
@@ -120,16 +120,16 @@ describe("DocumentDetails — issue #113: CI size limit handling", () => {
   });
 
   it("enforces caller-supplied maxCount", async () => {
-    const docs = Array.from({ length: 6 }, (_, i) => sharepointDoc(`d${i}`));
+    const docs = Array.from({ length: 21 }, (_, i) => sharepointDoc(`d${i}`));
 
     const result = await DocumentDetails(docs, {
       maxSize: 512 * 1024 * 1024,
-      maxCount: 5,
+      maxCount: 20,
     });
 
     expect(result.status).toBe("ERROR");
     if (result.status === "ERROR") {
-      expect(result.errors[0].message).toContain("Maximum is 5");
+      expect(result.errors[0].message).toContain("Maximum is 20");
     }
   });
 });
