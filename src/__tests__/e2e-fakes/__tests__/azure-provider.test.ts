@@ -131,6 +131,31 @@ describe("createFakeAzureProvider", () => {
     expect(toolCallPart?.toolName).toBe("myTool");
   });
 
+  it("AZURECHAT_E2E_SCRIPT complex kind returns generated reasoning, tools, and text", async () => {
+    process.env.AZURECHAT_E2E_SCRIPT = JSON.stringify({
+      kind: "complex",
+      reasoning: "think",
+      toolCalls: [{ toolName: "myTool", args: { q: "test" }, result: { answer: 42 } }],
+      finalText: "done",
+    });
+
+    const provider = createFakeAzureProvider();
+    const model = provider("gpt-4o");
+    const result = await (model as any).doGenerate({});
+
+    expect(result.content).toEqual([
+      { type: "reasoning", text: "think" },
+      {
+        type: "tool-call",
+        toolCallId: "tc-0",
+        toolName: "myTool",
+        input: JSON.stringify({ q: "test" }),
+      },
+      { type: "text", text: "done" },
+    ]);
+    expect(result.finishReason.unified).toBe("tool-calls");
+  });
+
   it("AZURECHAT_E2E_SCRIPT error kind emits an error part in the stream", async () => {
     process.env.AZURECHAT_E2E_SCRIPT = JSON.stringify({
       kind: "error",

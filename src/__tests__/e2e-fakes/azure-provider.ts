@@ -340,6 +340,28 @@ function buildGenerateResult() {
     };
   }
 
+  if (script.kind === "complex") {
+    const content = [];
+    if (script.reasoning) {
+      content.push({ type: "reasoning" as const, text: script.reasoning });
+    }
+    for (const [index, toolCall] of (script.toolCalls ?? []).entries()) {
+      content.push({
+        type: "tool-call" as const,
+        toolCallId: `tc-${index}`,
+        toolName: toolCall.toolName,
+        input: JSON.stringify(toolCall.args),
+      });
+    }
+    content.push({ type: "text" as const, text: script.finalText });
+    return {
+      content,
+      finishReason: makeFinishReason(script.toolCalls?.length ? "tool-calls" : "stop"),
+      usage: makeUsage(),
+      warnings: [],
+    };
+  }
+
   // text
   return {
     content: [{ type: "text" as const, text: script.text }],

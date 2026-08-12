@@ -1,9 +1,10 @@
 /** @type {import('next').NextConfig} */
-const path = require("path");
-
 const nextConfig = {
   output: "standalone",
   distDir: "build",
+  typescript: {
+    tsconfigPath: "tsconfig.build.json",
+  },
   serverExternalPackages: [
     "@azure/storage-blob",
     "@azure/monitor-opentelemetry",
@@ -20,7 +21,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "10mb",
     },
-    turbopackUseSystemTlsCerts: true,
     // Disable the Next.js client-side router cache for dynamic routes.
     // Default is 30s, which makes /chat/[id] show stale "no assistant" state
     // for half a minute after the background generation persisted a message.
