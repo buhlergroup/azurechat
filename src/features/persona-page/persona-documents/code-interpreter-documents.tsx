@@ -16,6 +16,7 @@ import {
 } from "@/features/persona-page/persona-services/persona-ci-documents-service";
 import { ErrorDocumentItem } from "@/features/ui/persona-documents/error-document-item";
 import { DocumentItem } from "@/features/ui/persona-documents/document-item";
+import { getCodeInterpreterFileLimit } from "@/features/chat-page/chat-services/code-interpreter-constants";
 
 interface Props {
   initialCIDocumentIds: readonly string[];
@@ -23,8 +24,9 @@ interface Props {
 
 const CI_MAX_SIZE_BYTES =
   Number(process.env.NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_SIZE) || 536870912;
-const CI_MAX_COUNT =
-  Number(process.env.NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_LIMIT) || 5;
+const CI_MAX_COUNT = getCodeInterpreterFileLimit(
+  process.env.NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_LIMIT
+);
 const CI_MAX_SIZE_MB = Math.round(CI_MAX_SIZE_BYTES / (1024 * 1024));
 
 export const CodeInterpreterDocuments: FC<Props> = ({ initialCIDocumentIds }) => {

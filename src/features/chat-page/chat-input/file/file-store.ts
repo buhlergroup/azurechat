@@ -12,7 +12,10 @@ import {
   CreateChatDocument,
 } from "../../chat-services/chat-document-service";
 import { SupportedFileExtensionsInputImages, AttachedFileModel } from "../../chat-services/models";
-import { isCodeInterpreterSupportedFile } from "../../chat-services/code-interpreter-constants";
+import {
+  getCodeInterpreterFileLimit,
+  isCodeInterpreterSupportedFile,
+} from "../../chat-services/code-interpreter-constants";
 import { getActiveChatStore } from "../../active-chat-store";
 import { InputImageStore } from "@/features/ui/chat/chat-input-area/input-image-store";
 import { AddAttachedFile } from "../../chat-services/chat-thread-service";
@@ -99,6 +102,23 @@ class FileStore {
 
       // Check if this file should go to Code Interpreter instead of Azure Search
       if (shouldUploadToCodeInterpreter) {
+        const active = getActiveChatStore();
+        const attachedFileCount =
+          active
+            ?.getState()
+            .attachedFiles.filter((attached) => attached.type === "code-interpreter")
+            .length ?? 0;
+        const fileLimit = getCodeInterpreterFileLimit(
+          process.env.NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_LIMIT
+        );
+
+        if (attachedFileCount >= fileLimit) {
+          showError(
+            `Code Interpreter supports a maximum of ${fileLimit} files.`
+          );
+          return;
+        }
+
         this.uploadButtonLabel = "Uploading for Code Interpreter";
 
         try {
@@ -127,7 +147,6 @@ class FileStore {
           // Write synchronously to the per-thread Zustand store so a
           // same-tick Send sees this file id in the request payload —
           // the architect2 SEV-1 B3 race that the old Valtio path had.
-          const active = getActiveChatStore();
           if (active) {
             active.getState().addAttachedFile(attachedFile);
             active.getState().toggleCodeInterpreter(true);

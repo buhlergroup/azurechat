@@ -82,6 +82,8 @@ export default defineConfig({
       AZURE_KEY_VAULT_NAME: "test-kv",
       AZURE_STORAGE_ACCOUNT_NAME: "teststorage",
       AZURE_STORAGE_ACCOUNT_KEY: "test-storage-key",
+      MAX_PERSONA_CI_DOCUMENT_LIMIT: "20",
+      NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_LIMIT: "20",
       ADMIN_EMAIL_ADDRESS: "admin@example.com",
     },
   },

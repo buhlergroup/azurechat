@@ -16,7 +16,10 @@ import {
   createIdGenerator,
 } from "ai";
 import type { StepResult, ToolSet } from "ai";
-import { validateMultimodalInput } from "@/features/chat-page/chat-services/chat-api/validate-input";
+import {
+  validateCodeInterpreterFileIds,
+  validateMultimodalInput,
+} from "@/features/chat-page/chat-services/chat-api/validate-input";
 import { resolveModelAndLimits } from "@/features/chat-page/chat-services/chat-api/model-selection";
 import { loadThreadContext } from "@/features/chat-page/chat-services/chat-api/thread-context";
 import { persistAssistantFromFinishEvent } from "@/features/chat-page/chat-services/chat-api/persist-assistant";
@@ -154,6 +157,15 @@ export async function POST(req: Request) {
     multimodalImages: images,
     multimodalImage: images[0] ?? "",
   };
+
+  const codeInterpreterFilesValidation = validateCodeInterpreterFileIds(
+    payload.codeInterpreterFileIds
+  );
+  if (codeInterpreterFilesValidation.ok === false) {
+    return new Response(codeInterpreterFilesValidation.error, {
+      status: codeInterpreterFilesValidation.status,
+    });
+  }
 
   let ctx: Awaited<ReturnType<typeof loadThreadContext>>;
   try {

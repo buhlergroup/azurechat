@@ -6,6 +6,7 @@
  */
 
 import { SupportedFileExtensionsInputImages } from "../models";
+import { getCodeInterpreterFileLimit } from "../code-interpreter-constants";
 
 // OpenAI Responses API limits for vision input
 // https://platform.openai.com/docs/guides/images?api-mode=responses#image-input-requirements
@@ -34,6 +35,38 @@ export function validateMultimodalInput(
   images: (string | File)[]
 ): ValidationResult {
   if (images.length === 0) {
+    return { ok: true };
+  }
+
+  export function validateCodeInterpreterFileIds(
+    fileIds: unknown
+  ): ValidationResult {
+    if (fileIds === undefined) {
+      return { ok: true };
+    }
+
+    if (
+      !Array.isArray(fileIds) ||
+      fileIds.some((fileId) => typeof fileId !== "string" || fileId.length === 0)
+    ) {
+      return {
+        ok: false,
+        error: "Code Interpreter file IDs must be non-empty strings.",
+        status: 400,
+      };
+    }
+
+    const maxFileCount = getCodeInterpreterFileLimit(
+      process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT
+    );
+    if (fileIds.length > maxFileCount) {
+      return {
+        ok: false,
+        error: `Too many Code Interpreter files: ${fileIds.length} supplied, maximum is ${maxFileCount}.`,
+        status: 400,
+      };
+    }
+
     return { ok: true };
   }
 
