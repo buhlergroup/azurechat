@@ -1,4 +1,13 @@
 // Supported file extensions for Code Interpreter
+export const DEFAULT_CODE_INTERPRETER_FILE_LIMIT = 20;
+
+export function getCodeInterpreterFileLimit(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_CODE_INTERPRETER_FILE_LIMIT;
+}
+
 export const CODE_INTERPRETER_SUPPORTED_EXTENSIONS = [
   // Data files
   "CSV", "JSON", "XML", "XLSX", "XLS",

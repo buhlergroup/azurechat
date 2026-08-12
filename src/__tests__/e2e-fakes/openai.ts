@@ -40,6 +40,12 @@ const fakeResponsesIterator = (text: string) => {
 const TEST_REPLY = "TEST: this is a stubbed assistant reply for e2e.";
 
 function makeClient() {
+  const files = new Map<
+    string,
+    { id: string; filename: string; contentType: string; data: Uint8Array }
+  >();
+  let nextFileId = 1;
+
   return {
     chat: {
       completions: {
@@ -69,8 +75,33 @@ function makeClient() {
       create: async () => ({ data: [{ embedding: new Array(1536).fill(0.1) }] }),
     },
     files: {
-      create: async () => ({ id: "file-fake-1" }),
-      content: async () => new Response(new Uint8Array([1, 2, 3])),
+      create: async ({ file }: { file: File }) => {
+        const id = `file-fake-${nextFileId++}`;
+        files.set(id, {
+          id,
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          data: new Uint8Array(await file.arrayBuffer()),
+        });
+        return { id, filename: file.name };
+      },
+      retrieve: async (id: string) => {
+        const file = files.get(id);
+        if (!file) throw new Error(`Fake OpenAI file not found: ${id}`);
+        return { id: file.id, filename: file.filename };
+      },
+      content: async (id: string) => {
+        const file = files.get(id);
+        if (!file) throw new Error(`Fake OpenAI file not found: ${id}`);
+        return new Response(file.data, {
+          headers: { "content-type": file.contentType },
+        });
+      },
+      delete: async (id: string) => ({
+        id,
+        deleted: files.delete(id),
+        object: "file",
+      }),
     },
   } as any;
 }

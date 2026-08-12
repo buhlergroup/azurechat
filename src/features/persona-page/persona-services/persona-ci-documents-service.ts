@@ -21,6 +21,7 @@ import { SqlQuerySpec } from "@azure/cosmos";
 import { logInfo, logError, logDebug } from "@/features/common/services/logger";
 import { ResponseType } from "@microsoft/microsoft-graph-client";
 import { DocumentDetails } from "./persona-documents-service";
+import { getCodeInterpreterFileLimit } from "@/features/chat-page/chat-services/code-interpreter-constants";
 
 // Re-export DocumentDetails for use in the UI component
 export { DocumentDetails };
@@ -200,7 +201,9 @@ export const UpdateOrAddPersonaCIDocuments = async (
   sharePointFiles: DocumentMetadata[],
   currentCIDocuments: string[]
 ): Promise<ServerActionResponse<string[]>> => {
-  const documentLimit = Number(process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT) || 25;
+  const documentLimit = getCodeInterpreterFileLimit(
+    process.env.MAX_PERSONA_CI_DOCUMENT_LIMIT
+  );
 
   if (sharePointFiles.length > documentLimit) {
     return {

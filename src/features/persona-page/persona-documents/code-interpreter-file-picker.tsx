@@ -13,7 +13,10 @@ import {
   DialogTitle,
 } from "@/features/ui/dialog";
 import { SharePointFile } from "../persona-services/models";
-import { CODE_INTERPRETER_SUPPORTED_EXTENSIONS } from "@/features/chat-page/chat-services/code-interpreter-constants";
+import {
+  CODE_INTERPRETER_SUPPORTED_EXTENSIONS,
+  getCodeInterpreterFileLimit,
+} from "@/features/chat-page/chat-services/code-interpreter-constants";
 import { logInfo } from "@/features/common/services/logger";
 
 interface CodeInterpreterFilePickerProps {
@@ -139,7 +142,9 @@ export function CodeInterpreterFilePicker({
     try {
       setShowPicker(true);
 
-      const documentLimit = Number(process.env.NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_LIMIT) || 25;
+      const documentLimit = getCodeInterpreterFileLimit(
+        process.env.NEXT_PUBLIC_MAX_PERSONA_CI_DOCUMENT_LIMIT
+      );
 
       // Filter for Code Interpreter supported extensions
       const filters = CODE_INTERPRETER_SUPPORTED_EXTENSIONS.map(
