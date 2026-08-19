@@ -5,7 +5,7 @@ import {
 } from "@/features/common/services/openai";
 import { logError } from "@/features/common/services/logger";
 
-export const DEFAULT_MODEL: ChatModel = "gpt-5.6-sol";
+export const DEFAULT_MODEL: ChatModel = "gpt-5.6-terra";
 
 export const CHAT_DOCUMENT_ATTRIBUTE = "CHAT_DOCUMENT";
 export const CHAT_THREAD_ATTRIBUTE = "CHAT_THREAD";
