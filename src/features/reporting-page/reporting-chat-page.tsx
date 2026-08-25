@@ -24,7 +24,11 @@ export default function ReportingChatPage(props: ReportingChatPageProps) {
             return (
               <ChatMessageArea
                 key={message.id}
-                profileName={stripExtensionKeyPrefix(message.name)}
+                profileName={
+                  message.role === "tool"
+                    ? stripExtensionKeyPrefix(message.name)
+                    : message.name
+                }
                 role={message.role}
                 onCopy={() => {
                   navigator.clipboard.writeText(message.content);

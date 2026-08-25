@@ -101,7 +101,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
                   className="text-muted-foreground"
                 />{" "}
                 Show {displayName}{" "}
-                {displayName === "tool" ? "output" : "function"}
+                {message.name === "tool" ? "output" : "function"}
               </div>
             </AccordionTrigger>
             <AccordionContent>

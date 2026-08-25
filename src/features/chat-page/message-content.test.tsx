@@ -152,4 +152,25 @@ describe("chat-page.unit.components — MessageContent", () => {
     expect(screen.getByText(/show aisearch function/i)).toBeInTheDocument();
     expect(screen.queryByText(/Kj3nQ8xz_aisearch/i)).toBeNull();
   });
+
+  // Regression: the "output" vs "function" branch must key off the raw
+  // persisted message.name (the "tool" sentinel used for a generic/unnamed
+  // tool result), never off the stripped display name. An extension
+  // function literally named "tool" produces a namespaced key like
+  // "Kj3nQ8xz_tool", which strips to "tool" for display — that must NOT
+  // flip the label to "output".
+  it('does not let a namespaced key that strips down to "tool" flip the output/function branch', () => {
+    render(
+      <MessageContent
+        message={{
+          id: "t4",
+          role: "tool",
+          content: JSON.stringify({ key: "value" }),
+          name: "Kj3nQ8xz_tool",
+        }}
+      />
+    );
+    expect(screen.getByText(/show tool function/i)).toBeInTheDocument();
+    expect(screen.queryByText(/show tool output/i)).toBeNull();
+  });
 });

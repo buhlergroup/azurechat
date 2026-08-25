@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ReportingChatPage from "./reporting-chat-page";
-import type { ChatMessageModel, ChatDocumentModel } from "../chat-page/chat-services/models";
+import type { ChatMessageModel, ChatDocumentModel, ChatRole } from "../chat-page/chat-services/models";
 
 // Heavy sub-components — stub to isolate the unit under test
 vi.mock("../chat-page/message-content", () => ({
@@ -42,7 +42,7 @@ vi.mock("@/features/ui/chat/chat-message-area/chat-message-content", () => ({
 function makeMessage(
   id: string,
   content: string,
-  role: "user" | "assistant" = "user",
+  role: ChatRole = "user",
   name = "Test User"
 ): ChatMessageModel {
   return {
@@ -146,19 +146,37 @@ describe("reporting-chat-page.unit.005 — renders with chat documents present",
   });
 });
 
-describe("reporting-chat-page.unit.006 — strips extension key namespace from profileName", () => {
-  it("passes the stripped display name as profileName, not the persisted namespaced key", () => {
+describe("reporting-chat-page.unit.006 — strips extension key namespace from profileName (tool rows only)", () => {
+  it("strips the namespaced dispatch key on a tool-role row", () => {
     // Persisted name for a tool row is the namespaced dispatch key
     // (`${8-char-id-prefix}_${functionName}`, see buildExtensionToolKey in
     // chat-services/tools/registry.ts) — the admin view must show the
     // authored function name.
-    const messages = [makeMessage("m1", '{"ok":true}', "user", "Kj3nQ8xz_aisearch")];
+    const messages = [makeMessage("m1", '{"ok":true}', "tool", "Kj3nQ8xz_aisearch")];
     render(<ReportingChatPage messages={messages} chatDocuments={[]} />);
     const area = screen.getByTestId("chat-message-area");
     expect(area).toHaveAttribute("data-name", "aisearch");
   });
 
-  it("leaves a non-namespaced profileName unchanged", () => {
+  it("leaves a non-namespaced profileName unchanged on a tool-role row", () => {
+    const messages = [makeMessage("m1", "hi", "tool", "get_current_time")];
+    render(<ReportingChatPage messages={messages} chatDocuments={[]} />);
+    const area = screen.getByTestId("chat-message-area");
+    expect(area).toHaveAttribute("data-name", "get_current_time");
+  });
+
+  it("does NOT strip a user-role display name that happens to look 8-char-prefix-shaped (regression: real AAD names must survive)", () => {
+    // message.name for role="user" is the AAD display name, not a
+    // dispatch key — an underscore-separated name that happens to match
+    // the extension-key shape (8 alphanumeric chars + "_") must render
+    // in full, not get mangled into just its tail.
+    const messages = [makeMessage("m1", "hi", "user", "Reinhold_Meier")];
+    render(<ReportingChatPage messages={messages} chatDocuments={[]} />);
+    const area = screen.getByTestId("chat-message-area");
+    expect(area).toHaveAttribute("data-name", "Reinhold_Meier");
+  });
+
+  it("does NOT strip an assistant-role display name", () => {
     const messages = [makeMessage("m1", "hi", "assistant", "AI")];
     render(<ReportingChatPage messages={messages} chatDocuments={[]} />);
     const area = screen.getByTestId("chat-message-area");
