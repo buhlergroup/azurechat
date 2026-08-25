@@ -21,7 +21,7 @@ test.describe("persisted-multi-turn", () => {
       .toMatch(/\/chat\/[^/]+$/);
     const threadUrl = page.url();
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     const userMessages = ["first question", "second question", "third question"];

@@ -14,7 +14,7 @@ test.describe("reasoning-effort", () => {
     await scriptReasoning(page, REASONING_TEXT, FINAL_ANSWER);
 
     await page.goto(threadUrl);
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("What is the meaning of life?");

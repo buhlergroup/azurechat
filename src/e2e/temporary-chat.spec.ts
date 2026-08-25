@@ -4,7 +4,7 @@ test.describe("temporary-chat", () => {
   test("/chat/temporary renders the chat input and is not listed as a normal thread in the sidebar", async ({ page }) => {
     await page.goto("/chat/temporary");
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     // The current URL points at /chat/temporary. A normal thread link in the

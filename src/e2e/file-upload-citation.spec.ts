@@ -13,7 +13,7 @@ import { newThreadUrl } from "./_helpers/script-fake";
 test.describe("file-attach-chip", () => {
   test("attaching a file via the hidden composer input renders a file chip with the filename", async ({ page }) => {
     await page.goto(await newThreadUrl(page));
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     // CSV is in CODE_INTERPRETER_ONLY_EXTENSIONS (file-store.ts), so the file
@@ -37,7 +37,7 @@ test.describe("file-attach-chip", () => {
     test.setTimeout(120_000);
     await page.goto(await newThreadUrl(page));
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
     const fileInput = page.locator('input[type="file"]').first();
 

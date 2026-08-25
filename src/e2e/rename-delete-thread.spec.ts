@@ -32,7 +32,7 @@ test.describe("rename-delete-thread", () => {
     const threadId = threadUrl.split("/").pop()!;
 
     // Send one message so the thread is real and visible in the sidebar group.
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
     await textarea.fill("seed message");
     await page.keyboard.press("Enter");

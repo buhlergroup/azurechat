@@ -20,7 +20,7 @@ test.describe("thread-switch", () => {
     const threadAUrl = page.url();
     const threadAId = threadAUrl.split("/").pop()!;
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
     await textarea.fill("alpha-marker-from-thread-A");
     await page.keyboard.press("Enter");

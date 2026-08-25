@@ -2,6 +2,11 @@ import { test, expect } from "@playwright/test";
 import { scriptToolCall, newThreadUrl } from "./_helpers/script-fake";
 
 const TOOL_NAME = "search_documents";
+// ToolHeader renders the tool name through `formatToolName`
+// (components/ai-elements/tool.tsx): the `tool-` discriminant is dropped,
+// snake/kebab separators become spaces and the first letter is capitalised.
+// Assert the label the user actually sees.
+const TOOL_LABEL = "Search documents";
 const FINAL_ANSWER = "I was unable to retrieve the documents due to a search error.";
 
 test.describe("tool-execution-error", () => {
@@ -24,7 +29,9 @@ test.describe("tool-execution-error", () => {
     });
 
     await page.goto(threadUrl);
-    const textarea = page.getByPlaceholder("Type your message...");
+    // During hydration the composer briefly exists twice in the DOM, which
+    // trips Playwright strict mode. Same scoping the jank spec already uses.
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("Search for something that fails");
@@ -35,11 +42,11 @@ test.describe("tool-execution-error", () => {
 
     // The tool widget header must exist exactly once.
     await expect(
-      page.getByText(`tool-${TOOL_NAME}`, { exact: true }),
+      page.getByText(TOOL_LABEL, { exact: true }),
     ).toHaveCount(1);
 
     // Click the tool header to expand the collapsible content.
-    const toolHeader = page.getByText(`tool-${TOOL_NAME}`, { exact: true });
+    const toolHeader = page.getByText(TOOL_LABEL, { exact: true });
     await toolHeader.click();
 
     // After expanding, the tool result (error JSON string) must be visible.

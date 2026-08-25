@@ -93,8 +93,8 @@ test.describe("multi-conversation-isolation", () => {
         const msgA = "unique-question-alpha-xyz";
         const msgB = "unique-question-beta-xyz";
 
-        const taA = pageA.getByPlaceholder("Type your message...");
-        const taB = pageB.getByPlaceholder("Type your message...");
+        const taA = pageA.getByPlaceholder("Type your message...").first();
+        const taB = pageB.getByPlaceholder("Type your message...").first();
         await Promise.all([
           expect(taA).toBeVisible({ timeout: 30_000 }),
           expect(taB).toBeVisible({ timeout: 30_000 }),

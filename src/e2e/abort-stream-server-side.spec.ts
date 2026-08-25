@@ -26,7 +26,7 @@ test.describe("abort-stream-server-side", () => {
       .toMatch(/\/chat\/[^/]+$/);
     const threadUrl = page.url();
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("stream something for abort test");

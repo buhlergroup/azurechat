@@ -13,7 +13,7 @@ test.describe("chat-thread", () => {
 
     await page.goto("/chat/temporary");
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("Hello, can you help me?");

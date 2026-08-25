@@ -28,7 +28,7 @@ test.describe("reattach-mid-stream", () => {
       .toMatch(/\/chat\/[^/]+$/);
     const threadAUrl = page.url();
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("stream something long");

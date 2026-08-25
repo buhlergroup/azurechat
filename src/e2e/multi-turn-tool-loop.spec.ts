@@ -10,6 +10,12 @@ import { scriptComplex, newThreadUrl } from "./_helpers/script-fake";
 
 const TOOL_1_NAME = "search_documents";
 const TOOL_2_NAME = "call_sub_agent";
+// ToolHeader renders the tool name through `formatToolName`
+// (components/ai-elements/tool.tsx): the `tool-` discriminant is dropped,
+// snake/kebab separators become spaces and the first letter is capitalised.
+// Assert the label the user actually sees.
+const TOOL_1_LABEL = "Search documents";
+const TOOL_2_LABEL = "Call sub agent";
 const FINAL_ANSWER =
   "Based on the documents and agent summary: Q3 revenue was 4.2 million.";
 
@@ -35,7 +41,9 @@ test.describe("multi-turn-tool-loop", () => {
     });
 
     await page.goto(threadUrl);
-    const textarea = page.getByPlaceholder("Type your message...");
+    // During hydration the composer briefly exists twice in the DOM, which
+    // trips Playwright strict mode. Same scoping the jank spec already uses.
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("What was Q3 revenue and summarise it?");
@@ -45,10 +53,10 @@ test.describe("multi-turn-tool-loop", () => {
 
     // Both tool widgets must be present.
     await expect(
-      page.getByText(`tool-${TOOL_1_NAME}`, { exact: true }),
+      page.getByText(TOOL_1_LABEL, { exact: true }),
     ).toHaveCount(1);
     await expect(
-      page.getByText(`tool-${TOOL_2_NAME}`, { exact: true }),
+      page.getByText(TOOL_2_LABEL, { exact: true }),
     ).toHaveCount(1);
 
     // Exactly one assistant bubble — no ghost from tool-role messages.

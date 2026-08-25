@@ -7,6 +7,11 @@ import { scriptComplex, newThreadUrl } from "./_helpers/script-fake";
 
 const REASONING_TEXT = "I should look up the weather first before answering.";
 const TOOL_NAME = "get_weather";
+// ToolHeader renders the tool name through `formatToolName`
+// (components/ai-elements/tool.tsx): the `tool-` discriminant is dropped,
+// snake/kebab separators become spaces and the first letter is capitalised.
+// Assert the label the user actually sees.
+const TOOL_LABEL = "Get weather";
 const FINAL_ANSWER =
   "Based on my reasoning and the weather tool: it is 18 degrees Celsius and partly cloudy in Zurich.";
 
@@ -28,7 +33,9 @@ test.describe("persistence-round-trip", () => {
     });
 
     await page.goto(threadUrl);
-    const textarea = page.getByPlaceholder("Type your message...");
+    // During hydration the composer briefly exists twice in the DOM, which
+    // trips Playwright strict mode. Same scoping the jank spec already uses.
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("What is the weather in Zurich?");
@@ -39,7 +46,7 @@ test.describe("persistence-round-trip", () => {
 
     // Tool widget renders exactly once.
     await expect(
-      page.getByText(`tool-${TOOL_NAME}`, { exact: true }),
+      page.getByText(TOOL_LABEL, { exact: true }),
     ).toHaveCount(1);
 
     // Reasoning section trigger renders.

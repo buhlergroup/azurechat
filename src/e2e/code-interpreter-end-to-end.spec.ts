@@ -16,7 +16,7 @@ test.describe("code-interpreter-end-to-end", () => {
     await scriptText(page, IMAGE_MARKDOWN);
 
     await page.goto("/chat/temporary");
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("Plot a bar chart of my data");

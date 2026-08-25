@@ -11,7 +11,7 @@ test.describe("session-expired", () => {
   test("clearing the auth cookie hides the chat surface on next navigation", async ({ page, context }) => {
     // Sanity: authenticated user reaches the composer.
     await page.goto("/chat/temporary");
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     // Drop the NextAuth session cookie (both possible names depending on protocol).

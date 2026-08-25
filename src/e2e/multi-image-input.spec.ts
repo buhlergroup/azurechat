@@ -12,7 +12,7 @@ const TINY_PNG_BYTES = Uint8Array.from([
 
 async function openComposer(page: Page) {
   await page.goto("/chat/temporary");
-  const textarea = page.getByPlaceholder("Type your message...");
+  const textarea = page.getByPlaceholder("Type your message...").first();
   await expect(textarea).toBeVisible({ timeout: 30_000 });
   return textarea;
 }
@@ -103,7 +103,7 @@ test.describe("multi-image input", () => {
     await pasteImage(page, "submitted.png");
     await expect(previewImages(page)).toHaveCount(1);
 
-    await page.getByPlaceholder("Type your message...").fill("look at this");
+    await page.getByPlaceholder("Type your message...").first().fill("look at this");
     await page.locator('form button[type="submit"]').click();
 
     // The optimistic user-message bubble carries the `is-user` class. After
@@ -149,7 +149,7 @@ test.describe("multi-image input", () => {
     // returning a multimodal response.
     await pasteImage(page, "a.png");
     await pasteImage(page, "b.png");
-    await page.getByPlaceholder("Type your message...").fill("how many?");
+    await page.getByPlaceholder("Type your message...").first().fill("how many?");
     await page.locator('form button[type="submit"]').click();
 
     // The optimistic user-message bubble has class `is-user`. Its inline

@@ -4,7 +4,7 @@ test.describe("file-upload", () => {
   test("/chat/temporary exposes a file input in the message composer", async ({ page }) => {
     await page.goto("/chat/temporary");
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     // The composer has a hidden <input type="file"> driven by an icon button.

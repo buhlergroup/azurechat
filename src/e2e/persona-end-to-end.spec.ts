@@ -48,12 +48,23 @@ test.describe("persona-end-to-end", () => {
       page: document.documentElement.scrollWidth > window.innerWidth,
     }));
     expect(overflow).toEqual({ card: false, page: false });
+    // The narrow viewport above is scoped to the card-overflow check. Restore
+    // the project's desktop viewport before the chat round-trip below —
+    // at 375px the message log renders offscreen and its bubbles never
+    // become visible, which has nothing to do with what this test asserts.
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     const creator = personaCard.getByLabel("Creator: Test User");
     await creator.hover();
     await expect(page.getByRole("tooltip")).toContainText("Creator: Test User");
 
-    await page.mouse.move(0, 0);
+    // Radix tooltips keep a "grace area" open between trigger and content:
+    // `pointerleave` only arms the polygon, and the tooltip closes on the NEXT
+    // document `pointermove` that lands outside it. A real mouse emits a
+    // continuous stream of moves, so it closes instantly; a single synthetic
+    // teleport fires leave+move in one dispatch, before Radix has attached its
+    // listener, and nothing would ever close it. `steps` models real movement.
+    await page.mouse.move(0, 0, { steps: 10 });
     await expect(page.getByRole("tooltip")).toBeHidden();
     const created = personaCard.getByLabel(/^Created:/);
     await created.hover();
@@ -61,7 +72,7 @@ test.describe("persona-end-to-end", () => {
       page.getByRole("tooltip").filter({ hasText: /^Created:/ })
     ).toContainText(/\((now|\d+[mhd] ago)\)/);
 
-    await page.mouse.move(0, 0);
+    await page.mouse.move(0, 0, { steps: 10 });
     await expect(page.getByRole("tooltip")).toBeHidden();
     const changed = personaCard.getByLabel(/^Last changed:/);
     await changed.hover();
@@ -77,7 +88,9 @@ test.describe("persona-end-to-end", () => {
     await page.waitForURL(/\/chat\/[^/]+$/, { timeout: 30_000 });
 
     // Composer renders and a turn round-trips through /api/chat → fake OpenAI.
-    const textarea = page.getByPlaceholder("Type your message...");
+    // During hydration the composer briefly exists twice in the DOM, which
+    // trips Playwright strict mode. Same scoping the jank spec already uses.
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
     await textarea.fill("hello robot");
     await page.keyboard.press("Enter");

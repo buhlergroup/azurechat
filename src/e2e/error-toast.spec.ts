@@ -7,7 +7,7 @@ test.describe("error-toast", () => {
 
     await page.goto("/chat/temporary");
 
-    const textarea = page.getByPlaceholder("Type your message...");
+    const textarea = page.getByPlaceholder("Type your message...").first();
     await expect(textarea).toBeVisible({ timeout: 30_000 });
 
     await textarea.fill("trigger an error");
