@@ -509,7 +509,26 @@ describe("buildToolset – built-in tool key collision guard", () => {
     });
     const toolset = await buildToolset(ctx);
     const shapeRe = /^[A-Za-z0-9]{8}_/;
-    for (const key of Object.keys(toolset)) {
+
+    // buildToolset only owns the registry-level built-ins (search_documents,
+    // get_current_time, call_sub_agent, ...) exercised above. The
+    // provider-executed built-in tools (Azure code interpreter / image
+    // generation / web search, Anthropic web search / web fetch) are keyed
+    // in provider-seam.ts and merged into the final toolset at the route
+    // level (route.ts: `{...tools, ...resolved.builtInTools}`), so they
+    // never pass through buildToolset itself and can't be exercised via
+    // this call. List them statically here so the same invariant is
+    // checked for the FULL toolset the model actually sees, not just the
+    // registry-owned half of it.
+    const providerBuiltInToolNames = [
+      "code_interpreter",
+      "image_generation",
+      "web_search_preview",
+      "web_search",
+      "web_fetch",
+    ];
+
+    for (const key of [...Object.keys(toolset), ...providerBuiltInToolNames]) {
       expect(shapeRe.test(key)).toBe(false);
     }
   });

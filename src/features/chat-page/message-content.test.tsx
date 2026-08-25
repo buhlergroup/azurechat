@@ -132,4 +132,24 @@ describe("chat-page.unit.components — MessageContent", () => {
     );
     expect(screen.getByTestId("recursive-ui").textContent).toContain("plain string");
   });
+
+  // Regression: role="tool" rows persist name as the namespaced extension
+  // dispatch key (`${8-char-id-prefix}_${functionName}`, see
+  // buildExtensionToolKey in chat-services/tools/registry.ts) — the stored
+  // row is untouched, but the accordion label must show the authored
+  // function name, not the internal key.
+  it("strips the extension-id-prefix namespace from a persisted tool name", () => {
+    render(
+      <MessageContent
+        message={{
+          id: "t3",
+          role: "tool",
+          content: JSON.stringify({ key: "value" }),
+          name: "Kj3nQ8xz_aisearch",
+        }}
+      />
+    );
+    expect(screen.getByText(/show aisearch function/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Kj3nQ8xz_aisearch/i)).toBeNull();
+  });
 });

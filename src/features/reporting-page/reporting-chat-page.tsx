@@ -8,6 +8,7 @@ import { ChatMessageArea } from "@/features/ui/chat/chat-message-area/chat-messa
 import ChatMessageContainer from "@/features/ui/chat/chat-message-area/chat-message-container";
 import ChatMessageContentArea from "@/features/ui/chat/chat-message-area/chat-message-content";
 import MessageContent from "../chat-page/message-content";
+import { stripExtensionKeyPrefix } from "../chat-page/tool-display-name";
 
 interface ReportingChatPageProps {
   messages: Array<ChatMessageModel>;
@@ -23,7 +24,7 @@ export default function ReportingChatPage(props: ReportingChatPageProps) {
             return (
               <ChatMessageArea
                 key={message.id}
-                profileName={message.name}
+                profileName={stripExtensionKeyPrefix(message.name)}
                 role={message.role}
                 onCopy={() => {
                   navigator.clipboard.writeText(message.content);

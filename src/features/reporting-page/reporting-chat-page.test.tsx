@@ -145,3 +145,23 @@ describe("reporting-chat-page.unit.005 — renders with chat documents present",
     ).not.toThrow();
   });
 });
+
+describe("reporting-chat-page.unit.006 — strips extension key namespace from profileName", () => {
+  it("passes the stripped display name as profileName, not the persisted namespaced key", () => {
+    // Persisted name for a tool row is the namespaced dispatch key
+    // (`${8-char-id-prefix}_${functionName}`, see buildExtensionToolKey in
+    // chat-services/tools/registry.ts) — the admin view must show the
+    // authored function name.
+    const messages = [makeMessage("m1", '{"ok":true}', "user", "Kj3nQ8xz_aisearch")];
+    render(<ReportingChatPage messages={messages} chatDocuments={[]} />);
+    const area = screen.getByTestId("chat-message-area");
+    expect(area).toHaveAttribute("data-name", "aisearch");
+  });
+
+  it("leaves a non-namespaced profileName unchanged", () => {
+    const messages = [makeMessage("m1", "hi", "assistant", "AI")];
+    render(<ReportingChatPage messages={messages} chatDocuments={[]} />);
+    const area = screen.getByTestId("chat-message-area");
+    expect(area).toHaveAttribute("data-name", "AI");
+  });
+});

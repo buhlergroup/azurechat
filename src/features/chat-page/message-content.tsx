@@ -10,6 +10,7 @@ import {
 import { RecursiveUI } from "../ui/recursive-ui";
 import { CitationAction } from "./citation/citation-action";
 import { ChatImageDisplay } from "./chat-image-display";
+import { stripExtensionKeyPrefix } from "./tool-display-name";
 
 interface MessageContentProps {
   message: {
@@ -80,6 +81,11 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
   }
 
   if (message.role === "tool" || message.role === "function") {
+    // message.name is persisted as the namespaced dispatch key for
+    // extension tools (`${8-char-id-prefix}_${functionName}`, see
+    // buildExtensionToolKey) — strip it for display only, the persisted
+    // row is untouched.
+    const displayName = stripExtensionKeyPrefix(message.name);
     return (
       <div className="py-3">
         <Accordion
@@ -94,8 +100,8 @@ const MessageContent: React.FC<MessageContentProps> = ({ message }) => {
                   strokeWidth={1.4}
                   className="text-muted-foreground"
                 />{" "}
-                Show {message.name}{" "}
-                {message.name === "tool" ? "output" : "function"}
+                Show {displayName}{" "}
+                {displayName === "tool" ? "output" : "function"}
               </div>
             </AccordionTrigger>
             <AccordionContent>

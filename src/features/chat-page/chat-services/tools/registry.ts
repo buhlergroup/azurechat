@@ -217,6 +217,13 @@ export async function buildToolset(
  * there's no safe unique target, so it returns null and lets the AI SDK
  * surface its normal error instead of guessing which extension the model
  * meant.
+ *
+ * MIGRATION-SCOPED: extension tool keys started being namespaced on
+ * 2026-08-24. Every turn from that point on persists a namespaced name, so
+ * this only earns its keep for threads with tool-call history from before
+ * that date. Safe to delete once those pre-namespacing threads have aged
+ * out of practical relevance (retention policy / thread archival, not a
+ * fixed date — check before removing that no such history is still live).
  */
 export const repairExtensionToolCall: ToolCallRepairFunction<ToolSet> = async ({
   toolCall,
