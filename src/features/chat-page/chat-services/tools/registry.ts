@@ -11,6 +11,48 @@ import { extensionTool } from "./extension-tool";
 import type { ToolContext } from "./tool-context";
 
 /**
+ * Provider tool-name cap (OpenAI/Azure/Anthropic all reject function names
+ * longer than this).
+ */
+const MAX_TOOL_NAME_LENGTH = 64;
+
+/**
+ * Namespaces an extension function's tool key with a short prefix of the
+ * owning extension's id.
+ *
+ * Prod has 82 extensions of which 43 all share `functionName: "aisearch"`.
+ * Keying the toolset purely by `parsedFunction.name` (pre-fix behavior)
+ * meant every extension after the first with a given name silently
+ * overwrote the previous one in the `Record<string, Tool>` — the model
+ * only ever saw one "aisearch" tool, wired to whichever extension's
+ * function happened to be inserted last.
+ *
+ * The prefix is the first 8 characters of the extension id rather than
+ * the full id to avoid wasting tokens on the wire; ids are 36-char
+ * nanoids drawn from a 62-character alphanumeric alphabet
+ * (`features/common/util.ts` `uniqueId`), so an 8-char prefix already
+ * carries ~2.2e14 possible values — a same-prefix collision between the
+ * handful of extensions configured on one thread is negligible, and the
+ * prefix itself is already alphanumeric so it never needs sanitizing.
+ *
+ * `functionName` is externally authored (extension config), so it is
+ * defensively sanitized to the character set every provider accepts
+ * (alphanumeric/underscore/hyphen) and the combined key is truncated to
+ * MAX_TOOL_NAME_LENGTH so it always stays a valid tool identifier.
+ */
+export function buildExtensionToolKey(
+  extensionId: string,
+  functionName: string
+): string {
+  const prefix = extensionId.slice(0, 8);
+  const safeName = functionName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const key = `${prefix}_${safeName}`;
+  return key.length > MAX_TOOL_NAME_LENGTH
+    ? key.slice(0, MAX_TOOL_NAME_LENGTH)
+    : key;
+}
+
+/**
  * Builds the toolset for a given ToolContext.
  *
  * Keys are inserted in localeCompare ascending order so that the wire
@@ -60,7 +102,10 @@ export async function buildToolset(
     entries.push(["search_sub_agent", searchSubAgentTool(ctx)]);
   }
 
-  // Dynamic extension tools
+  // Dynamic extension tools — keyed by `${extensionId prefix}_${functionName}`
+  // (see buildExtensionToolKey) so extensions sharing a functionName don't
+  // overwrite each other's toolset entry.
+  const usedExtensionKeys = new Set<string>();
   for (const { extension, headerSecrets } of ctx.extensions ?? []) {
     for (const functionDef of extension.functions) {
       try {
@@ -69,11 +114,26 @@ export async function buildToolset(
           description: string;
           parameters: any;
         };
+        const key = buildExtensionToolKey(extension.id, parsedFunction.name);
+        if (usedExtensionKeys.has(key)) {
+          // Only reachable if two extensions share both the same 8-char id
+          // prefix AND the same function name (negligible per the id-space
+          // argument above), or one extension defines the same function
+          // name twice. Either way, keep the first registration
+          // deterministically instead of silently overwriting it.
+          logError("buildToolset: duplicate extension tool key, keeping first registration", {
+            key,
+            extensionId: extension.id,
+            functionName: parsedFunction.name,
+          });
+          continue;
+        }
+        usedExtensionKeys.add(key);
         const t = extensionTool(functionDef, parsedFunction, {
           extension,
           headerSecrets,
         });
-        entries.push([parsedFunction.name, t]);
+        entries.push([key, t]);
       } catch (error) {
         logError("buildToolset: failed to parse extension function", {
           extensionId: extension.id,

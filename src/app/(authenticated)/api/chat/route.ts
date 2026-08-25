@@ -253,7 +253,17 @@ export async function POST(req: Request) {
   if (ctx.extensions.length > 0) {
     const extResp = await FindAllExtensionForCurrentUserAndIds(ctx.extensions);
     if (extResp.status === "OK") {
-      for (const ext of extResp.response) {
+      // FindAllExtensionForCurrentUserAndIds is deliberately over-broad
+      // (isPublished=true OR userId=@userId OR id IN @ids) so it can resolve
+      // publisher-owned extensions the current user doesn't own. That means
+      // it can return every published/owned extension the user has access
+      // to, not just the ones configured on this thread. Narrow back down to
+      // exactly ctx.extensions (the thread's configured extension ids) so an
+      // agent/persona only gets the tools it was actually wired with.
+      const configuredExtensions = extResp.response.filter((e) =>
+        ctx.extensions.includes(e.id)
+      );
+      for (const ext of configuredExtensions) {
         const headerSecrets: Record<string, string> = {};
         for (const h of ext.headers) {
           const v = await FindSecureHeaderValue(h.id);
