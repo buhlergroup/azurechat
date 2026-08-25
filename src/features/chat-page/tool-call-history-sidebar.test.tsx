@@ -61,6 +61,35 @@ describe("chat-page.unit.components — ToolCallHistorySidebar", () => {
     expect(screen.getByText("beta")).toBeInTheDocument();
   });
 
+  // Regression: extension tool keys are namespaced on the wire as
+  // `${8-char-id-prefix}_${functionName}` (see buildExtensionToolKey in
+  // chat-services/tools/registry.ts). This sidebar used to print
+  // toolCall.name raw, leaking that dispatch key to the user.
+  it("strips the extension-id-prefix namespace from a tool call name", () => {
+    render(
+      <ToolCallHistorySidebar
+        open
+        onClose={vi.fn()}
+        toolCallHistory={[baseTool({ name: "Kj3nQ8xz_aisearch" })]}
+        messageId="m1"
+      />
+    );
+    expect(screen.getByText("aisearch")).toBeInTheDocument();
+    expect(screen.queryByText("Kj3nQ8xz_aisearch")).not.toBeInTheDocument();
+  });
+
+  it("leaves a built-in tool call name unchanged", () => {
+    render(
+      <ToolCallHistorySidebar
+        open
+        onClose={vi.fn()}
+        toolCallHistory={[baseTool({ name: "call_sub_agent" })]}
+        messageId="m1"
+      />
+    );
+    expect(screen.getByText("call_sub_agent")).toBeInTheDocument();
+  });
+
   it("shows result truncated to 200 chars when result is present", () => {
     const longResult = "x".repeat(300);
     render(

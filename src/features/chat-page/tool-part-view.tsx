@@ -32,6 +32,7 @@ import {
   isImageReference,
   resolveBlobReferenceToPath,
 } from "./chat-services/chat-image-persistence-utils";
+import { stripExtensionKeyPrefix } from "./tool-display-name";
 
 // ---------------------------------------------------------------------------
 // Typed view over UIMessage parts
@@ -95,11 +96,15 @@ export function normalizeToolPart(
 
   // For `tool-<name>` parts the toolName isn't a separate field — derive
   // it from the type discriminant.
-  const toolName =
+  const rawToolName =
     p.toolName ??
     (p.type.startsWith("tool-") && p.type !== "tool-call" && p.type !== "tool-result"
       ? p.type.slice("tool-".length)
       : "tool");
+  // Extension tool names carry an id-prefix namespace on the wire (see
+  // buildExtensionToolKey) — strip it for display so users see the
+  // authored function name, not the internal dispatch key.
+  const toolName = stripExtensionKeyPrefix(rawToolName);
 
   const hasOutput = p.output !== undefined && p.output !== null;
   const hasError = p.state === "output-error" || p.errorText !== undefined;

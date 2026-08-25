@@ -34,7 +34,7 @@ import {
   UpdateChatTitle,
   UpdateChatThreadCodeInterpreterContainer,
 } from "@/features/chat-page/chat-services/chat-thread-service";
-import { buildToolset } from "@/features/chat-page/chat-services/tools/registry";
+import { buildToolset, repairExtensionToolCall } from "@/features/chat-page/chat-services/tools/registry";
 import {
   startPublisher,
   unregisterPublisher,
@@ -414,6 +414,10 @@ export async function POST(req: Request) {
     messages: streamPrompt.messages,
     tools: allTools,
     stopWhen: stepCountIs(15),
+    // Repairs bare, pre-namespacing extension tool names the model may
+    // echo from old persisted thread history (see repairExtensionToolCall)
+    // instead of letting NoSuchToolError kill the turn.
+    experimental_repairToolCall: repairExtensionToolCall,
     abortSignal: abortController.signal,
     experimental_transform: (() => {
       // Shared map populated by the code-interpreter rewriter when it

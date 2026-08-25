@@ -27,8 +27,10 @@ vi.mock("@/features/chat-page/chat-services/chat-api/thread-context", () => ({
 vi.mock("@/features/chat-page/chat-services/chat-api/model-selection", () => ({
   resolveModelAndLimits: (...a: unknown[]) => mockResolveModelAndLimits(...a),
 }));
+const mockRepairExtensionToolCall = vi.fn();
 vi.mock("@/features/chat-page/chat-services/tools/registry", () => ({
   buildToolset: (...a: unknown[]) => mockBuildToolset(...a),
+  repairExtensionToolCall: (...a: unknown[]) => mockRepairExtensionToolCall(...a),
 }));
 vi.mock("@/features/chat-page/chat-services/chat-api/persist-assistant", () => ({
   persistAssistantFromFinishEvent: (...a: unknown[]) => mockPersistAssistant(...a),
@@ -190,6 +192,24 @@ describe("/api/chat route (AI SDK v6)", () => {
         event: expect.objectContaining({ text: "hi" }),
       }),
     );
+  });
+
+  it("wires repairExtensionToolCall into streamText's experimental_repairToolCall option", async () => {
+    const { streamText } = await import("ai");
+    const req = makeRequest({ message: "hello", id: "t1" });
+    await POST(req);
+
+    const streamTextMock = streamText as unknown as { mock: { calls: unknown[][] } };
+    const options = streamTextMock.mock.calls[0][0] as {
+      experimental_repairToolCall?: (...args: unknown[]) => unknown;
+    };
+    expect(typeof options.experimental_repairToolCall).toBe("function");
+
+    // The wired function is a thin wrapper (module-mock hoisting pattern
+    // used throughout this file) — prove it forwards to the real export
+    // rather than asserting on function identity.
+    await options.experimental_repairToolCall?.("repair-args");
+    expect(mockRepairExtensionToolCall).toHaveBeenCalledWith("repair-args");
   });
 
   it("passes the resolved effective model into resolveProvider (no-regression: effective == selected)", async () => {

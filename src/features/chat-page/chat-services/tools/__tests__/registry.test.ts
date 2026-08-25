@@ -50,10 +50,12 @@ vi.mock("../extension-url-guard", () => ({
 }));
 
 // ─── subject under test ───────────────────────────────────────────────────────
-import { buildToolset, buildExtensionToolKey } from "../registry";
+import { buildToolset, buildExtensionToolKey, repairExtensionToolCall } from "../registry";
 import type { ToolContext } from "../tool-context";
 import type { ExtensionModel } from "@/features/extensions-page/extension-services/models";
 import type { Tool } from "@ai-sdk/provider-utils";
+import { NoSuchToolError } from "ai";
+import { logWarn, logError } from "@/features/common/services/logger";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -487,5 +489,343 @@ describe("buildToolset – sample sorted output", () => {
     expect(keys.indexOf("search_documents")).toBeLessThan(
       keys.indexOf("search_sub_agent")
     );
+  });
+});
+
+// ─── Item 3 follow-up: extension key vs. built-in tool key collision guard ──
+describe("buildToolset – built-in tool key collision guard", () => {
+  it("no built-in tool key matches the extension-key shape ^[A-Za-z0-9]{8}_ (display/repair safety invariant)", async () => {
+    // Every code path that recognizes a namespaced extension key
+    // (tool-display-name.ts on the client, repairExtensionToolCall on the
+    // server) relies on built-in tool keys never looking like
+    // `${8 alphanumeric chars}_${rest}`. Exercise buildToolset with every
+    // built-in enabled and assert that invariant holds for the real key
+    // list, not just by inspection.
+    const ctx = makeCtx({
+      threadDocumentIds: ["d1"],
+      defaultTools: { companyContent: true },
+      subAgentIds: ["a1"],
+      depth: 0,
+    });
+    const toolset = await buildToolset(ctx);
+    const shapeRe = /^[A-Za-z0-9]{8}_/;
+    for (const key of Object.keys(toolset)) {
+      expect(shapeRe.test(key)).toBe(false);
+    }
+  });
+
+  it("logs a warning (not silence) when an extension key collides with a built-in tool key instead of shadowing it unnoticed", async () => {
+    // A real nanoid nature id can never contain "_" (alphanumeric alphabet
+    // only — see uniqueId), so this exact collision cannot happen with a
+    // genuine extension id today. Force it here with a contrived id to
+    // prove the runtime guard actually fires if that invariant is ever
+    // broken (id scheme change, hand-edited record, etc.), rather than
+    // silently letting the extension's tool shadow the built-in one.
+    // "call_sub" (8 chars) + "_" + "agent" reproduces the built-in
+    // "call_sub_agent" key exactly.
+    const collidingExtension: ExtensionModel = {
+      id: "call_sub_not_a_real_nanoid",
+      name: "Colliding Extension",
+      description: "d",
+      executionSteps: "s",
+      headers: [],
+      userId: "u",
+      isPublished: true,
+      createdAt: new Date(),
+      type: "EXTENSION",
+      functions: [
+        {
+          id: "fn-collide",
+          functionName: "agent",
+          code: JSON.stringify({
+            name: "agent",
+            description: "colliding function",
+            parameters: { type: "object", properties: {}, required: [] },
+          }),
+          endpoint: "https://example.com/agent",
+          endpointType: "POST",
+          isOpen: false,
+        },
+      ],
+    };
+
+    const ctx = makeCtx({
+      extensions: [{ extension: collidingExtension, headerSecrets: {} }],
+      subAgentIds: ["a1"],
+      depth: 0,
+    });
+
+    expect(buildExtensionToolKey(collidingExtension.id, "agent")).toBe(
+      "call_sub_agent"
+    );
+
+    const toolset = await buildToolset(ctx);
+
+    // Exactly one entry under the colliding key — the later (extension)
+    // registration wins, but silently.
+    expect(Object.keys(toolset).filter((k) => k === "call_sub_agent")).toHaveLength(1);
+
+    expect(logWarn).toHaveBeenCalledWith(
+      expect.stringContaining("tool key collision"),
+      expect.objectContaining({ key: "call_sub_agent" })
+    );
+  });
+});
+
+// ─── Item 4 follow-up: duplicate-key log severity + parse-vs-shape errors ───
+describe("buildToolset – log severity and error attribution follow-ups", () => {
+  it("logs the intra-extension duplicate-key case as a warning, not an error (config-level, not a per-request incident)", async () => {
+    const dupeExtension: ExtensionModel = {
+      id: "dupe-ext-2",
+      name: "Dupe2",
+      description: "d",
+      executionSteps: "s",
+      headers: [],
+      userId: "u",
+      isPublished: true,
+      createdAt: new Date(),
+      type: "EXTENSION",
+      functions: [
+        {
+          id: "fn-1",
+          functionName: "aisearch",
+          code: JSON.stringify({
+            name: "aisearch",
+            description: "first",
+            parameters: { type: "object", properties: {}, required: [] },
+          }),
+          endpoint: "https://first.example.com",
+          endpointType: "POST",
+          isOpen: false,
+        },
+        {
+          id: "fn-2",
+          functionName: "aisearch",
+          code: JSON.stringify({
+            name: "aisearch",
+            description: "second",
+            parameters: { type: "object", properties: {}, required: [] },
+          }),
+          endpoint: "https://second.example.com",
+          endpointType: "POST",
+          isOpen: false,
+        },
+      ],
+    };
+
+    const ctx = makeCtx({
+      extensions: [{ extension: dupeExtension, headerSecrets: {} }],
+    });
+    await buildToolset(ctx);
+
+    expect(logWarn).toHaveBeenCalledWith(
+      expect.stringContaining("duplicate extension tool key"),
+      expect.objectContaining({ extensionId: "dupe-ext-2" })
+    );
+  });
+
+  it("distinguishes a missing/invalid parsedFunction.name from an actual JSON parse failure", async () => {
+    const badShapeExtension: ExtensionModel = {
+      id: "bad-shape-ext",
+      name: "BadShape",
+      description: "d",
+      executionSteps: "s",
+      headers: [],
+      userId: "u",
+      isPublished: true,
+      createdAt: new Date(),
+      type: "EXTENSION",
+      functions: [
+        {
+          id: "fn-no-name",
+          functionName: "whatever",
+          // Valid JSON, but missing "name" — must not be attributed to a
+          // parse failure, and must not throw while building the key.
+          code: JSON.stringify({
+            description: "missing name field",
+            parameters: { type: "object", properties: {}, required: [] },
+          }),
+          endpoint: "https://example.com",
+          endpointType: "POST",
+          isOpen: false,
+        },
+      ],
+    };
+
+    const ctx = makeCtx({
+      extensions: [{ extension: badShapeExtension, headerSecrets: {} }],
+    });
+
+    // Should not throw despite the missing "name".
+    const toolset = await buildToolset(ctx);
+    expect(Object.keys(toolset).some((k) => k.endsWith("_whatever"))).toBe(false);
+
+    // Attributed to the missing-name shape problem, not mislabeled as a
+    // JSON parse failure (the two now log distinct messages).
+    expect(logError).toHaveBeenCalledWith(
+      expect.stringContaining('no valid "name"'),
+      expect.objectContaining({ extensionId: "bad-shape-ext" })
+    );
+    expect(logError).not.toHaveBeenCalledWith(
+      expect.stringContaining("failed to parse extension function"),
+      expect.anything()
+    );
+  });
+});
+
+// ─── Item 2 follow-up: experimental_repairToolCall for old persisted history ─
+describe("repairExtensionToolCall", () => {
+  function makeAisearchExtension(id: string): {
+    extension: ExtensionModel;
+    headerSecrets: Record<string, string>;
+  } {
+    return {
+      extension: {
+        id,
+        name: `Extension ${id}`,
+        description: "d",
+        executionSteps: "s",
+        headers: [],
+        userId: "u",
+        isPublished: true,
+        createdAt: new Date(),
+        type: "EXTENSION",
+        functions: [
+          {
+            id: `${id}-fn`,
+            functionName: "aisearch",
+            code: JSON.stringify({
+              name: "aisearch",
+              description: "Search extension-specific content",
+              parameters: {
+                type: "object",
+                properties: { q: { type: "string" } },
+                required: ["q"],
+              },
+            }),
+            endpoint: `https://${id}.example.com/search`,
+            endpointType: "POST",
+            isOpen: false,
+          },
+        ],
+      },
+      headerSecrets: {},
+    };
+  }
+
+  const baseRepairArgs = {
+    system: undefined,
+    messages: [],
+    inputSchema: async () => ({}) as any,
+  };
+
+  it("returns null when the error is not a NoSuchToolError", async () => {
+    const ext = makeAisearchExtension("aaaaaaaa1111111111111111111111111111");
+    const toolset = await buildToolset(makeCtx({ extensions: [ext] }));
+
+    const result = await repairExtensionToolCall({
+      ...baseRepairArgs,
+      toolCall: { type: "tool-call", toolCallId: "call-1", toolName: "aisearch", input: "{}" },
+      tools: toolset,
+      error: new Error("some other failure") as any,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("repairs a bare pre-namespacing tool name to the unique namespaced key when exactly one tool matches", async () => {
+    const ext = makeAisearchExtension("aaaaaaaa1111111111111111111111111111");
+    const toolset = await buildToolset(makeCtx({ extensions: [ext] }));
+    const expectedKey = buildExtensionToolKey(ext.extension.id, "aisearch");
+
+    const toolCall = {
+      type: "tool-call" as const,
+      toolCallId: "call-1",
+      toolName: "aisearch",
+      input: JSON.stringify({ q: "hello" }),
+    };
+    const error = new NoSuchToolError({
+      toolName: "aisearch",
+      availableTools: Object.keys(toolset),
+    });
+
+    const result = await repairExtensionToolCall({
+      ...baseRepairArgs,
+      toolCall,
+      tools: toolset,
+      error,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe(expectedKey);
+    expect(result?.toolCallId).toBe("call-1");
+    expect(result?.input).toBe(toolCall.input);
+  });
+
+  it("returns null when no active tool matches the bare name", async () => {
+    const ext = makeAisearchExtension("aaaaaaaa1111111111111111111111111111");
+    const toolset = await buildToolset(makeCtx({ extensions: [ext] }));
+
+    const result = await repairExtensionToolCall({
+      ...baseRepairArgs,
+      toolCall: {
+        type: "tool-call",
+        toolCallId: "call-1",
+        toolName: "some_long_gone_tool",
+        input: "{}",
+      },
+      tools: toolset,
+      error: new NoSuchToolError({
+        toolName: "some_long_gone_tool",
+        availableTools: Object.keys(toolset),
+      }),
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null (no safe unique target) when the bare name matches more than one active tool", async () => {
+    const extA = makeAisearchExtension("aaaaaaaa1111111111111111111111111111");
+    const extB = makeAisearchExtension("bbbbbbbb2222222222222222222222222222");
+    const toolset = await buildToolset(makeCtx({ extensions: [extA, extB] }));
+
+    const result = await repairExtensionToolCall({
+      ...baseRepairArgs,
+      toolCall: { type: "tool-call", toolCallId: "call-1", toolName: "aisearch", input: "{}" },
+      tools: toolset,
+      error: new NoSuchToolError({
+        toolName: "aisearch",
+        availableTools: Object.keys(toolset),
+      }),
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("does not touch an already-namespaced tool name (no bare-name collapse for a key that's already correct)", async () => {
+    const ext = makeAisearchExtension("aaaaaaaa1111111111111111111111111111");
+    const toolset = await buildToolset(makeCtx({ extensions: [ext] }));
+    const alreadyNamespacedKey = buildExtensionToolKey(ext.extension.id, "aisearch");
+
+    const result = await repairExtensionToolCall({
+      ...baseRepairArgs,
+      toolCall: {
+        type: "tool-call",
+        toolCallId: "call-1",
+        toolName: alreadyNamespacedKey,
+        input: "{}",
+      },
+      tools: toolset,
+      error: new NoSuchToolError({
+        toolName: alreadyNamespacedKey,
+        availableTools: Object.keys(toolset),
+      }),
+    });
+
+    // The pattern requires the bareName to follow an 8-char prefix and
+    // "_"; an already-namespaced name used as the "bare" name here has no
+    // *further* prefixed match, so this correctly resolves to null rather
+    // than double-prefixing.
+    expect(result).toBeNull();
   });
 });

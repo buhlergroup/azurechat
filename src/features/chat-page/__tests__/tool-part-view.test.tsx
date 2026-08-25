@@ -115,6 +115,35 @@ describe("normalizeToolPart", () => {
     );
     expect(out.errorText).toBeUndefined();
   });
+
+  // Regression: extension tool keys are namespaced on the wire as
+  // `${8-char-id-prefix}_${functionName}` (see buildExtensionToolKey in
+  // chat-services/tools/registry.ts) so extensions sharing a functionName
+  // don't overwrite each other's toolset entry. Users must still see the
+  // authored function name, not the internal dispatch key.
+  it("strips the extension-id-prefix namespace from a `tool-<key>` type discriminator", () => {
+    const out = normalizeToolPart(
+      { type: "tool-Kj3nQ8xz_aisearch", input: { q: "x" } } as never,
+      0,
+    );
+    expect(out.toolName).toBe("aisearch");
+  });
+
+  it("strips the extension-id-prefix namespace from an explicit toolName field", () => {
+    const out = normalizeToolPart(
+      { type: "dynamic-tool", toolName: "abcdefgh_my_api_call", input: {} } as never,
+      0,
+    );
+    expect(out.toolName).toBe("my_api_call");
+  });
+
+  it("does not strip anything from built-in tool names (no 8-char-prefix shape)", () => {
+    const out = normalizeToolPart(
+      { type: "tool-call_sub_agent", input: {} } as never,
+      0,
+    );
+    expect(out.toolName).toBe("call_sub_agent");
+  });
 });
 
 describe("renderToolOutput", () => {

@@ -1,7 +1,8 @@
 import "server-only";
 
+import { NoSuchToolError, type ToolCallRepairFunction, type ToolSet } from "ai";
 import type { Tool } from "@ai-sdk/provider-utils";
-import { logInfo, logError } from "@/features/common/services/logger";
+import { logInfo, logWarn, logError } from "@/features/common/services/logger";
 import { searchDocumentsTool } from "./search-documents";
 import { searchCompanyContentTool } from "./search-company-content";
 import { callSubAgentTool } from "./call-sub-agent";
@@ -39,6 +40,20 @@ const MAX_TOOL_NAME_LENGTH = 64;
  * defensively sanitized to the character set every provider accepts
  * (alphanumeric/underscore/hyphen) and the combined key is truncated to
  * MAX_TOOL_NAME_LENGTH so it always stays a valid tool identifier.
+ *
+ * IMPORTANT — load-bearing, silent invariant: every key produced here has
+ * an underscore as its 9th character (8 alphanumeric prefix chars, then
+ * `_`), because the nanoid alphabet in `uniqueId` is strictly
+ * alphanumeric. None of the fixed built-in tool keys registered below
+ * ("search_documents", "search_company_content", "get_current_time",
+ * "call_sub_agent", "search_sub_agent") have an underscore at that
+ * position, so extension keys never collide with them *today* — but
+ * nothing enforces that structurally. `buildToolset`'s final assembly
+ * loop asserts it at runtime instead of letting a future collision
+ * silently shadow one tool with another. This same 8-alphanumeric-then-
+ * underscore shape is also what lets the UI (tool-part-view.tsx) and
+ * `repairExtensionToolCall` below recognize a namespaced key without
+ * importing this server-only module.
  */
 export function buildExtensionToolKey(
   extensionId: string,
@@ -110,18 +125,35 @@ export async function buildToolset(
     for (const functionDef of extension.functions) {
       try {
         const parsedFunction = JSON.parse(functionDef.code) as {
-          name: string;
+          name?: string;
           description: string;
           parameters: any;
         };
+
+        // The code parsed as JSON, but that doesn't guarantee it has the
+        // shape we need — a malformed/hand-edited extension can produce
+        // valid JSON with a missing or non-string "name". Check for that
+        // explicitly instead of letting buildExtensionToolKey throw into
+        // the catch below, which would mislabel a schema problem as a
+        // JSON parse failure.
+        if (typeof parsedFunction?.name !== "string" || parsedFunction.name.length === 0) {
+          logError("buildToolset: extension function code has no valid \"name\"", {
+            extensionId: extension.id,
+            functionDefId: functionDef.id,
+          });
+          continue;
+        }
+
         const key = buildExtensionToolKey(extension.id, parsedFunction.name);
         if (usedExtensionKeys.has(key)) {
           // Only reachable if two extensions share both the same 8-char id
           // prefix AND the same function name (negligible per the id-space
-          // argument above), or one extension defines the same function
-          // name twice. Either way, keep the first registration
-          // deterministically instead of silently overwriting it.
-          logError("buildToolset: duplicate extension tool key, keeping first registration", {
+          // argument on buildExtensionToolKey above), or one extension
+          // defines the same function name twice — a config-time authoring
+          // mistake, not a per-request incident. Keep the first
+          // registration deterministically instead of silently
+          // overwriting it.
+          logWarn("buildToolset: duplicate extension tool key, keeping first registration", {
             key,
             extensionId: extension.id,
             functionName: parsedFunction.name,
@@ -129,7 +161,7 @@ export async function buildToolset(
           continue;
         }
         usedExtensionKeys.add(key);
-        const t = extensionTool(functionDef, parsedFunction, {
+        const t = extensionTool(functionDef, parsedFunction as { name: string; description: string; parameters: any }, {
           extension,
           headerSecrets,
         });
@@ -148,6 +180,18 @@ export async function buildToolset(
 
   const toolset: Record<string, Tool> = {};
   for (const [name, t] of entries) {
+    // Cheap runtime guard for the load-bearing, otherwise-silent invariant
+    // documented on buildExtensionToolKey: no extension key should ever
+    // collide with a built-in tool key (or, in principle, another
+    // extension key that slipped past the usedExtensionKeys dedupe
+    // above). Log instead of silently letting the later entry shadow the
+    // earlier one.
+    if (Object.prototype.hasOwnProperty.call(toolset, name)) {
+      logWarn("buildToolset: tool key collision at final assembly, later registration wins", {
+        key: name,
+        depth: ctx.depth ?? 0,
+      });
+    }
     toolset[name] = t;
   }
 
@@ -158,3 +202,40 @@ export async function buildToolset(
 
   return toolset;
 }
+
+/**
+ * Repairs a bare, pre-namespacing extension tool name — as persisted in
+ * thread history from before this file started keying extension tools as
+ * `${8-char-id-prefix}_${functionName}` (see buildExtensionToolKey) — into
+ * the namespaced key currently registered for it.
+ *
+ * When a user resumes an old thread and the model echoes a tool name from
+ * that history (e.g. plain "aisearch"), the AI SDK looks it up in the
+ * current toolset, finds nothing, and throws NoSuchToolError — killing the
+ * turn. This only repairs the call when EXACTLY ONE currently active tool
+ * key matches `^[A-Za-z0-9]{8}_<bareName>$`; with zero or multiple matches
+ * there's no safe unique target, so it returns null and lets the AI SDK
+ * surface its normal error instead of guessing which extension the model
+ * meant.
+ */
+export const repairExtensionToolCall: ToolCallRepairFunction<ToolSet> = async ({
+  toolCall,
+  tools,
+  error,
+}) => {
+  if (!NoSuchToolError.isInstance(error)) return null;
+
+  const bareName = toolCall.toolName;
+  const escapedName = bareName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^[A-Za-z0-9]{8}_${escapedName}$`);
+  const matches = Object.keys(tools).filter((key) => pattern.test(key));
+
+  if (matches.length !== 1) return null;
+
+  logInfo("repairExtensionToolCall: repaired bare pre-namespacing extension tool name", {
+    bareName,
+    repairedTo: matches[0],
+  });
+
+  return { ...toolCall, toolName: matches[0] };
+};

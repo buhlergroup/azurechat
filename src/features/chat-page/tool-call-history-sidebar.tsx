@@ -1,5 +1,6 @@
 import React from "react";
 import { X } from "lucide-react";
+import { stripExtensionKeyPrefix } from "./tool-display-name";
 
 interface ToolCallHistorySidebarProps {
   open: boolean;
@@ -29,7 +30,7 @@ const ToolCallHistorySidebar: React.FC<ToolCallHistorySidebarProps> = ({ open, o
             toolCallHistory.map((toolCall, idx) => (
               <div key={idx} className="border-l-2 border-orange-300 pl-3">
                 <div className="font-medium text-orange-600 dark:text-orange-400">
-                  {toolCall.name}
+                  {stripExtensionKeyPrefix(toolCall.name)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   Arguments: {toolCall.arguments}
