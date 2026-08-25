@@ -20,9 +20,9 @@ const {
   const mockGetContainerClient = vi.fn(() => ({
     getBlockBlobClient: mockGetBlockBlobClient,
   }));
-  const MockBlobServiceClient = vi.fn().mockImplementation(() => ({
-    getContainerClient: mockGetContainerClient,
-  }));
+  const MockBlobServiceClient = vi.fn().mockImplementation(function () {
+    return { getContainerClient: mockGetContainerClient };
+  });
 
   class MockRestError extends Error {
     statusCode: number;

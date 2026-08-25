@@ -6,9 +6,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { mockCosmosClientConstructor, mockContainerFn, mockDatabaseFn } = vi.hoisted(() => {
   const mockContainerFn = vi.fn((name: string) => ({ _name: name }));
   const mockDatabaseFn = vi.fn(() => ({ container: mockContainerFn }));
-  const mockCosmosClientConstructor = vi.fn().mockImplementation(() => ({
-    database: mockDatabaseFn,
-  }));
+  const mockCosmosClientConstructor = vi.fn().mockImplementation(function () {
+    return { database: mockDatabaseFn };
+  });
   return { mockCosmosClientConstructor, mockContainerFn, mockDatabaseFn };
 });
 

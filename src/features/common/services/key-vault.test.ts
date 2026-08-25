@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 
 const { mockSecretClientConstructor } = vi.hoisted(() => {
-  const mockSecretClientConstructor = vi.fn().mockImplementation(() => ({}));
+  const mockSecretClientConstructor = vi.fn().mockImplementation(function () {
+    return {};
+  });
   return { mockSecretClientConstructor };
 });
 

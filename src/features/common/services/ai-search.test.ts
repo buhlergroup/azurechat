@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Hoist search client mocks
 const { MockSearchClient, MockSearchIndexClient, MockSearchIndexerClient } = vi.hoisted(() => {
-  const MockSearchClient = vi.fn().mockImplementation(() => ({ _type: "SearchClient" }));
-  const MockSearchIndexClient = vi.fn().mockImplementation(() => ({ _type: "SearchIndexClient" }));
-  const MockSearchIndexerClient = vi.fn().mockImplementation(() => ({ _type: "SearchIndexerClient" }));
+  const MockSearchClient = vi.fn().mockImplementation(function () {
+    return { _type: "SearchClient" };
+  });
+  const MockSearchIndexClient = vi.fn().mockImplementation(function () {
+    return { _type: "SearchIndexClient" };
+  });
+  const MockSearchIndexerClient = vi.fn().mockImplementation(function () {
+    return { _type: "SearchIndexerClient" };
+  });
   return { MockSearchClient, MockSearchIndexClient, MockSearchIndexerClient };
 });
 

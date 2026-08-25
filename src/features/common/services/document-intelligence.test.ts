@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { MockDocumentAnalysisClient } = vi.hoisted(() => {
-  const MockDocumentAnalysisClient = vi.fn().mockImplementation(() => ({ _type: "DocumentAnalysisClient" }));
+  const MockDocumentAnalysisClient = vi.fn().mockImplementation(function () {
+    return { _type: "DocumentAnalysisClient" };
+  });
   return { MockDocumentAnalysisClient };
 });
 

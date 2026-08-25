@@ -40,11 +40,13 @@ const mockKvGetSecret = vi.fn();
 const mockKvBeginDeleteSecret = vi.fn();
 
 vi.mock("@azure/keyvault-secrets", () => ({
-  SecretClient: vi.fn().mockImplementation(() => ({
-    setSecret: mockKvSetSecret,
-    getSecret: mockKvGetSecret,
-    beginDeleteSecret: mockKvBeginDeleteSecret,
-  })),
+  SecretClient: vi.fn().mockImplementation(function () {
+    return {
+      setSecret: mockKvSetSecret,
+      getSecret: mockKvGetSecret,
+      beginDeleteSecret: mockKvBeginDeleteSecret,
+    };
+  }),
 }));
 
 vi.mock("@/features/common/services/azure-default-credential", () => ({

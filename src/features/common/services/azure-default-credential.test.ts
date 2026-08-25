@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Hoist constructor + getBearerTokenProvider mocks
 const { MockDefaultAzureCredential, mockGetBearerTokenProvider } = vi.hoisted(() => {
-  const MockDefaultAzureCredential = vi.fn().mockImplementation(() => ({ _type: "DefaultAzureCredential" }));
+  const MockDefaultAzureCredential = vi.fn().mockImplementation(function () {
+    return { _type: "DefaultAzureCredential" };
+  });
   const mockGetBearerTokenProvider = vi.fn(() => async () => "bearer-token");
   return { MockDefaultAzureCredential, mockGetBearerTokenProvider };
 });
