@@ -69,6 +69,7 @@ import {
 } from "../persist-assistant";
 import { MODEL_CONFIGS } from "../../models";
 import type { UIMessage } from "ai";
+import type { ChatMessageModel } from "../../models";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -362,6 +363,72 @@ describe("deriveTurnShape", () => {
   it("reports zeroes for an absent or empty step list (negative)", () => {
     expect(deriveTurnShape(undefined)).toEqual({ stepCount: 0, toolCallCount: 0 });
     expect(deriveTurnShape([])).toEqual({ stepCount: 0, toolCallCount: 0 });
+  });
+});
+
+describe("persistThread — row sequence", () => {
+  /** 1 assistant + 2 tool parts → 3 persisted rows in one batch. */
+  function makeThreeItemStep(): UIMessage[] {
+    return [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "text", text: "Here you go.", state: "done" },
+          {
+            type: "dynamic-tool",
+            toolName: "search_documents",
+            toolCallId: "call-1",
+            state: "output-available",
+            input: { q: "a" },
+            output: { hits: 1 },
+          } as import("ai").DynamicToolUIPart,
+          {
+            type: "dynamic-tool",
+            toolName: "get_current_time",
+            toolCallId: "call-2",
+            state: "output-available",
+            input: {},
+            output: { now: "noon" },
+          } as import("ai").DynamicToolUIPart,
+        ],
+      },
+    ] as UIMessage[];
+  }
+
+  it("stamps strictly increasing sequence numbers on rows written in the same millisecond", async () => {
+    mockUpsert.mockClear();
+    mockUpsert.mockResolvedValue({ status: "OK" as const });
+    // Freeze the clock so every row shares one createdAt — the exact case
+    // where createdAt alone cannot order them.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-07T12:00:00.000Z"));
+    try {
+      await persistThread({
+        ...BASE_PAYLOAD,
+        threadId: "thread-seq-001",
+        messages: makeThreeItemStep(),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const rows = mockUpsert.mock.calls.map((c) => c[0] as ChatMessageModel);
+    expect(rows).toHaveLength(3);
+    const createdAt = rows.map((r) => new Date(r.createdAt).getTime());
+    expect(new Set(createdAt).size).toBe(1);
+    const sequences = rows.map((r) => r.sequence);
+    expect(sequences).toEqual([1, 2, 3]);
+    // Strictly increasing, and in the order the turn produced them.
+    expect(rows.map((r) => r.role)).toEqual(["assistant", "tool", "tool"]);
+  });
+
+  it("leaves 0 free for the user row written before the turn ran", async () => {
+    mockUpsert.mockClear();
+    mockUpsert.mockResolvedValue({ status: "OK" as const });
+    await persistThread({ ...BASE_PAYLOAD, messages: makeMessages() });
+    const rows = mockUpsert.mock.calls.map((c) => c[0] as ChatMessageModel);
+    expect(Math.min(...rows.map((r) => r.sequence ?? -1))).toBe(1);
   });
 });
 

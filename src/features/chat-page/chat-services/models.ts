@@ -561,6 +561,19 @@ export interface ChatMessageModel {
    * field existed; absence means "pre-turnId data".
    */
   turnId?: string;
+  /**
+   * Position of this row inside its turn, strictly increasing in the order
+   * the rows were produced (assistant text, then each tool call/result).
+   * Cosmos rows of one turn are written in a single batch and routinely share
+   * a `createdAt` down to the millisecond, so createdAt alone cannot order
+   * them; the history loader orders by createdAt, then sequence, then id.
+   *
+   * Starts at 1 — 0 is left to the user row, which is written separately by
+   * loadThreadContext before the turn runs. Optional for backward
+   * compatibility: rows written before this field existed have no sequence
+   * and keep sorting by createdAt/id alone.
+   */
+  sequence?: number;
 }
 
 export type ChatRole = "system" | "user" | "assistant" | "function" | "tool" | "reasoning";

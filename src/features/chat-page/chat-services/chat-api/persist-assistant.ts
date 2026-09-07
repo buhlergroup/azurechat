@@ -206,7 +206,7 @@ export async function persistThread({
   // outgoing message). Skip user rows here to avoid double-writing.
   const rowsToPersist = rows
     .filter((row) => row.role !== "user")
-    .map<ChatMessageModel>((row) => ({
+    .map<ChatMessageModel>((row, index) => ({
       ...(row as ChatMessageModel),
       id: row.id || uniqueId(),
       createdAt: row.createdAt || new Date(),
@@ -215,6 +215,12 @@ export async function persistThread({
       threadId,
       userId,
       turnId,
+      // Every row of a turn is written in one batch and they routinely share
+      // a createdAt to the millisecond, which left their order undefined on
+      // read. `sequence` preserves the true order; 1-based because 0 belongs
+      // to the user row loadThreadContext already wrote. See
+      // ChatMessageModel.sequence.
+      sequence: index + 1,
     }));
 
   // Atomic-turn persist (architect SERIOUS #20): Cosmos transactional

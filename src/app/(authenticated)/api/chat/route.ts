@@ -36,6 +36,7 @@ import {
   UpdateChatThreadCodeInterpreterContainer,
 } from "@/features/chat-page/chat-services/chat-thread-service";
 import { buildToolset, repairExtensionToolCall } from "@/features/chat-page/chat-services/tools/registry";
+import { stabilizeToolset } from "@/features/chat-page/chat-services/tools/stabilize-toolset";
 import {
   startPublisher,
   unregisterPublisher,
@@ -410,10 +411,18 @@ export async function POST(req: Request) {
   // through streamText's parameter type. ToolSet is structurally a
   // Record<string, Tool>; both `tools` (custom registry) and
   // `resolved.builtInTools` (provider-native) satisfy it.
-  const allTools = {
-    ...tools,
-    ...resolved.builtInTools,
-  } as ToolSet;
+  // One canonical order for the whole toolset — built-ins AND custom tools
+  // together. Merging the built-ins onto the (already sorted) custom tools
+  // left their position dependent on object insertion order, so the tools
+  // array on the wire changed shape whenever a toggle changed which built-ins
+  // existed. See stabilize-toolset.ts.
+  const allTools = stabilizeToolset(
+    {
+      ...tools,
+      ...resolved.builtInTools,
+    },
+    Object.keys(resolved.builtInTools),
+  ) as ToolSet;
 
   // Captured by `onError` so the failure cause can flow into onFinish's
   // sentinel row — without this, every provider failure renders as the

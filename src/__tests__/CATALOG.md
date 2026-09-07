@@ -1342,6 +1342,20 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | chat-page.unit.persist-assistant.shape.001 | persist-assistant.ts | `deriveTurnShape` counts steps and tool calls | unit | — | 1-step plain, 3-step with 3 calls, result-only step | Correct counts; zeroes for undefined/empty (negative) |
 | chat-page.unit.persist-assistant.shape.002 | persist-assistant.ts | The turn shape reaches every metric | unit | metrics mocked | `persistThread` with `turnShape` | prompt / cached / userChatMessage all receive stepCount + toolCallCount |
 | chat-page.unit.persist-assistant.shape.003 | persist-assistant.ts | Zeroes are emitted when there is no step information (negative) | unit | same | `persistThread` without `turnShape` | Both dimensions 0 |
+| chat-page.unit.stabilize-toolset.compare.001 | stabilize-toolset.ts | Codepoint order differs from localeCompare where it matters | unit | — | Compare "B_tool" / "a_tool" with both comparators | Codepoint puts "B_tool" first, localeCompare does not |
+| chat-page.unit.stabilize-toolset.compare.002 | stabilize-toolset.ts | "_" sorts after uppercase and before lowercase | unit | — | Compare "B_tool" / "_x" / "a_tool" | Codepoint order, i.e. B_tool, _x, a_tool |
+| chat-page.unit.stabilize-toolset.order.001 | stabilize-toolset.ts | Output is insensitive to insertion order | unit | — | Same three tools, two insertion orders | Identical keys and identical JSON |
+| chat-page.unit.stabilize-toolset.order.002 | stabilize-toolset.ts | Ordering is by codepoint, not locale | unit | — | `["a_tool","B_tool","_x"]` | `["B_tool","_x","a_tool"]`, different from a localeCompare sort |
+| chat-page.unit.stabilize-toolset.order.003 | stabilize-toolset.ts | Built-ins lead, in the fixed precedence order | unit | — | Mixed built-ins and custom tools | code_interpreter, image_generation, web_search_preview, then customs by codepoint |
+| chat-page.unit.stabilize-toolset.order.004 | stabilize-toolset.ts | A built-in with no pinned position follows the precedence list | unit | — | web_search / web_fetch alongside code_interpreter | ci, web_fetch, web_search, then customs |
+| chat-page.unit.stabilize-toolset.order.005 | stabilize-toolset.ts | Caller-declared names are treated as built-in | unit | — | `stabilizeToolset(..., ["zz_new_builtin"])` | It leads despite sorting last by codepoint |
+| chat-page.unit.stabilize-toolset.order.006 | stabilize-toolset.ts | Every tool and definition survives; empty input is fine (negative) | unit | — | Compare in/out sets; `{}` | Same members, same object identities; `{}` |
+| chat-page.unit.stabilize-toolset.stable.001 | stabilize-toolset.ts | The same toolset assembled twice serialises identically | unit | — | Two different assembly orders | Identical JSON |
+| chat-page.unit.stabilize-toolset.stable.002 | stabilize-toolset.ts | The code_interpreter definition is identical on turn 1 and turn 2 | unit | real `@ai-sdk/azure` | Same container id twice; then `container: {}` | Identical for the same id; different for the old bootstrap shape |
+| chat-page.unit.registry.stable.001 | registry.ts | buildToolset twice for one thread state gives byte-identical definitions | unit | existing registry mocks | Build twice, compare name/description/inputSchema JSON | Identical, same key order |
+| chat-page.unit.registry.stable.002 | registry.ts | Merging the built-ins on cannot change the wire order | unit | same | Merge built-ins before and after the custom set | Identical key order, built-ins leading |
+| chat-page.unit.persist-assistant.sequence.001 | persist-assistant.ts | Rows written in the same millisecond get strictly increasing sequences | unit | fake timers; Cosmos batch rejected → sequential path | Persist a 3-item step | One shared createdAt; sequences `[1,2,3]` in production order |
+| chat-page.unit.persist-assistant.sequence.002 | persist-assistant.ts | Sequence starts at 1, leaving 0 for the user row | unit | same | Persist a turn | Minimum sequence is 1 |
 
 ---
 

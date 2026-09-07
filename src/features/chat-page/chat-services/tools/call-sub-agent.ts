@@ -7,6 +7,7 @@ import { FindPersonaByID } from "@/features/persona-page/persona-services/person
 import { MODEL_CONFIGS, DEFAULT_MODEL, type ChatModel } from "../models";
 import { resolveProvider } from "../models/provider-seam";
 import { resolveReasoningEffort } from "../models/reasoning-effort";
+import { stabilizeToolset } from "./stabilize-toolset";
 import { computeTokenCostUsd } from "../chat-api/usage-data";
 import type { ToolContext } from "./tool-context";
 
@@ -147,7 +148,9 @@ export function callSubAgentTool(ctx: ToolContext) {
         model: resolved.model,
         system: persona.personaMessage,
         messages: [{ role: "user", content: args.task }],
-        tools: subToolset,
+        // Same canonical tool order as the main path — a sub-agent's prefix
+        // is cached under its own key and has to be just as stable.
+        tools: stabilizeToolset(subToolset, Object.keys(resolved.builtInTools)),
         maxOutputTokens: modelConfig.maxOutputTokens,
         stopWhen: stepCountIs(8),
         providerOptions: resolved.providerOptions,
