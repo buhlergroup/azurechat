@@ -81,8 +81,14 @@ describe("chat-page.unit.message-service.001 — FindTopChatMessagesForCurrentUs
   });
 });
 
-describe("chat-page.unit.message-service.002 — FindTopChatMessagesForCurrentUser default top=30", () => {
-  it("uses top=30 when not specified", async () => {
+describe("chat-page.unit.message-service.002 — FindTopChatMessagesForCurrentUser keeps its top=30 default for non-chat callers", () => {
+  it("still defaults to 30, but the chat path no longer uses this function", async () => {
+    // The default itself is unchanged. What changed is who calls it: the chat
+    // path now loads the whole thread and caps it by estimated tokens (see
+    // history-budget.ts and chat-page.unit.message-service.015), because the
+    // row cap made the prompt prefix slide by one row on every turn past 30
+    // and cost 50 points of prompt-cache hit rate. This function stays for
+    // callers that genuinely want the newest N rows.
     let captured: any;
     historyContainer.items.query.mockImplementationOnce((q: any, _opts?: any) => {
       captured = q;
@@ -92,6 +98,68 @@ describe("chat-page.unit.message-service.002 — FindTopChatMessagesForCurrentUs
     expect(captured).toBeDefined();
     const topParam = captured.parameters.find((p: any) => p.name === "@top");
     expect(topParam?.value).toBe(30);
+  });
+});
+
+describe("chat-page.unit.message-service.015 — FindAllChatMessagesForCurrentUser has no row cap and orders oldest-first", () => {
+  it("issues a query with no TOP and no @top parameter", async () => {
+    let captured: any;
+    historyContainer.items.query.mockImplementationOnce((q: any, _opts?: any) => {
+      captured = q;
+      return { fetchAll: async () => ({ resources: [] }) };
+    });
+
+    await FindAllChatMessagesForCurrentUser("thread-1");
+
+    expect(captured).toBeDefined();
+    expect(captured.query).not.toMatch(/\bTOP\b/i);
+    expect(captured.parameters.some((p: any) => p.name === "@top")).toBe(false);
+  });
+
+  it("orders by createdAt ASC so callers need no reversal", async () => {
+    let captured: any;
+    historyContainer.items.query.mockImplementationOnce((q: any, _opts?: any) => {
+      captured = q;
+      return { fetchAll: async () => ({ resources: [] }) };
+    });
+
+    await FindAllChatMessagesForCurrentUser("thread-1");
+
+    expect(captured.query).toMatch(/ORDER BY r\.createdAt ASC/i);
+  });
+
+  it("applies the same thread, user and isDeleted scoping as the capped query", async () => {
+    let captured: any;
+    historyContainer.items.query.mockImplementationOnce((q: any, _opts?: any) => {
+      captured = q;
+      return { fetchAll: async () => ({ resources: [] }) };
+    });
+
+    await FindAllChatMessagesForCurrentUser("thread-1");
+
+    expect(captured.parameters).toEqual(
+      expect.arrayContaining([
+        { name: "@type", value: MESSAGE_ATTRIBUTE },
+        { name: "@threadId", value: "thread-1" },
+        { name: "@userId", value: hashedEmail },
+        { name: "@isDeleted", value: false },
+      ])
+    );
+  });
+
+  it("returns every row it is given, well past the old 30-row cap", async () => {
+    const rows = Array.from({ length: 250 }, (_, i) => ({
+      id: `m${i}`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `row ${i}`,
+    }));
+    historyContainer.items.query.mockImplementationOnce(() => ({
+      fetchAll: async () => ({ resources: rows }),
+    }));
+
+    const result = await FindAllChatMessagesForCurrentUser("thread-1");
+    expect(result.status).toBe("OK");
+    expect((result as any).response).toHaveLength(250);
   });
 });
 

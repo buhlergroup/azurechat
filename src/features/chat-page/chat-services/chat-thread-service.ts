@@ -18,6 +18,7 @@ import { HistoryContainer } from "../../common/services/cosmos";
 import { DeleteDocumentsOfChatThread } from "./azure-ai-search/azure-ai-search";
 import { FindAllChatDocuments } from "./chat-document-service";
 import { FindAllChatMessagesForCurrentUser } from "./chat-message-service";
+import { SoftDeleteChatHistorySummary } from "./chat-api/history-summary-service";
 import {
   CHAT_THREAD_ATTRIBUTE,
   DEFAULT_MODEL,
@@ -199,6 +200,13 @@ export const SoftDeleteChatContentsForCurrentUser = async (
         itemToUpdate.isDeleted = true;
         await HistoryContainer().items.upsert(itemToUpdate);
       });
+
+      // Drop the history-compaction row with the messages it describes. It
+      // holds both a summary of trimmed turns and the watermark marking where
+      // the prompt resumes; keeping either after a rewind would let the model
+      // go on citing content the user deliberately deleted, with nothing left
+      // in the transcript to explain where it came from.
+      await SoftDeleteChatHistorySummary(chatThreadID);
     }
 
     return chatThreadResponse;

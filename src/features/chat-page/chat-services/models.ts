@@ -140,6 +140,16 @@ export interface ModelConfig {
   hiddenFromPicker?: boolean;
   /** Capability badges rendered in the picker (text is implicit for all). */
   capabilities?: ModelCapability[];
+  /**
+   * Ceiling on ESTIMATED history tokens carried into a prompt for threads on
+   * this model. Absent means the shared default in history-budget.ts
+   * (80,000); `HISTORY_TOKEN_BUDGET` overrides both.
+   *
+   * Not a context limit — the 5.6 family has ~1M tokens of context. It is a
+   * cost limit on the history that is re-sent every turn. Set it per model
+   * only where the price per input token justifies a different cut-off.
+   */
+  historyTokenBudget?: number;
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {

@@ -9,6 +9,13 @@ export interface PromptBuilderInputs {
   personaMessage: string;
   /** Optional document hint block. Empty string when no documents are attached. */
   documentHint?: string;
+  /**
+   * Static instruction blocks the caller wants appended AFTER the persona but
+   * BEFORE the per-thread document hint (see the ordering note on
+   * `buildSystemMessage`). Callers must only pass process-constant text here —
+   * anything thread-scoped belongs in `documentHint`.
+   */
+  trailingStaticBlock?: string;
 }
 
 /**
@@ -20,10 +27,31 @@ export interface PromptBuilderInputs {
  * The current date is intentionally NOT included here: injecting `today` would
  * invalidate the prompt cache at every UTC midnight rollover and prevent any
  * cross-day reuse. Time-sensitive answers should rely on tool calls instead.
+ *
+ * ORDERING (load-bearing): the assembled message is
+ *
+ *   staticSystemPrompt -> personaMessage -> trailingStaticBlock -> documentHint
+ *
+ * Both per-thread segments must sit as far right as possible. A prompt cache
+ * can only reuse the bytes to the LEFT of the first byte that changed, so a
+ * segment that moves invalidates every segment after it. `documentHint` is the
+ * most volatile input we have — it appears, disappears and changes wording the
+ * moment a user attaches or removes a document — so it goes LAST. It used to
+ * sit between the static prompt and the persona, which meant attaching a single
+ * document rewrote the persona and every instruction block after it, i.e. the
+ * entire prefix, at the cache-write rate.
+ *
+ * `personaMessage` is per-thread too, but it is fixed for the life of a thread,
+ * so it is stable exactly where a cacheable prefix needs it to be.
  */
 export function buildSystemMessage(inputs: PromptBuilderInputs): string {
-  const { staticSystemPrompt, personaMessage, documentHint = "" } = inputs;
-  return `${staticSystemPrompt}${documentHint}\n\n${personaMessage}`;
+  const {
+    staticSystemPrompt,
+    personaMessage,
+    documentHint = "",
+    trailingStaticBlock = "",
+  } = inputs;
+  return `${staticSystemPrompt}\n\n${personaMessage}${trailingStaticBlock}${documentHint}`;
 }
 
 /**

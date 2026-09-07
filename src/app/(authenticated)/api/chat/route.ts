@@ -238,21 +238,28 @@ export async function POST(req: Request) {
     });
   }
 
+  // ── prompt prefix assembly (cache-stability critical) ──────────────────
+  // The generative-UI block is process-constant, so it is handed to
+  // buildSystemMessage as `trailingStaticBlock` instead of being concatenated
+  // after the call. That lets the builder keep the per-thread `documentHint`
+  // in final position — see the ORDERING note in prompt-builder.ts.
   const system =
     buildSystemMessage({
       staticSystemPrompt: CHAT_DEFAULT_SYSTEM_PROMPT,
       personaMessage: ctx.thread.personaMessage ?? "",
       documentHint: ctx.documentHint,
-    }) +
-    // Generative UI: GPT-5.5 reliably declines a UI *tool* under tool_choice
-    // auto (it prefers to emit markdown), but it WILL emit a fenced code block.
-    // So we instruct it to emit a json-render spec as a ```genui block, which
-    // rich-response renders as a real Bühler card (see components/ai-elements).
-    "\n\n## Interactive UI (generative UI)\n" +
-    "When the user asks for a dashboard, metrics/KPIs, a comparison, a table, or a chart — or whenever numeric/structured data is clearer shown visually — render it as an interactive card by emitting a fenced code block whose language tag is `genui`, containing a json-render spec. Do NOT render that content as a markdown table.\n" +
-    'The spec is a FLAT object: { "root": "<id>", "elements": { "<id>": { "type": <Component>, "props": { … }, "children": ["<childId>"] } } }. `children` is an array of element ids; `root` is the top element id.\n' +
-    "Component types and props: Stack { direction: 'col' | 'row' }; Card { title?, description? }; Stat { label, value, delta?, trend?: 'up' | 'down' | 'flat' }; Badge { label, tone?: 'default' | 'success' | 'warning' | 'destructive' }; Table { columns: string[], rows: string[][] }; Text { content, muted? }; Chart { kind?: 'line' | 'bar', title?, data: { label: string, value: number }[] }.\n" +
-    "A short markdown sentence alongside the ```genui block is fine.";
+      trailingStaticBlock:
+        // Generative UI: GPT-5.5 reliably declines a UI *tool* under tool_choice
+        // auto (it prefers to emit markdown), but it WILL emit a fenced code block.
+        // So we instruct it to emit a json-render spec as a ```genui block, which
+        // rich-response renders as a real Bühler card (see components/ai-elements).
+        "\n\n## Interactive UI (generative UI)\n" +
+        "When the user asks for a dashboard, metrics/KPIs, a comparison, a table, or a chart — or whenever numeric/structured data is clearer shown visually — render it as an interactive card by emitting a fenced code block whose language tag is `genui`, containing a json-render spec. Do NOT render that content as a markdown table.\n" +
+        'The spec is a FLAT object: { "root": "<id>", "elements": { "<id>": { "type": <Component>, "props": { … }, "children": ["<childId>"] } } }. `children` is an array of element ids; `root` is the top element id.\n' +
+        "Component types and props: Stack { direction: 'col' | 'row' }; Card { title?, description? }; Stat { label, value, delta?, trend?: 'up' | 'down' | 'flat' }; Badge { label, tone?: 'default' | 'success' | 'warning' | 'destructive' }; Table { columns: string[], rows: string[][] }; Text { content, muted? }; Chart { kind?: 'line' | 'bar', title?, data: { label: string, value: number }[] }.\n" +
+        "A short markdown sentence alongside the ```genui block is fine.",
+    });
+  // ── end prompt prefix assembly ─────────────────────────────────────────
 
   // Resolve extension IDs → full objects with header secrets for buildToolset
   type ResolvedExt = Parameters<typeof buildToolset>[0]["extensions"][number];
@@ -478,7 +485,11 @@ export async function POST(req: Request) {
   // the latest turn so the tools+system+history prefix is replayed (cache-read)
   // across turns of a thread instead of re-billed every turn. Other providers
   // pass the plain system string unchanged.
-  const modelMessages = await convertToModelMessages(ctx.history);
+  // ctx.modelHistory, not ctx.history: it is the same conversation plus the
+  // prompt scaffolding (replayed summary, document hint) already in the order
+  // the model must see it. ctx.history stays the real conversation for the
+  // title check and for originalMessages below.
+  const modelMessages = await convertToModelMessages(ctx.modelHistory);
   // Opt-in: pin an explicit cache breakpoint at the end of the developer
   // message on GPT-5.6, so the shared system+tools prefix is one cache unit.
   // Off by default — see withOpenAIPromptCacheBreakpoint for why.

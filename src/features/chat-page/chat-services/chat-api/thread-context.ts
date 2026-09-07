@@ -14,21 +14,40 @@ import "server-only";
  *   chat-api-response.ts).
  */
 
-import { getCurrentUser } from "@/features/auth-page/helpers";
-import { logError, logWarn } from "@/features/common/services/logger";
+import { getCurrentUser, userHashedId } from "@/features/auth-page/helpers";
+import { logError, logInfo, logWarn } from "@/features/common/services/logger";
 import type { UIMessage } from "ai";
 import { createIdGenerator } from "ai";
 import { CreateChatMessage } from "../chat-message-service";
 import { FindAllChatDocuments } from "../chat-document-service";
-import { FindTopChatMessagesForCurrentUser } from "../chat-message-service";
+import { FindAllChatMessagesForCurrentUser } from "../chat-message-service";
 import { EnsureChatThreadOperation } from "../chat-thread-service";
 import { uiMessagesFromChatMessages } from "./message-adapter";
 import { getBase64ImageReference } from "../chat-image-persistence-service";
 import { isImageReference } from "../chat-image-persistence-utils";
 import {
+  applyHistoryWatermark,
+  planHistoryTrim,
+  resolveHistoryTokenBudget,
+  resolveHistoryTrimTargetRatio,
+  SUMMARY_TOKEN_RESERVE,
+} from "./history-budget";
+import {
+  formatSummaryReplayText,
+  historySummaryRowId,
+  type ChatHistorySummaryModel,
+} from "./history-summary";
+import {
+  FindChatHistorySummary,
+  isHistorySummaryEnabled,
+  recordHistoryCompaction,
+} from "./history-summary-service";
+import {
   AttachedFileModel,
+  ChatMessageModel,
   ChatThreadModel,
   DefaultTools,
+  MODEL_CONFIGS,
   UserPrompt,
 } from "../models";
 
@@ -143,6 +162,150 @@ async function resolveHistoryFileRefs(
 }
 
 // ---------------------------------------------------------------------------
+// History compaction
+// ---------------------------------------------------------------------------
+
+/**
+ * Replay a stored summary as the first conversation item.
+ *
+ * Role `user`, not `system`. Two reasons:
+ *   - The message adapter and every provider seam already handle user
+ *     messages; a mid-prompt system message is handled inconsistently across
+ *     the three providers this app talks to (Azure Responses, the Azure
+ *     /anthropic Messages API, and Foundry Chat Completions), and getting it
+ *     right would mean touching provider files.
+ *   - The developer message is assembled separately in route.ts and is
+ *     process-constant; folding per-thread text into it would put a volatile
+ *     segment back at the front of the prefix, which is the mistake this
+ *     change set removes.
+ *
+ * Two consecutive user messages (this one and the oldest surviving turn) are
+ * fine: the Anthropic seam groups same-role messages into one block, and the
+ * OpenAI surfaces accept the sequence as-is.
+ *
+ * The id is derived from the thread so it is stable across turns.
+ */
+function summaryReplayMessage(
+  threadId: string,
+  summary: ChatHistorySummaryModel,
+): UIMessage {
+  return {
+    id: historySummaryRowId(threadId),
+    role: "user",
+    parts: [
+      { type: "text", text: formatSummaryReplayText(summary.content) },
+    ],
+  };
+}
+
+/**
+ * Apply the persisted watermark, then the token budget, to a thread's rows.
+ *
+ * Order matters. The watermark comes first: rows an earlier trim already
+ * accounted for must leave before anything is measured, otherwise the budget
+ * would keep re-discovering them and keep moving the cut forward one turn at a
+ * time. Only what survives the watermark is weighed against the budget.
+ *
+ * When a trim does happen this records it (advancing the watermark and, if the
+ * feature is on, summarising the dropped block) before returning. That write is
+ * the one thing standing between this design and the sliding window it
+ * replaced, so it is awaited rather than fired and forgotten.
+ *
+ * Returns the rows to send and the summary to replay, if any.
+ */
+async function compactHistory(input: {
+  threadId: string;
+  selectedModel: ChatThreadModel["selectedModel"];
+  rows: ChatMessageModel[];
+}): Promise<{ rows: ChatMessageModel[]; summary: ChatHistorySummaryModel | null }> {
+  const existingSummary = await FindChatHistorySummary(input.threadId);
+
+  const { retained, alreadyCompacted } = applyHistoryWatermark(
+    input.rows,
+    existingSummary?.coversThroughMessageId,
+  );
+
+  const summaryEnabled = isHistorySummaryEnabled();
+  // The budget follows the thread's selected model, not the effective model
+  // resolved later in route.ts. A downgrade changes who answers the turn, not
+  // how much of the thread is worth carrying, and reading it here keeps the
+  // decision (and therefore the prefix) independent of per-turn routing.
+  const budget = resolveHistoryTokenBudget({
+    modelBudget: input.selectedModel
+      ? MODEL_CONFIGS[input.selectedModel]?.historyTokenBudget
+      : undefined,
+    envBudget: process.env.HISTORY_TOKEN_BUDGET,
+  });
+
+  const plan = planHistoryTrim(retained, {
+    budget,
+    targetRatio: resolveHistoryTrimTargetRatio({
+      envRatio: process.env.HISTORY_TRIM_TARGET_RATIO,
+    }),
+    existingSummaryTokens: existingSummary?.estimatedTokens ?? 0,
+    summaryReserveTokens: summaryEnabled ? SUMMARY_TOKEN_RESERVE : 0,
+  });
+
+  if (!plan.trimmed) {
+    if (plan.targetUnreachable) {
+      // Over budget with nothing left that may be dropped: the surviving turns
+      // alone exceed the target. Nothing to do but let it through — the
+      // alternative is trimming the question being answered — but it is worth
+      // seeing in the logs, because it means one turn is very large.
+      logWarn("thread-context: history over budget but nothing trimmable", {
+        threadId: input.threadId,
+        estimatedTokens: plan.estimatedTokensBefore,
+        budget: plan.budget,
+        turnCount: plan.keptTurnCount,
+      });
+    }
+    return { rows: plan.kept, summary: summaryWithContent(existingSummary) };
+  }
+
+  logInfo("thread-context: trimmed history to token budget", {
+    threadId: input.threadId,
+    budget: plan.budget,
+    target: plan.target,
+    estimatedTokensBefore: plan.estimatedTokensBefore,
+    estimatedTokensAfter: plan.estimatedTokensAfter,
+    droppedTurnCount: plan.droppedTurnCount,
+    keptTurnCount: plan.keptTurnCount,
+    droppedMessageCount: plan.dropped.length,
+    previouslyCompactedMessageCount: alreadyCompacted.length,
+    summaryEnabled,
+  });
+
+  const recorded = await recordHistoryCompaction({
+    threadId: input.threadId,
+    userId: await userHashedId(),
+    droppedMessages: plan.dropped,
+    coversThroughMessageId: plan.coversThroughMessageId!,
+    previous: existingSummary,
+  });
+
+  // A failed write leaves the watermark where it was. This turn is still
+  // trimmed (the user gets the cheap prompt); the next turn will re-derive the
+  // same cut and try the write again.
+  return {
+    rows: plan.kept,
+    summary: summaryWithContent(recorded ?? existingSummary),
+  };
+}
+
+/**
+ * Narrow a compaction row to one worth replaying. A row with empty `content`
+ * is a watermark only — the block was trimmed without being summarised — and
+ * replaying an empty summary would put a bare heading in front of the
+ * conversation.
+ */
+function summaryWithContent(
+  summary: ChatHistorySummaryModel | null,
+): ChatHistorySummaryModel | null {
+  if (!summary) return null;
+  return summary.content.trim().length > 0 ? summary : null;
+}
+
+// ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
@@ -156,10 +319,34 @@ export interface ThreadContextUser {
 export interface ThreadContext {
   thread: ChatThreadModel;
   user: ThreadContextUser;
-  /** History in AI SDK UIMessage format (oldest-first, ready to pass to streamText) */
+  /**
+   * The real conversation in AI SDK UIMessage format, oldest-first, ending
+   * with the turn the user just submitted. Persisted messages only — no
+   * prompt scaffolding — so callers can still count turns (`length === 1`
+   * means a first turn) and hand it to `toUIMessageStreamResponse` as
+   * `originalMessages` without a synthetic item leaking to the browser.
+   */
   history: UIMessage[];
-  /** System-prompt appendix injected when documents are attached */
+  /**
+   * `history` plus the prompt scaffolding, in the exact order it must reach
+   * `convertToModelMessages`: the replayed summary (if any), then the
+   * conversation, then the document hint (if it goes in the tail), then the
+   * current user turn. This is what streamText should be given.
+   */
+  modelHistory: UIMessage[];
+  /**
+   * Document hint for the DEVELOPER message, set only when this thread's
+   * provider cannot take a mid-conversation system message (see
+   * `documentHintPlacement`). Undefined when the hint is already in
+   * `modelHistory` — or when there are no documents at all.
+   */
   documentHint: string | undefined;
+  /**
+   * Where the document hint ended up. `"tail-message"` keeps the developer
+   * message static for the life of the thread; `"developer-message"` is the
+   * fallback. Exposed for logging and tests, not for dispatch.
+   */
+  documentHintPlacement: "tail-message" | "developer-message" | "none";
   threadDocumentIds: string[];
   personaDocumentIds: string[];
   defaultTools: DefaultTools | undefined;
@@ -212,20 +399,36 @@ export async function loadThreadContext(
     isAdmin: currentUser.isAdmin,
   };
 
-  // 3. History (parallel with nothing else right now, but cheap to parallelize later)
-  const historyResponse = await FindTopChatMessagesForCurrentUser(thread.id);
-  const historyRows =
-    historyResponse.status === "OK" ? historyResponse.response : [];
+  // 3. History.
+  //
+  // The whole thread, not `TOP 30`. The old row cap made the prompt prefix
+  // move on every turn past row 30 — see the header comment in
+  // history-budget.ts for the measured cost. What limits the prompt now is an
+  // estimated-token budget with turn-boundary cuts and hysteresis, so the
+  // prefix holds still for dozens of turns at a time.
+  const historyResponse = await FindAllChatMessagesForCurrentUser(thread.id);
+  const allRows = historyResponse.status === "OK" ? historyResponse.response : [];
   if (historyResponse.status !== "OK") {
     logError("Error getting history", { errors: historyResponse.errors });
   }
+  // FindAllChatMessagesForCurrentUser orders by createdAt ASC, which is the
+  // oldest-first order every adapter downstream expects.
 
-  // Cosmos returns rows newest-first; both adapters expect oldest-first.
-  const orderedRows = [...historyRows].reverse();
+  const { rows: keptRows, summary: activeSummary } = await compactHistory({
+    threadId: thread.id,
+    selectedModel: thread.selectedModel,
+    rows: allRows,
+  });
 
   const history = await resolveHistoryFileRefs(
-    uiMessagesFromChatMessages(orderedRows),
+    uiMessagesFromChatMessages(keptRows),
   );
+
+  // The summary replaces the rows it covers, so it goes at the very front of
+  // the conversation — immediately after the developer message.
+  const summaryPrefix: UIMessage[] = activeSummary
+    ? [summaryReplayMessage(thread.id, activeSummary)]
+    : [];
 
   // 4. Documents
   const documentsResponse = await FindAllChatDocuments(thread.id);
@@ -242,15 +445,24 @@ export async function loadThreadContext(
   const hasAnyDocuments = hasChatDocuments || hasPersonaDocuments;
 
   // Build document hint matching the logic in chat-api-response.ts lines 114-123
-  let documentHint: string | undefined;
+  let documentHintText: string | undefined;
   if (hasAnyDocuments) {
+    // Sort the names. FindAllChatDocuments already orders by createdAt, but the
+    // hint is part of the system prompt: a reshuffle here rewrites the prompt
+    // prefix and voids the cache. Sorting locally makes the line a pure
+    // function of the document SET, independent of insertion order or of a
+    // same-millisecond createdAt tie. localeCompare with an explicit "en"
+    // locale so the order can't drift with the pod's default locale.
     const documentNames = hasChatDocuments
-      ? documentsResponse.response.map((doc) => doc.name).join(", ")
+      ? [...documentsResponse.response]
+          .map((doc) => doc.name)
+          .sort((a, b) => a.localeCompare(b, "en"))
+          .join(", ")
       : "";
     const contextLine = hasChatDocuments
       ? `DOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}.`
       : `DOCUMENT CONTEXT: The user has persona-linked document(s) available for this conversation.`;
-    documentHint =
+    documentHintText =
       `\n\n${contextLine}\n\n` +
       `MANDATORY BEHAVIOR WHEN DOCUMENTS ARE PRESENT:\n` +
       `- You MUST first call the search_documents tool with the user's question as the query before composing an answer.\n` +
@@ -258,6 +470,39 @@ export async function loadThreadContext(
       `- Ground your answer in the retrieved content and cite filenames when relevant.\n` +
       `- Do not answer purely from prior knowledge when documents are attached.`;
   }
+
+  // 4b. Where the hint goes.
+  //
+  // The hint is the most volatile input to the prompt: it appears, disappears
+  // and changes wording the moment a user attaches or removes a document. In
+  // the developer message — even at its end — a change there is a change to
+  // the FIRST item of the prompt, so nothing after it can be reused and the
+  // whole thread is re-billed at the cache-write rate. Moved into the tail,
+  // between the history and the current question, it changes only the last few
+  // hundred bytes and the developer message plus the entire history stay
+  // byte-identical and cacheable.
+  //
+  // Not every provider will take a system message in the middle of `messages`:
+  //   - azure (Responses API): supported. @ai-sdk/openai emits it as an
+  //     `input` item with role system/developer at whatever position it holds.
+  //   - foundry (Chat Completions): supported. Same conversion, and the API
+  //     accepts a system message at any index.
+  //   - anthropic (Azure /anthropic Messages API): @ai-sdk/anthropic does
+  //     handle it, but by pushing a `role: "system"` message and requesting
+  //     the `mid-conversation-system-2026-04-07` beta. Whether the Azure
+  //     /anthropic surface honours that beta cannot be established without a
+  //     live call, and getting it wrong is a hard 400 rather than a
+  //     degradation — so Claude threads keep the developer-message placement.
+  const provider = thread.selectedModel
+    ? MODEL_CONFIGS[thread.selectedModel]?.provider ?? "azure"
+    : "azure";
+  const supportsMidConversationSystem = provider !== "anthropic";
+  const documentHintPlacement: ThreadContext["documentHintPlacement"] =
+    documentHintText === undefined
+      ? "none"
+      : supportsMidConversationSystem
+        ? "tail-message"
+        : "developer-message";
 
   // 5. Extension IDs (full extension objects + header secrets are
   //    resolved later by route.ts so we don't fetch them twice).
@@ -310,11 +555,36 @@ export async function loadThreadContext(
     ],
   };
 
+  // The hint as its own developer message in the prompt tail. Role "system":
+  // `convertToModelMessages` maps a system UIMessage to a system ModelMessage
+  // at the same index, and the provider seams then render it as a
+  // system/developer item (see the placement note above).
+  const documentHintMessages: UIMessage[] =
+    documentHintPlacement === "tail-message" && documentHintText
+      ? [
+          {
+            // Derived from the thread, so the item is byte-identical across
+            // turns for as long as the document set is unchanged.
+            id: `dochint-${thread.id}`,
+            role: "system",
+            parts: [{ type: "text", text: documentHintText.trimStart() }],
+          },
+        ]
+      : [];
+
   return {
     thread,
     user,
     history: [...history, userUIMessage],
-    documentHint,
+    modelHistory: [
+      ...summaryPrefix,
+      ...history,
+      ...documentHintMessages,
+      userUIMessage,
+    ],
+    documentHint:
+      documentHintPlacement === "developer-message" ? documentHintText : undefined,
+    documentHintPlacement,
     threadDocumentIds: chatDocumentIds,
     personaDocumentIds,
     defaultTools: thread.defaultTools,
