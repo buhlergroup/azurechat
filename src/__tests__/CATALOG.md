@@ -1273,6 +1273,16 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | chat-page.unit.models.default.006 | models.ts | The default model runs at "medium" effort, its siblings at "low" | unit | same | Read `defaultReasoningEffort` for terra / sol / gpt-5.5 | medium / low / low |
 | api.unit.models.006 | api/models/route.ts | `defaultModel` is DEFAULT_MODEL, not the first declared key | unit | MODEL_CONFIGS mocked with gpt-c declared first, DEFAULT_MODEL = gpt-a | Make gpt-c deployable, GET | `availableModelIds` is `["gpt-c","gpt-a"]` but `defaultModel` is `"gpt-a"` |
 | api.unit.models.007 | api/models/route.ts | Falls back to the first available when DEFAULT_MODEL is undeployed (negative) | unit | same, gpt-a blanked | GET | `defaultModel === "gpt-c"` |
+| chat-page.unit.message-adapter.steps.001 | message-adapter.ts | A 2-step tool turn replays as the same model-message sequence it was sent as | unit | real `convertToModelMessages` | Build the live UIMessages, persist, rehydrate, convert both | Sequences are equal (reasoning items ignored): user / assistant(tool-call) / tool / assistant(text) |
+| chat-page.unit.message-adapter.steps.002 | message-adapter.ts | The step layout is persisted on the assistant row | unit | — | `chatMessagesFromUIMessages` on the live turn | `stepLayout` is `["step-start","tool:call-1","step-start","text:32"]`; `content` unchanged |
+| chat-page.unit.message-adapter.steps.003 | message-adapter.ts | Re-persisting a rehydrated turn keeps the same layout | unit | — | Persist → rehydrate → persist | Layouts are equal (idempotent) |
+| chat-page.unit.message-adapter.steps.004 | message-adapter.ts | Legacy rows with no layout keep the old flat replay (back-compat) | unit | rows without `stepLayout` | Rehydrate + convert | user / assistant([text, tool-call]) / tool — the pre-existing shape |
+| chat-page.unit.message-adapter.steps.005 | message-adapter.ts | A layout whose text lengths don't match the row is ignored (negative) | unit | `text:999` against a 5-char content | Rehydrate | Flat ordering kept, no crash |
+| chat-page.unit.message-adapter.steps.006 | message-adapter.ts | A layout naming a missing tool call is ignored (negative) | unit | `tool:missing`, no tool row | Rehydrate | Flat ordering kept |
+| chat-page.unit.persist-assistant.steps.001 | persist-assistant.ts | `deriveStepToolLayout` yields one entry per step | unit | — | Two steps, one with a tool result | `[{toolCallIds:["call-1"]},{toolCallIds:[]}]` |
+| chat-page.unit.persist-assistant.steps.002 | persist-assistant.ts | `buildAssistantUIMessage` emits step-start markers | unit | — | Build with a 2-step layout | Parts are step-start / dynamic-tool / step-start / text |
+| chat-page.unit.persist-assistant.steps.003 | persist-assistant.ts | No layout supplied keeps the flat part shape (back-compat) | unit | — | Build without `stepLayout` | Parts are text / dynamic-tool |
+| chat-page.unit.persist-assistant.steps.004 | persist-assistant.ts | A tool result no step claimed is still persisted (negative) | unit | layout with an empty step | Build | The tool part is appended rather than dropped |
 
 ---
 

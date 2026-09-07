@@ -402,50 +402,117 @@ export async function persistThread({
 // ---------------------------------------------------------------------------
 
 /**
+ * Per-step shape the assistant message needs in order to replay with the
+ * same step boundaries the live turn had. Only the tool calls are needed:
+ * `event.text` / `event.reasoningText` are the LAST step's (AI SDK
+ * semantics), so those always belong to the final step.
+ */
+export interface StepToolLayout {
+  toolCallIds: readonly string[];
+}
+
+/** Derive the per-step tool-call layout from an onFinish/onAbort event. */
+export function deriveStepToolLayout(
+  steps: ReadonlyArray<{ toolResults?: ReadonlyArray<{ toolCallId: string }> }>,
+): StepToolLayout[] {
+  return steps.map((step) => ({
+    toolCallIds: (step.toolResults ?? []).map((r) => r.toolCallId),
+  }));
+}
+
+/**
  * Builds an assistant UIMessage from the bits of a streamText.onFinish
  * event we actually surface: reasoning, the final text, and tool results.
  * Tool results become DynamicToolUIPart entries so the message-adapter can
  * round-trip them through Cosmos via the same path used elsewhere.
+ *
+ * When `stepLayout` is supplied the parts carry `step-start` markers in the
+ * live positions, which is what makes the rehydrated history serialise to the
+ * same model messages as the live turn (see ChatMessageModel.stepLayout).
+ * Without it the message keeps the old flat shape.
  */
 export function buildAssistantUIMessage<TOOLS extends ToolSet>(
   event: {
     readonly text: string;
     readonly reasoningText?: string;
     readonly toolResults: ReadonlyArray<TypedToolResult<TOOLS>>;
+    readonly stepLayout?: ReadonlyArray<StepToolLayout>;
   },
   id: string,
   reasoningDurationMs?: number,
 ): UIMessage {
   const parts: UIMessage["parts"] = [];
 
-  if (event.reasoningText) {
-    const reasoning: ReasoningUIPart = {
-      type: "reasoning",
-      text: event.reasoningText,
-      state: "done",
+  const toolPart = (result: TypedToolResult<TOOLS>): DynamicToolUIPart => ({
+    type: "dynamic-tool",
+    toolName: result.toolName,
+    toolCallId: result.toolCallId,
+    state: "output-available",
+    input: result.input,
+    output: result.output,
+  });
+
+  const reasoningPart = (): ReasoningUIPart => ({
+    type: "reasoning",
+    text: event.reasoningText as string,
+    state: "done",
+  });
+
+  const textPart = (): TextUIPart => ({
+    type: "text",
+    text: event.text,
+    state: "done",
+  });
+
+  if (event.stepLayout && event.stepLayout.length > 0) {
+    const byCallId = new Map(
+      event.toolResults.map((r) => [r.toolCallId, r] as const),
+    );
+    const claimed = new Set<string>();
+    const lastIndex = event.stepLayout.length - 1;
+
+    event.stepLayout.forEach((step, index) => {
+      parts.push({ type: "step-start" } as unknown as UIMessage["parts"][number]);
+      // Reasoning and text are the last step's, so they go there — before and
+      // after that step's tool calls respectively, matching "think, call, answer".
+      if (index === lastIndex && event.reasoningText) parts.push(reasoningPart());
+      for (const callId of step.toolCallIds) {
+        const result = byCallId.get(callId);
+        if (!result) continue;
+        parts.push(toolPart(result));
+        claimed.add(callId);
+      }
+      if (index === lastIndex && event.text) parts.push(textPart());
+    });
+
+    // A tool result no step claimed (shouldn't happen, but losing a tool card
+    // is worse than an out-of-order one) still gets persisted.
+    for (const result of event.toolResults) {
+      if (!claimed.has(result.toolCallId)) parts.push(toolPart(result));
+    }
+
+    const metadataWithSteps =
+      reasoningDurationMs !== undefined && reasoningDurationMs > 0
+        ? { reasoningDurationMs }
+        : undefined;
+    return {
+      id,
+      role: "assistant",
+      parts,
+      ...(metadataWithSteps && { metadata: metadataWithSteps }),
     };
-    parts.push(reasoning);
+  }
+
+  if (event.reasoningText) {
+    parts.push(reasoningPart());
   }
 
   if (event.text) {
-    const text: TextUIPart = {
-      type: "text",
-      text: event.text,
-      state: "done",
-    };
-    parts.push(text);
+    parts.push(textPart());
   }
 
   for (const result of event.toolResults) {
-    const tool: DynamicToolUIPart = {
-      type: "dynamic-tool",
-      toolName: result.toolName,
-      toolCallId: result.toolCallId,
-      state: "output-available",
-      input: result.input,
-      output: result.output,
-    };
-    parts.push(tool);
+    parts.push(toolPart(result));
   }
 
   // Carry the reasoning wall-clock on metadata (same channel as
@@ -560,6 +627,13 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
       text: isEmptyFinish ? sentinelText : event.text,
       reasoningText: event.reasoningText,
       toolResults: ingestedToolResults,
+      // Only record step boundaries for a turn that actually produced steps;
+      // an empty finish writes a sentinel with no step information and keeps
+      // the pre-existing flat shape.
+      stepLayout:
+        !isEmptyFinish && event.steps && event.steps.length > 0
+          ? deriveStepToolLayout(event.steps)
+          : undefined,
     },
     messageId ?? assistantMessageIdGenerator(),
     reasoningDurationMs,

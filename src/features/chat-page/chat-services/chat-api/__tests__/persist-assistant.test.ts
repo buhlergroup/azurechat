@@ -61,7 +61,11 @@ vi.mock("@/features/common/services/cosmos", () => ({
   HistoryContainer: () => ({ items: { batch: (...a: unknown[]) => mockBatch(...a) } }),
 }));
 
-import { persistThread } from "../persist-assistant";
+import {
+  buildAssistantUIMessage,
+  deriveStepToolLayout,
+  persistThread,
+} from "../persist-assistant";
 import { MODEL_CONFIGS } from "../../models";
 import type { UIMessage } from "ai";
 
@@ -260,6 +264,68 @@ describe("persistThread — cache-write tokens", () => {
     expect(mockReportCacheWriteTokens).toHaveBeenCalledWith(0, MINI_MODEL_ID, {
       threadId: "thread-persist-001",
     });
+  });
+});
+
+describe("buildAssistantUIMessage — step boundaries", () => {
+  const toolResult = {
+    type: "dynamic-tool" as const,
+    toolName: "get_current_time",
+    toolCallId: "call-1",
+    input: {},
+    output: { now: "noon" },
+    dynamic: true as const,
+  };
+
+  it("derives one layout entry per step from the event's steps", () => {
+    expect(
+      deriveStepToolLayout([
+        { toolResults: [toolResult] },
+        { toolResults: [] },
+      ]),
+    ).toEqual([{ toolCallIds: ["call-1"] }, { toolCallIds: [] }]);
+  });
+
+  it("emits step-start markers so the tool call and the answer land in different steps", () => {
+    const msg = buildAssistantUIMessage(
+      {
+        text: "It is noon.",
+        toolResults: [toolResult] as never,
+        stepLayout: [{ toolCallIds: ["call-1"] }, { toolCallIds: [] }],
+      },
+      "a1",
+    );
+    expect(msg.parts.map((p) => p.type)).toEqual([
+      "step-start",
+      "dynamic-tool",
+      "step-start",
+      "text",
+    ]);
+  });
+
+  it("keeps the flat shape when no step layout is supplied (back-compat)", () => {
+    const msg = buildAssistantUIMessage(
+      { text: "It is noon.", toolResults: [toolResult] as never },
+      "a1",
+    );
+    expect(msg.parts.map((p) => p.type)).toEqual(["text", "dynamic-tool"]);
+  });
+
+  it("still persists a tool result no step claimed (negative)", () => {
+    const msg = buildAssistantUIMessage(
+      {
+        text: "done",
+        toolResults: [toolResult] as never,
+        // The layout knows nothing about call-1.
+        stepLayout: [{ toolCallIds: [] }],
+      },
+      "a1",
+    );
+    expect(msg.parts.map((p) => p.type)).toEqual([
+      "step-start",
+      "text",
+      "dynamic-tool",
+    ]);
   });
 });
 

@@ -521,6 +521,22 @@ export interface ChatMessageModel {
    */
   reasoningDurationMs?: number;
   toolCallHistory?: Array<{ name: string; arguments: string; result?: string; timestamp: Date }>;
+  /**
+   * Ordered layout of the assistant turn's UIMessage parts, including the
+   * step boundaries the AI SDK emitted live. Without it a rehydrated turn is
+   * rebuilt as one single step — `[text, tool-call…]` — while the live turn
+   * was `[tool-call] / [result] / [text]`, so convertToModelMessages produces
+   * a DIFFERENT model-message sequence for the same turn and the next request
+   * has no cached prefix to match.
+   *
+   * Entries: "step-start" | "reasoning" | "text:<charCount>" |
+   * "tool:<toolCallId>". Text is stored as lengths because the row's
+   * `content` is the loss-free concatenation of the turn's text parts, so the
+   * per-step slices can be cut back out of it.
+   *
+   * Absent on rows written before this existed — those keep the old rebuild.
+   */
+  stepLayout?: string[];
   type: typeof MESSAGE_ATTRIBUTE;
   reasoningState?: any;
   /**

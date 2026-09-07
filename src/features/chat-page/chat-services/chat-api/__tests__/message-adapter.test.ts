@@ -4,6 +4,8 @@ import {
   chatMessagesFromUIMessages,
 } from "../message-adapter";
 import { ChatMessageModel, MESSAGE_ATTRIBUTE } from "../../models";
+import { convertToModelMessages } from "ai";
+import type { ModelMessage, UIMessage } from "ai";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -395,5 +397,188 @@ describe("empty input", () => {
 
   it("returns empty array for no messages", () => {
     expect(chatMessagesFromUIMessages([], CTX)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. Step boundaries — live turn vs rehydrated turn produce the same
+//     model messages (prompt-cache prefix stability)
+// ---------------------------------------------------------------------------
+
+/**
+ * Model messages carry reasoning items on the live path only (encrypted
+ * reasoning is deliberately not persisted), so drop them before comparing.
+ */
+function withoutReasoning(messages: ModelMessage[]) {
+  return messages
+    .map((m) => {
+      if (m.role !== "assistant" || typeof m.content === "string") return m;
+      return {
+        ...m,
+        content: (m.content as Array<{ type: string }>).filter(
+          (c) => c.type !== "reasoning",
+        ),
+      } as ModelMessage;
+    })
+    .filter(
+      (m) =>
+        typeof m.content === "string" ||
+        (m.content as Array<unknown>).length > 0,
+    );
+}
+
+/** The live UIMessages the AI SDK produces for a 2-step tool turn. */
+function liveTwoStepTurn(): UIMessage[] {
+  return [
+    {
+      id: "u1",
+      role: "user",
+      parts: [{ type: "text", text: "What time is it?" }],
+    },
+    {
+      id: "a1",
+      role: "assistant",
+      parts: [
+        // Step 1: the model calls a tool and nothing else.
+        { type: "step-start" },
+        {
+          type: "dynamic-tool",
+          toolName: "get_current_time",
+          toolCallId: "call-1",
+          state: "output-available",
+          input: { timezone: "Europe/Zurich" },
+          output: { now: "2026-09-07T12:00:00+02:00" },
+        },
+        // Step 2: with the result in hand it writes the answer.
+        { type: "step-start" },
+        { type: "text", text: "It is just after noon in Zurich.", state: "done" },
+      ],
+    },
+  ] as UIMessage[];
+}
+
+describe("step boundaries survive a Cosmos round-trip", () => {
+  it("replays a 2-step tool turn as the same model-message sequence the live turn sent", async () => {
+    const live = liveTwoStepTurn();
+    const liveModelMessages = await convertToModelMessages(live);
+
+    // Sanity-check the fixture really is the interleaved live shape.
+    expect(liveModelMessages.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+
+    const rows = chatMessagesFromUIMessages(live, CTX).map((r) => ({
+      ...r,
+      id: makeId(),
+      isDeleted: false,
+    }));
+    const rehydrated = uiMessagesFromChatMessages(rows);
+    const replayModelMessages = await convertToModelMessages(rehydrated);
+
+    expect(withoutReasoning(replayModelMessages)).toEqual(
+      withoutReasoning(liveModelMessages),
+    );
+  });
+
+  it("persists the step layout on the assistant row", () => {
+    const rows = chatMessagesFromUIMessages(liveTwoStepTurn(), CTX);
+    const assistantRow = rows.find((r) => r.role === "assistant")!;
+    expect(assistantRow.stepLayout).toEqual([
+      "step-start",
+      "tool:call-1",
+      "step-start",
+      "text:32",
+    ]);
+    // The row content is unchanged — the layout only describes the ordering.
+    expect(assistantRow.content).toBe("It is just after noon in Zurich.");
+  });
+
+  it("re-persisting a rehydrated turn keeps the same layout (idempotent)", () => {
+    const rows = chatMessagesFromUIMessages(liveTwoStepTurn(), CTX).map((r) => ({
+      ...r,
+      id: makeId(),
+      isDeleted: false,
+    }));
+    const rehydrated = uiMessagesFromChatMessages(rows);
+    const reRows = chatMessagesFromUIMessages(rehydrated, CTX);
+    const before = rows.find((r) => r.role === "assistant")!.stepLayout;
+    const after = reRows.find((r) => r.role === "assistant")!.stepLayout;
+    expect(after).toEqual(before);
+  });
+
+  it("keeps the old flat replay for rows written before stepLayout existed (back-compat)", async () => {
+    // Exactly the shape the old persist path wrote: no stepLayout anywhere.
+    const rows: ChatMessageModel[] = [
+      baseRow({ role: "user", content: "What time is it?" }),
+      baseRow({ role: "assistant", content: "It is just after noon in Zurich." }),
+      baseRow({
+        role: "tool",
+        name: "get_current_time",
+        content: JSON.stringify({
+          name: "get_current_time",
+          arguments: JSON.stringify({ timezone: "Europe/Zurich" }),
+          result: JSON.stringify({ now: "2026-09-07T12:00:00+02:00" }),
+          call_id: "call-1",
+        }),
+      }),
+    ];
+    const modelMessages = await convertToModelMessages(
+      uiMessagesFromChatMessages(rows),
+    );
+    // One assistant block holding text + tool-call, then the tool message —
+    // the pre-existing behaviour, unchanged for legacy rows.
+    expect(modelMessages.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    const assistantContent = modelMessages[1].content as Array<{ type: string }>;
+    expect(assistantContent.map((c) => c.type)).toEqual(["text", "tool-call"]);
+  });
+
+  it("falls back to the flat ordering when the layout does not match the row (negative)", async () => {
+    // A layout whose text lengths don't add up to the stored content, e.g. a
+    // row whose content was edited by a later migration.
+    const rows: ChatMessageModel[] = [
+      baseRow({
+        role: "assistant",
+        content: "short",
+        stepLayout: ["step-start", "tool:call-1", "step-start", "text:999"],
+      }),
+      baseRow({
+        role: "tool",
+        name: "get_current_time",
+        content: JSON.stringify({
+          name: "get_current_time",
+          arguments: "{}",
+          result: "{}",
+          call_id: "call-1",
+        }),
+      }),
+    ];
+    const rehydrated = uiMessagesFromChatMessages(rows);
+    expect(rehydrated[0].parts.map((p) => p.type)).toEqual([
+      "text",
+      "dynamic-tool",
+    ]);
+    const modelMessages = await convertToModelMessages(rehydrated);
+    expect(modelMessages.map((m) => m.role)).toEqual(["assistant", "tool"]);
+  });
+
+  it("drops a layout entry that names a tool call the thread no longer has (negative)", async () => {
+    const rows: ChatMessageModel[] = [
+      baseRow({
+        role: "assistant",
+        content: "done",
+        stepLayout: ["step-start", "tool:missing", "step-start", "text:4"],
+      }),
+    ];
+    const rehydrated = uiMessagesFromChatMessages(rows);
+    // No tool part to place → layout rejected, flat ordering kept.
+    expect(rehydrated[0].parts.map((p) => p.type)).toEqual(["text"]);
+    expect(await convertToModelMessages(rehydrated)).toHaveLength(1);
   });
 });
