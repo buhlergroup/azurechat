@@ -306,6 +306,102 @@ function summaryWithContent(
 }
 
 // ---------------------------------------------------------------------------
+// Document hint placement
+// ---------------------------------------------------------------------------
+
+/**
+ * Providers that accept a system message in the MIDDLE of `messages`, which is
+ * what the tail placement needs. See the long note in `loadThreadContext`:
+ * Anthropic's seam handles it by requesting a beta this app cannot verify
+ * against the Azure /anthropic surface, and a wrong guess there is a hard 400.
+ */
+function providerTakesMidConversationSystem(provider: string | undefined): boolean {
+  return provider !== "anthropic";
+}
+
+/**
+ * The hint as its own developer message for the prompt tail. Role "system":
+ * `convertToModelMessages` maps a system UIMessage to a system ModelMessage at
+ * the same index, and the provider seams then render it as a system/developer
+ * item.
+ *
+ * The id is derived from the thread, so the item is byte-identical across turns
+ * for as long as the document set is unchanged.
+ */
+function documentHintTailMessage(threadId: string, hintText: string): UIMessage {
+  return {
+    id: documentHintMessageId(threadId),
+    role: "system",
+    parts: [{ type: "text", text: hintText.trimStart() }],
+  };
+}
+
+function documentHintMessageId(threadId: string): string {
+  return `dochint-${threadId}`;
+}
+
+/**
+ * Re-place the document hint for the model that will ACTUALLY run the turn.
+ *
+ * `loadThreadContext` has to decide a placement before the effective model is
+ * known — resolving the model needs the thread the loader returns — so it
+ * decides from `thread.selectedModel`. That is not always the model that runs:
+ * `resolveModelAndLimits` prefers `payload.selectedModel` (this turn's picker),
+ * and a budget cap or an intent rule can downgrade to another model again. When
+ * the two disagree ACROSS PROVIDERS the placement is wrong in a way that
+ * matters:
+ *
+ *   - thread on Azure, effective model Claude: the hint would ride in the tail
+ *     as a mid-conversation system message, the one case the tail placement is
+ *     not allowed to take (hard 400 risk — see above).
+ *   - thread on Claude, effective model Azure: the hint would stay in the
+ *     developer message, moving the FIRST item of the prompt whenever the
+ *     document set changes, which is the cache churn this change set removes.
+ *
+ * So the route calls this once `modelConfig` is resolved. Returns the context
+ * unchanged when the placement already matches, and is idempotent.
+ */
+export function applyDocumentHintPlacement(
+  ctx: ThreadContext,
+  provider: string | undefined,
+): ThreadContext {
+  const hintText = ctx.documentHintText;
+  if (!hintText) return ctx;
+
+  const wanted: ThreadContext["documentHintPlacement"] =
+    providerTakesMidConversationSystem(provider)
+      ? "tail-message"
+      : "developer-message";
+  if (wanted === ctx.documentHintPlacement) return ctx;
+
+  const hintId = documentHintMessageId(ctx.thread.id);
+  const withoutHint = ctx.modelHistory.filter((m) => m.id !== hintId);
+
+  if (wanted === "developer-message") {
+    return {
+      ...ctx,
+      modelHistory: withoutHint,
+      documentHint: hintText,
+      documentHintPlacement: "developer-message",
+    };
+  }
+
+  // Into the tail: immediately before the current user turn, which is the last
+  // item of modelHistory by construction.
+  const cut = Math.max(0, withoutHint.length - 1);
+  return {
+    ...ctx,
+    modelHistory: [
+      ...withoutHint.slice(0, cut),
+      documentHintTailMessage(ctx.thread.id, hintText),
+      ...withoutHint.slice(cut),
+    ],
+    documentHint: undefined,
+    documentHintPlacement: "tail-message",
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
@@ -341,6 +437,12 @@ export interface ThreadContext {
    * `modelHistory` — or when there are no documents at all.
    */
   documentHint: string | undefined;
+  /**
+   * The hint text itself, whichever placement it ended up in. Undefined when
+   * the thread has no documents. `applyDocumentHintPlacement` needs it to move
+   * the hint once the EFFECTIVE model is known.
+   */
+  documentHintText: string | undefined;
   /**
    * Where the document hint ended up. `"tail-message"` keeps the developer
    * message static for the life of the thread; `"developer-message"` is the
@@ -493,14 +595,18 @@ export async function loadThreadContext(
   //     /anthropic surface honours that beta cannot be established without a
   //     live call, and getting it wrong is a hard 400 rather than a
   //     degradation — so Claude threads keep the developer-message placement.
+  //
+  // The provider read here is the THREAD's model. The model that actually runs
+  // the turn is resolved later (it needs the thread this function returns), so
+  // the route corrects the placement through `applyDocumentHintPlacement` once
+  // it knows. See that function for why the correction is not optional.
   const provider = thread.selectedModel
     ? MODEL_CONFIGS[thread.selectedModel]?.provider ?? "azure"
     : "azure";
-  const supportsMidConversationSystem = provider !== "anthropic";
   const documentHintPlacement: ThreadContext["documentHintPlacement"] =
     documentHintText === undefined
       ? "none"
-      : supportsMidConversationSystem
+      : providerTakesMidConversationSystem(provider)
         ? "tail-message"
         : "developer-message";
 
@@ -555,21 +661,11 @@ export async function loadThreadContext(
     ],
   };
 
-  // The hint as its own developer message in the prompt tail. Role "system":
-  // `convertToModelMessages` maps a system UIMessage to a system ModelMessage
-  // at the same index, and the provider seams then render it as a
-  // system/developer item (see the placement note above).
+  // The hint as its own developer message in the prompt tail. See
+  // `documentHintTailMessage`.
   const documentHintMessages: UIMessage[] =
     documentHintPlacement === "tail-message" && documentHintText
-      ? [
-          {
-            // Derived from the thread, so the item is byte-identical across
-            // turns for as long as the document set is unchanged.
-            id: `dochint-${thread.id}`,
-            role: "system",
-            parts: [{ type: "text", text: documentHintText.trimStart() }],
-          },
-        ]
+      ? [documentHintTailMessage(thread.id, documentHintText)]
       : [];
 
   return {
@@ -584,6 +680,7 @@ export async function loadThreadContext(
     ],
     documentHint:
       documentHintPlacement === "developer-message" ? documentHintText : undefined,
+    documentHintText,
     documentHintPlacement,
     threadDocumentIds: chatDocumentIds,
     personaDocumentIds,

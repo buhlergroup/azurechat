@@ -21,7 +21,10 @@ import {
   validateMultimodalInput,
 } from "@/features/chat-page/chat-services/chat-api/validate-input";
 import { resolveModelAndLimits } from "@/features/chat-page/chat-services/chat-api/model-selection";
-import { loadThreadContext } from "@/features/chat-page/chat-services/chat-api/thread-context";
+import {
+  loadThreadContext,
+  applyDocumentHintPlacement,
+} from "@/features/chat-page/chat-services/chat-api/thread-context";
 import { persistAssistantFromFinishEvent } from "@/features/chat-page/chat-services/chat-api/persist-assistant";
 import { consumeRateLimitToken } from "@/features/chat-page/chat-services/chat-api/rate-limit";
 import { resolveRateLimitSubject } from "@/features/chat-page/chat-services/chat-api/rate-limit-subject";
@@ -198,6 +201,23 @@ export async function POST(req: Request) {
   // but not the model that actually ran).
   const { modelConfig, fallbackInfo, effectiveReasoningEffort, selectedModel: effectiveModel } =
     await resolveModelAndLimits(payload, ctx.thread);
+
+  // The document hint's placement follows the EFFECTIVE model's provider, not
+  // the thread's. loadThreadContext could only guess from thread.selectedModel
+  // because the model resolution above needs the thread it returns; this turn's
+  // picker or a cap/intent downgrade can land on another provider entirely.
+  // Getting it wrong sends a mid-conversation system message to Claude, which
+  // is the one placement the Azure /anthropic surface may reject outright.
+  // Idempotent, and a no-op when the two already agree.
+  ctx = applyDocumentHintPlacement(ctx, modelConfig.provider);
+  if (ctx.documentHintPlacement !== "none") {
+    logInfo("/api/chat document hint placement", {
+      threadId: ctx.thread.id,
+      threadModel: ctx.thread.selectedModel,
+      effectiveModel,
+      placement: ctx.documentHintPlacement,
+    });
+  }
 
   // Resolve effective tool toggles up-front: per-request payload overrides the
   // thread's persisted defaultTools (the request body is the authoritative

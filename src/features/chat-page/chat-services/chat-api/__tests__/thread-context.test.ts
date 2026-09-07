@@ -89,7 +89,7 @@ vi.mock("../../utils", () => ({
   mapOpenAIChatMessages: vi.fn(async () => []),
 }));
 
-import { loadThreadContext } from "../thread-context";
+import { loadThreadContext, applyDocumentHintPlacement } from "../thread-context";
 import { MESSAGE_ATTRIBUTE } from "../../models";
 import type { ChatThreadModel, UserPrompt } from "../../models";
 import { SUMMARY_REPLAY_PREFIX } from "../history-summary";
@@ -528,5 +528,91 @@ describe("chat-page.unit.thread-context.004 — the document hint is determinist
       status: "OK",
       response: [],
     } as never);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("chat-page.unit.thread-context.005 — the hint follows the model that runs the turn", () => {
+  /**
+   * loadThreadContext places the hint from `thread.selectedModel`, because the
+   * effective model cannot be resolved until it has returned the thread. The
+   * route corrects it afterwards. Without the correction a thread pinned to an
+   * Azure model but answered by Claude — this turn's picker, or a cap/intent
+   * downgrade — would send Claude a mid-conversation system message, which is
+   * the one placement the Azure /anthropic surface may reject outright.
+   */
+  const hintItems = (ctx: { modelHistory: { id?: string }[] }) =>
+    ctx.modelHistory.filter((m) => m.id === "dochint-thread-001");
+
+  async function ctxWithDocument(threadModel: string) {
+    const { FindAllChatDocuments } = await import("../../chat-document-service");
+    const thread = { ...makeThread(), selectedModel: threadModel } as never;
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: thread });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: [makeHistoryRow("user", "earlier"), makeHistoryRow("assistant", "reply")],
+    });
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [{ id: "d1", name: "manual.pdf" }],
+    } as never);
+    const ctx = await loadThreadContext(makeUserPrompt());
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({ status: "OK", response: [] } as never);
+    return ctx;
+  }
+
+  it("pulls the hint out of the tail when the effective model is Claude", async () => {
+    const ctx = await ctxWithDocument("gpt-5.4-mini");
+    expect(ctx.documentHintPlacement).toBe("tail-message");
+    expect(hintItems(ctx)).toHaveLength(1);
+
+    const corrected = applyDocumentHintPlacement(ctx, "anthropic");
+
+    expect(corrected.documentHintPlacement).toBe("developer-message");
+    expect(hintItems(corrected)).toHaveLength(0);
+    expect(corrected.documentHint).toContain("manual.pdf");
+    // The conversation itself is untouched — only the scaffolding moved.
+    expect(corrected.modelHistory).toHaveLength(ctx.modelHistory.length - 1);
+    expect(corrected.history).toBe(ctx.history);
+  });
+
+  it("moves the hint into the tail when a Claude thread is answered by Azure", async () => {
+    const ctx = await ctxWithDocument("claude-sonnet-5");
+    expect(ctx.documentHintPlacement).toBe("developer-message");
+    expect(hintItems(ctx)).toHaveLength(0);
+
+    const corrected = applyDocumentHintPlacement(ctx, "azure");
+
+    expect(corrected.documentHintPlacement).toBe("tail-message");
+    expect(corrected.documentHint).toBeUndefined();
+    const items = hintItems(corrected);
+    expect(items).toHaveLength(1);
+    // Immediately before the current user turn, and nowhere else.
+    expect(corrected.modelHistory[corrected.modelHistory.length - 2]).toBe(items[0]);
+    expect(corrected.modelHistory[corrected.modelHistory.length - 1].role).toBe("user");
+  });
+
+  it("is a no-op when the placement already matches, and is idempotent", async () => {
+    const ctx = await ctxWithDocument("gpt-5.4-mini");
+    expect(applyDocumentHintPlacement(ctx, "azure")).toBe(ctx);
+
+    const once = applyDocumentHintPlacement(ctx, "anthropic");
+    const twice = applyDocumentHintPlacement(once, "anthropic");
+    expect(twice).toBe(once);
+    // And back again lands on exactly one hint item, not two.
+    const back = applyDocumentHintPlacement(once, "azure");
+    expect(hintItems(back)).toHaveLength(1);
+    expect(back.modelHistory).toEqual(ctx.modelHistory);
+  });
+
+  it("does nothing at all for a thread with no documents", async () => {
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: [] });
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(ctx.documentHintPlacement).toBe("none");
+    expect(applyDocumentHintPlacement(ctx, "anthropic")).toBe(ctx);
+    expect(applyDocumentHintPlacement(ctx, "azure")).toBe(ctx);
   });
 });
