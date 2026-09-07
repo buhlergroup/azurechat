@@ -244,8 +244,17 @@ export async function loadThreadContext(
   // Build document hint matching the logic in chat-api-response.ts lines 114-123
   let documentHint: string | undefined;
   if (hasAnyDocuments) {
+    // Sort the names. FindAllChatDocuments already orders by createdAt, but the
+    // hint is part of the system prompt: a reshuffle here rewrites the prompt
+    // prefix and voids the cache. Sorting locally makes the line a pure
+    // function of the document SET, independent of insertion order or of a
+    // same-millisecond createdAt tie. localeCompare with an explicit "en"
+    // locale so the order can't drift with the pod's default locale.
     const documentNames = hasChatDocuments
-      ? documentsResponse.response.map((doc) => doc.name).join(", ")
+      ? [...documentsResponse.response]
+          .map((doc) => doc.name)
+          .sort((a, b) => a.localeCompare(b, "en"))
+          .join(", ")
       : "";
     const contextLine = hasChatDocuments
       ? `DOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}.`

@@ -62,14 +62,57 @@ describe("buildSystemMessage", () => {
     expect(out.toLowerCase()).not.toContain("today");
   });
 
-  it("places dynamic segments in the documented order: static, doc-hint, persona", () => {
+  it("places segments in the documented order: static, persona, trailing static block, doc-hint", () => {
     const out = buildSystemMessage({
       staticSystemPrompt: "STATIC",
       personaMessage: "PERSONA",
       documentHint: "DOCHINT",
+      trailingStaticBlock: "TRAILING",
     });
-    expect(out.indexOf("STATIC")).toBeLessThan(out.indexOf("DOCHINT"));
-    expect(out.indexOf("DOCHINT")).toBeLessThan(out.indexOf("PERSONA"));
+    expect(out.indexOf("STATIC")).toBeLessThan(out.indexOf("PERSONA"));
+    expect(out.indexOf("PERSONA")).toBeLessThan(out.indexOf("TRAILING"));
+    expect(out.indexOf("TRAILING")).toBeLessThan(out.indexOf("DOCHINT"));
+  });
+
+  it("keeps the whole prefix byte-identical when only the document hint changes", () => {
+    // The regression this pins: documentHint used to sit BETWEEN the static
+    // prompt and the persona, so attaching one document rewrote every byte
+    // after the static prompt. Now the shared prefix must survive intact.
+    const base = {
+      staticSystemPrompt: "STATIC PROMPT",
+      personaMessage: "PERSONA MESSAGE",
+      trailingStaticBlock: "\n\n## Interactive UI\nrules",
+    };
+    const withoutDocs = buildSystemMessage(base);
+    const withDocs = buildSystemMessage({
+      ...base,
+      documentHint: "\n\nDOCUMENT CONTEXT: a.pdf",
+    });
+    expect(withDocs.startsWith(withoutDocs)).toBe(true);
+    expect(withDocs).not.toBe(withoutDocs);
+  });
+
+  it("keeps the prefix byte-identical when the document hint only changes wording", () => {
+    const base = {
+      staticSystemPrompt: "STATIC PROMPT",
+      personaMessage: "PERSONA MESSAGE",
+      trailingStaticBlock: "\n\n## Interactive UI\nrules",
+    };
+    const oneDoc = buildSystemMessage({ ...base, documentHint: "\n\nDOCS: a.pdf" });
+    const twoDocs = buildSystemMessage({ ...base, documentHint: "\n\nDOCS: a.pdf, b.pdf" });
+    const shared = buildSystemMessage(base);
+    expect(oneDoc.startsWith(shared)).toBe(true);
+    expect(twoDocs.startsWith(shared)).toBe(true);
+  });
+
+  it("treats an omitted trailingStaticBlock as empty string", () => {
+    const a = buildSystemMessage({
+      staticSystemPrompt: "S",
+      personaMessage: "P",
+      trailingStaticBlock: "",
+    });
+    const b = buildSystemMessage({ staticSystemPrompt: "S", personaMessage: "P" });
+    expect(a).toBe(b);
   });
 
 });
