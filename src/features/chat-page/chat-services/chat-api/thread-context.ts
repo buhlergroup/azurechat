@@ -1,5 +1,19 @@
-"use server";
 import "server-only";
+
+/**
+ * Why there is no `"use server"` here
+ * -----------------------------------
+ * `"use server"` marks a module as a SERVER ACTION surface: Next turns every
+ * export into an RPC endpoint a client component may call, and therefore
+ * rejects any export that is not an async function. This module is reached
+ * only from other server modules, never from a client component, so it wants
+ * the opposite guarantee — "never bundle me for the browser" — which is what
+ * `import "server-only"` gives. That is the convention the neighbouring
+ * non-action server modules follow (`persist-assistant.ts`, `rate-limit.ts`,
+ * `stream-publisher.ts`, ...). Do not add the directive back: it is not needed
+ * for a server module, and it breaks `next build` the moment this file gains a
+ * sync export.
+ */
 
 /**
  * thread-context.ts
