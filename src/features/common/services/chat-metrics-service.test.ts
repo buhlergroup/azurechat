@@ -205,3 +205,47 @@ describe("common.unit.chat-metrics — turn-shape dimensions", () => {
     );
   });
 });
+
+describe("common.unit.chat-metrics — the caller's attribute object is never mutated", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("adds role to the emitted dimensions without writing it back", async () => {
+    // persist-assistant hands ONE attribute object to all five emitters inside
+    // a single Promise.all. reportPromptTokens used to write `role` onto it,
+    // so whichever sibling had not yet copied it emitted a role dimension too
+    // — non-deterministically, depending on statement order.
+    const { reportPromptTokens } = await import("./chat-metrics-service");
+    const shared = { threadId: "t1", stepCount: 2, toolCallCount: 1 };
+
+    await reportPromptTokens(100, "gpt-4", "user", shared);
+
+    expect(shared).toEqual({ threadId: "t1", stepCount: 2, toolCallCount: 1 });
+    expect("role" in shared).toBe(false);
+    expect(mockRecord).toHaveBeenCalledWith(
+      100,
+      expect.objectContaining({ role: "user", threadId: "t1", stepCount: 2, toolCallCount: 1 }),
+    );
+  });
+
+  it("keeps the siblings free of a role dimension when they share the object", async () => {
+    const { reportPromptTokens, reportCacheWriteTokens, reportCachedTokens } =
+      await import("./chat-metrics-service");
+    const shared = { threadId: "t1" };
+
+    await Promise.all([
+      reportPromptTokens(10, "gpt-4", "user", shared),
+      reportCachedTokens(20, "gpt-4", shared),
+      reportCacheWriteTokens(30, "gpt-4", shared),
+    ]);
+
+    const withoutRole = mockRecord.mock.calls.filter(
+      ([count]) => count === 20 || count === 30,
+    );
+    expect(withoutRole).toHaveLength(2);
+    for (const [, attrs] of withoutRole) {
+      expect(attrs).not.toHaveProperty("role");
+    }
+  });
+});

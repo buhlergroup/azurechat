@@ -371,22 +371,39 @@ export async function POST(req: Request) {
       fileIds: requestedCiFileIds,
     });
     if (containerId) {
-      ctx.thread.codeInterpreterContainerId = containerId;
-      // Persist immediately: the id has to survive to the next turn even if
-      // the model never calls the tool this turn (otherwise turn 2 would
-      // mint another container and change the definition again).
+      // Persist BEFORE using it. The id has to survive to the next turn even
+      // if the model never calls the tool this turn — otherwise turn 2 mints
+      // another container and changes the definition again, which is the
+      // instability this pre-creation exists to remove.
+      //
+      // And if the write fails, the id must NOT go on the wire: an
+      // unpersisted id is invisible to the next turn, so every turn would
+      // mint one more container. A sustained Cosmos write failure would then
+      // be an unbounded container-creation loop with nothing to stop it.
+      // Falling back to the old bootstrap-then-harvest shape costs a cache
+      // miss; the loop costs money.
+      let persisted = false;
       try {
         await UpdateChatThreadCodeInterpreterContainer(
           ctx.thread.id,
           containerId,
           requestedCiSignature,
         );
+        persisted = true;
       } catch (err) {
         logError("/api/chat failed to persist pre-created container id", {
           threadId: ctx.thread.id,
           containerId,
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+      if (persisted) {
+        ctx.thread.codeInterpreterContainerId = containerId;
+      } else {
+        logWarn(
+          "/api/chat discarding an unpersisted container id for this turn",
+          { threadId: ctx.thread.id, containerId },
+        );
       }
     }
   }

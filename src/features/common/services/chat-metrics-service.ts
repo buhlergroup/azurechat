@@ -58,11 +58,20 @@ export async function reportPromptTokens(tokenCount: number, model: string, role
     });
 
     let defaultAttributes = <any>await getAttributes(model);
-    attributes["role"] = role;
 
-    let compbinedAttributes = withTurnShape({ ...defaultAttributes, ...attributes });
+    // Do NOT write `role` onto the caller's object. persist-assistant hands the
+    // same attribute reference to all five emitters inside one Promise.all;
+    // mutating it here leaked `role` into whichever of the others had not yet
+    // taken its own copy. It happened to be safe only because this function
+    // awaited getAttributes first — a statement reorder was all it took to
+    // start tagging cachedTokensUsed and cacheWriteTokensUsed with a role.
+    let combinedAttributes = withTurnShape({
+        ...defaultAttributes,
+        ...attributes,
+        role,
+    });
 
-    promptTokensUsed.record(tokenCount, compbinedAttributes);
+    promptTokensUsed.record(tokenCount, combinedAttributes);
 }
 
 export async function reportCompletionTokens(tokenCount: number, model: string, attributes: any = {}) {

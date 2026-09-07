@@ -56,10 +56,19 @@ export interface TokenCostArgs {
  *     + write x cacheWrite + output x output
  *
  * `cacheWritePerMillion` is absent on models that don't surcharge cache
- * writes (gpt-5.5 and older). For those the write token count is treated as
- * zero, which leaves those tokens in the uncached-input bucket at the normal
- * input rate — that is exactly how the provider bills them. Only GPT-5.6+
- * pulls them out into a separately-priced bucket (1.25x uncached input).
+ * writes (gpt-5.5 and older, and the Foundry models). For those the write
+ * token count is treated as zero, which leaves those tokens in the
+ * uncached-input bucket at the normal input rate — that is exactly how the
+ * provider bills them. GPT-5.6 and Anthropic both pull them out into a
+ * separately-priced bucket (1.25x uncached input).
+ *
+ * NOTE on the clamp below: the buckets are assumed DISJOINT and contained in
+ * `inputTokens`, which is what both provider adapters guarantee at the pinned
+ * SDK versions (@ai-sdk/openai reports cacheRead/cacheWrite as subsets of the
+ * total; @ai-sdk/anthropic re-totals input + cacheCreation + cacheRead). A
+ * provider that ever reported overlapping buckets would be over-billed here
+ * rather than under-billed — deliberate, since a negative bucket would
+ * under-state the cost silently.
  */
 export function computeTokenCostUsd({
   inputTokens,

@@ -258,13 +258,19 @@ function resolveAnthropicBackedProvider(args: ResolveProviderArgs): ResolvedProv
     builtInTools["web_fetch"] = anthropic.tools.webFetch_20260209({ maxUses: 5 });
   }
 
-  // Adaptive thinking is Claude 4.x's reasoning mode. We never send
+  // Adaptive thinking is Claude 4.x's reasoning mode, enabled only for a
+  // config that declares supportsReasoning. We never send
   // temperature/top_p/top_k (the route doesn't, and Opus 4.8 rejects them with
   // a 400), so adaptive thinking is safe to leave on. `effort` is mapped from
   // the user's ReasoningEffort selection; "minimal" → "low".
-  const anthropicOptions: Record<string, JSONValue> = {
-    thinking: { type: "adaptive" },
-  };
+  const anthropicOptions: Record<string, JSONValue> = {};
+  if (args.reasoning.supported) {
+    // Inside the gate, not above it: a Claude entry declared
+    // supportsReasoning:false (the obvious way to add a cheap Haiku-class
+    // model) would otherwise still get thinking enabled — and still be
+    // billed for thinking tokens — with the reasoning gate bypassed.
+    anthropicOptions.thinking = { type: "adaptive" };
+  }
   if (args.reasoning.supported && args.reasoning.effort) {
     // Claude's adaptive thinking takes low/medium/high. Map the levels that
     // only exist on the OpenAI side onto the nearest Claude equivalent.

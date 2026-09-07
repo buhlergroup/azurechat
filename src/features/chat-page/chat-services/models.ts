@@ -33,11 +33,15 @@ export interface ModelPricing {
   outputPerMillion: number;
   cachedInputPerMillion: number;
   /**
-   * Price per 1M tokens WRITTEN into the prompt cache. GPT-5.6 bills a cache
-   * write at 1.25x the uncached input rate; earlier generations don't bill
-   * writes separately. Absence therefore means "no write surcharge" and the
-   * write tokens are billed at `inputPerMillion` like any other input
-   * (see computeTokenCostUsd).
+   * Price per 1M tokens WRITTEN into the prompt cache. GPT-5.6 and Anthropic
+   * both bill a cache write at 1.25x the uncached input rate; the earlier GPT
+   * generations and the Foundry models don't bill writes separately. Absence
+   * therefore means "no write surcharge" and the write tokens are billed at
+   * `inputPerMillion` like any other input (see computeTokenCostUsd).
+   *
+   * Set it on every model whose provider reports cache-write tokens, or the
+   * cost is under-stated by 25 % of the write portion while the
+   * `cacheWriteTokensUsed` metric still reports the true count.
    */
   cacheWritePerMillion?: number;
 }
@@ -111,6 +115,11 @@ export interface ModelConfig {
    * both 5.6 and 5.5 add "none". Used to validate the
    * REASONING_EFFORT_OVERRIDES env map — sending a level a model rejects is
    * an HTTP 400 on every turn.
+   *
+   * An array here must therefore be a SUPERSET of the levels the picker
+   * offers (DEFAULT_REASONING_EFFORT_LEVELS), or an env override could be
+   * refused for a level a user can select by hand. Pinned by
+   * chat-page.unit.models.reasoning.
    */
   supportedReasoningEfforts?: ReadonlyArray<ProviderReasoningEffort>;
   pricing: ModelPricing;
@@ -171,7 +180,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -192,7 +201,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // Terra is the default model: "medium" is the effort at which it earns
     // its keep on everyday work. Sol and Luna stay on "low".
     defaultReasoningEffort: "medium",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -210,7 +219,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
     maxOutputTokens: 16000,
@@ -228,7 +237,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT55_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh"],
+    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
     // No cacheWritePerMillion: gpt-5.5 does not bill cache writes separately.
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50 },
     contextWindow: 1050000,
@@ -349,8 +358,24 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     family: "claude",
     supportsReasoning: true,
     supportsResponsesAPI: false,
+    // Without this, resolveReasoningEffort falls through to its hardcoded
+    // "low" and the premium model a user picked for hard work thinks as
+    // little as it can. The seam maps the levels Claude does not have
+    // (minimal/none → low, xhigh/max → high), so the picker's whole range is
+    // safe to leave at the default list.
+    defaultReasoningEffort: "medium",
     deploymentName: process.env.AZURE_ANTHROPIC_OPUS48_DEPLOYMENT_NAME,
-    pricing: { inputPerMillion: 15.0, outputPerMillion: 75.0, cachedInputPerMillion: 1.5 },
+    // Anthropic bills a 5-minute ephemeral cache WRITE at 1.25x base input
+    // and a read at 0.1x, same shape as GPT-5.6. The write price has to be
+    // here or computeTokenCostUsd leaves those tokens in the uncached bucket
+    // at 1.0x — and prompt-builder.ts marks a cache_control breakpoint on
+    // every Claude turn, so there are always writes to bill.
+    pricing: {
+      inputPerMillion: 15.0,
+      outputPerMillion: 75.0,
+      cachedInputPerMillion: 1.5,
+      cacheWritePerMillion: 18.75,
+    },
     contextWindow: 1000000,
     maxOutputTokens: 16000,
     // Image input + Claude's native web search/fetch (wired in the anthropic
@@ -371,8 +396,17 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     family: "claude",
     supportsReasoning: true,
     supportsResponsesAPI: false,
+    // See the note on claude-opus-4-8.
+    defaultReasoningEffort: "medium",
     deploymentName: process.env.AZURE_ANTHROPIC_SONNET5_DEPLOYMENT_NAME,
-    pricing: { inputPerMillion: 3.0, outputPerMillion: 15.0, cachedInputPerMillion: 0.3 },
+    // 1.25x base input for a 5-minute ephemeral cache write; see the note on
+    // claude-opus-4-8.
+    pricing: {
+      inputPerMillion: 3.0,
+      outputPerMillion: 15.0,
+      cachedInputPerMillion: 0.3,
+      cacheWritePerMillion: 3.75,
+    },
     contextWindow: 1000000,
     maxOutputTokens: 16000,
     // Image input + native web search/fetch (wired in the anthropic seam).
@@ -380,6 +414,11 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     capabilities: ["vision", "webSearch"],
   },
 };
+
+/** A model this environment can actually route a turn to. */
+function isDeployedModel(id: ChatModel): boolean {
+  return !!MODEL_CONFIGS[id]?.deploymentName?.trim();
+}
 
 /**
  * Model used when the request, the thread and the picker all say nothing.
@@ -389,9 +428,18 @@ export const CODE_DEFAULT_MODEL: ChatModel = "gpt-5.6-terra";
 
 /**
  * Resolve the default model, letting the deployment override the code
- * default via the `DEFAULT_MODEL_ID` env var. An unknown id is ignored with
- * a logged warning rather than crashing the app or — worse — silently
- * routing every chat to a model that has no deployment behind it.
+ * default via the `DEFAULT_MODEL_ID` env var. A value that is unknown OR has
+ * no deployment behind it is ignored with a logged error rather than crashing
+ * the app or — worse — silently routing every chat to a model the environment
+ * cannot serve.
+ *
+ * Both checks matter, and for different reasons. An unknown id is a typo. A
+ * KNOWN id with no deployment is the more dangerous mistake: it passes the
+ * name check, gets written onto every new thread, and then
+ * `resolveModelAndLimits` throws "Missing deployment configuration" on every
+ * single turn — a 500 per chat that reads like a chat bug rather than a
+ * missing app setting. So a candidate has to be deployed here too, as long as
+ * there is a deployed alternative to fall back to.
  *
  * NOTE: this is a server-side env var, so it is NOT inlined into the client
  * bundle; a browser evaluating this module sees CODE_DEFAULT_MODEL. That is
@@ -403,14 +451,31 @@ export function resolveDefaultModel(
 ): ChatModel {
   const candidate = raw?.trim();
   if (!candidate) return CODE_DEFAULT_MODEL;
-  if (Object.prototype.hasOwnProperty.call(MODEL_CONFIGS, candidate)) {
-    return candidate as ChatModel;
+  if (!Object.prototype.hasOwnProperty.call(MODEL_CONFIGS, candidate)) {
+    logError("DEFAULT_MODEL_ID is not a known model id — ignoring", {
+      value: candidate,
+      fallback: CODE_DEFAULT_MODEL,
+    });
+    return CODE_DEFAULT_MODEL;
   }
-  logError("DEFAULT_MODEL_ID is not a known model id — ignoring", {
-    value: candidate,
-    fallback: CODE_DEFAULT_MODEL,
-  });
-  return CODE_DEFAULT_MODEL;
+  if (!isDeployedModel(candidate as ChatModel)) {
+    // Falling back is only an improvement if the code default can actually
+    // serve a turn. When it cannot either — a bare environment, or one that
+    // deploys neither — there is nothing better to offer, so honour the
+    // configured id and let the loud log be the signal.
+    if (isDeployedModel(CODE_DEFAULT_MODEL)) {
+      logError("DEFAULT_MODEL_ID has no deployment in this environment — ignoring", {
+        value: candidate,
+        fallback: CODE_DEFAULT_MODEL,
+      });
+      return CODE_DEFAULT_MODEL;
+    }
+    logError(
+      "DEFAULT_MODEL_ID has no deployment, and neither does the code default — honouring it anyway",
+      { value: candidate, codeDefault: CODE_DEFAULT_MODEL },
+    );
+  }
+  return candidate as ChatModel;
 }
 
 export const DEFAULT_MODEL: ChatModel = resolveDefaultModel();

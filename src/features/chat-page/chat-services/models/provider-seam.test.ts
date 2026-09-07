@@ -336,12 +336,30 @@ describe("provider-seam — Anthropic branch", () => {
       thread: baseThread,
       // code_interpreter / image_generation must NOT produce Anthropic tools.
       toggles: { codeInterpreter: true, imageGeneration: true, webSearch: true },
-      reasoning: baseReasoning,
+      // Both Claude configs declare supportsReasoning, so this is the shape a
+      // real Claude turn takes.
+      reasoning: { supported: true, effort: "medium" },
     });
     expect(Object.keys(r.builtInTools).sort()).toEqual(["web_fetch", "web_search"]);
-    // Still adaptive thinking, never an openai block.
+    // A tool toggle must not switch thinking off, and never an openai block.
     expect((r.providerOptions.anthropic as Record<string, unknown>).thinking).toEqual({ type: "adaptive" });
     expect(r.providerOptions.openai).toBeUndefined();
+  });
+
+  it("leaves thinking off when the config does not support reasoning (negative)", () => {
+    // The gate has to cover `thinking`, not just `effort`. A Claude entry
+    // added with supportsReasoning:false — the obvious way to wire a cheap
+    // Haiku-class model — would otherwise still think, and still be billed
+    // for the thinking tokens.
+    const r = resolveProvider({
+      modelId: "claude-sonnet-5",
+      thread: baseThread,
+      toggles: offToggles,
+      reasoning: baseReasoning,
+    });
+    const anth = r.providerOptions.anthropic as Record<string, unknown>;
+    expect(anth.thinking).toBeUndefined();
+    expect(anth.effort).toBeUndefined();
   });
 });
 

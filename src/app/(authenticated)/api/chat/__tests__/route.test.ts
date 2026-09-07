@@ -21,8 +21,14 @@ const mockResolveAzureModel = vi.fn();
 const mockResolveProvider = vi.fn();
 const mockFindAllExtensions = vi.fn();
 
+const mockApplyDocumentHintPlacement = vi.fn((ctx: unknown) => ctx);
 vi.mock("@/features/chat-page/chat-services/chat-api/thread-context", () => ({
   loadThreadContext: (...a: unknown[]) => mockLoadThreadContext(...a),
+  // Pure and cheap, so the real one runs here: the route's call to it is part
+  // of the behaviour these tests exercise, and a stub that returned the
+  // context unchanged would hide a regression in the placement correction.
+  applyDocumentHintPlacement: (...a: unknown[]) =>
+    mockApplyDocumentHintPlacement(...a),
 }));
 vi.mock("@/features/chat-page/chat-services/chat-api/model-selection", () => ({
   resolveModelAndLimits: (...a: unknown[]) => mockResolveModelAndLimits(...a),
@@ -295,6 +301,27 @@ describe("/api/chat route (AI SDK v6)", () => {
       mockLoadThreadContext.mockResolvedValue(structuredClone(CTX));
       await POST(makeRequest({ message: "hello", id: "t1" }));
       expect(mockEnsureContainer).not.toHaveBeenCalled();
+    });
+
+    it("discards an id it could not persist rather than minting one per turn", async () => {
+      // The whole point of pre-creating is that the NEXT turn finds the id on
+      // the thread. An unpersisted id is invisible to the next turn, so if it
+      // went on the wire anyway every turn would create one more container —
+      // an unbounded spend loop out of a Cosmos write failure. Sending the
+      // old bootstrap shape instead costs one cache miss.
+      mockLoadThreadContext.mockResolvedValue(structuredClone(ciCtx));
+      mockEnsureContainer.mockResolvedValue("cntr_orphan");
+      mockUpdateContainer.mockRejectedValueOnce(new Error("cosmos down"));
+
+      await POST(makeRequest({ message: "plot this", id: "t1", codeInterpreterEnabled: true }));
+
+      expect(mockResolveProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thread: expect.objectContaining({
+            codeInterpreterContainerId: undefined,
+          }),
+        }),
+      );
     });
   });
 

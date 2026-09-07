@@ -26,8 +26,12 @@ beforeEach(() => {
 
 describe("getSupportedReasoningEfforts", () => {
   it("reports the GPT-5.6 levels including xhigh and max", () => {
+    // "minimal" is in the list because the picker offers it: the list is what
+    // validates REASONING_EFFORT_OVERRIDES, so omitting a selectable level
+    // would refuse an env override for something a user can pick by hand.
     expect(getSupportedReasoningEfforts(MODEL_CONFIGS["gpt-5.6-terra"])).toEqual([
       "none",
+      "minimal",
       "low",
       "medium",
       "high",
@@ -164,9 +168,23 @@ describe("resolveReasoningEffort — resolution order", () => {
   });
 
   it("falls back to low for a model with no configured default", () => {
+    // grok-4.3 does not reason, so it names no default. Every model that DOES
+    // reason must declare one — pinned by chat-page.unit.models.reasoning.
+    expect(MODEL_CONFIGS["grok-4.3"].defaultReasoningEffort).toBeUndefined();
+    expect(
+      resolveReasoningEffort({ modelId: "grok-4.3", overrides: {} }),
+    ).toBe("low");
+  });
+
+  it("uses the model's own default for a Claude thread", () => {
+    // Claude used to have none, so every Claude turn ran at the hardcoded
+    // "low" — the premium model thinking as little as it could.
+    expect(
+      resolveReasoningEffort({ modelId: "claude-opus-4-8", overrides: {} }),
+    ).toBe("medium");
     expect(
       resolveReasoningEffort({ modelId: "claude-sonnet-5", overrides: {} }),
-    ).toBe("low");
+    ).toBe("medium");
   });
 });
 
