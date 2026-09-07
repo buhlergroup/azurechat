@@ -105,6 +105,14 @@ export interface ModelConfig {
   promptCacheOptionsSupported?: boolean;
   deploymentName?: string;
   defaultReasoningEffort?: ReasoningEffort;
+  /**
+   * Effort levels this model's provider accepts. Only needed where they
+   * differ from DEFAULT_REASONING_EFFORT_LEVELS: GPT-5.6 adds "xhigh"/"max",
+   * both 5.6 and 5.5 add "none". Used to validate the
+   * REASONING_EFFORT_OVERRIDES env map — sending a level a model rejects is
+   * an HTTP 400 on every turn.
+   */
+  supportedReasoningEfforts?: ReadonlyArray<ProviderReasoningEffort>;
   pricing: ModelPricing;
   contextWindow: number;
   /**
@@ -153,6 +161,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -173,6 +182,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // Terra is the default model: "medium" is the effort at which it earns
     // its keep on everyday work. Sol and Luna stay on "low".
     defaultReasoningEffort: "medium",
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -189,7 +199,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: false,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "medium",
+    defaultReasoningEffort: "low",
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
     maxOutputTokens: 16000,
@@ -207,6 +218,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT55_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh"],
     // No cacheWritePerMillion: gpt-5.5 does not bill cache writes separately.
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50 },
     contextWindow: 1050000,
@@ -642,6 +654,22 @@ export interface UserPrompt {
 }
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+
+/**
+ * Effort levels a provider will actually accept. Superset of the four values
+ * the picker offers: GPT-5.6 also takes "none" / "xhigh" / "max" and GPT-5.5
+ * takes "none" / "xhigh". Kept separate from ReasoningEffort so widening what
+ * a deployment may configure does not widen what the UI has to render.
+ */
+export type ProviderReasoningEffort =
+  | ReasoningEffort
+  | "none"
+  | "xhigh"
+  | "max";
+
+/** Levels accepted when a ModelConfig names none — the picker's own set. */
+export const DEFAULT_REASONING_EFFORT_LEVELS: ReadonlyArray<ProviderReasoningEffort> =
+  ["minimal", "low", "medium", "high"];
 
 /**
  * Coarse conversation-intent classes used for intent-based model downgrade.

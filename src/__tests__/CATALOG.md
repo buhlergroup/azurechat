@@ -1293,6 +1293,27 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | api.unit.chat-route.ci-container.002 | api/chat/route.ts | An existing container is reused, none created | unit | thread already has an id | POST | `ensureCodeInterpreterContainer` not called; seam gets the existing id |
 | api.unit.chat-route.ci-container.003 | api/chat/route.ts | Creation failure falls back to the inline bootstrap (negative) | unit | ensure resolves undefined | POST | Seam gets `undefined`; nothing persisted |
 | api.unit.chat-route.ci-container.004 | api/chat/route.ts | No container is created when code_interpreter is off (negative) | unit | toggle off | POST | `ensureCodeInterpreterContainer` not called |
+| chat-page.unit.reasoning-effort.levels.001 | reasoning-effort.ts | GPT-5.6 levels include xhigh and max | unit | logger mocked | `getSupportedReasoningEfforts` for terra | none/low/medium/high/xhigh/max |
+| chat-page.unit.reasoning-effort.levels.002 | reasoning-effort.ts | gpt-5.5 stops at xhigh | unit | same | Same for gpt-5.5 | contains xhigh, not max |
+| chat-page.unit.reasoning-effort.levels.003 | reasoning-effort.ts | A model naming no levels falls back to the picker's set | unit | same | gpt-5.4 and `undefined` | minimal/low/medium/high |
+| chat-page.unit.reasoning-effort.parse.001 | reasoning-effort.ts | Unset/blank env yields an empty map with no warning | unit | same | Parse `undefined` / `"   "` | `{}`, no warn |
+| chat-page.unit.reasoning-effort.parse.002 | reasoning-effort.ts | A supported level is accepted, including 5.6-only ones | unit | same | `{"gpt-5.6-terra":"high"}`, `{"gpt-5.6-sol":"max"}` | Both kept |
+| chat-page.unit.reasoning-effort.parse.003 | reasoning-effort.ts | A level the model rejects is dropped and warned (negative) | unit | same | `{"gpt-5.5":"max"}` | `{}` + warning naming model and effort |
+| chat-page.unit.reasoning-effort.parse.004 | reasoning-effort.ts | An unknown model id is dropped and warned (negative) | unit | same | `{"gpt-9000":"high"}` | `{}` + warning |
+| chat-page.unit.reasoning-effort.parse.005 | reasoning-effort.ts | A non-string value is dropped (negative) | unit | same | `{"gpt-5.6-terra":3}` | `{}` + warning |
+| chat-page.unit.reasoning-effort.parse.006 | reasoning-effort.ts | Malformed JSON is ignored (negative) | unit | same | `"{not json"` | `{}` + "not valid JSON" warning |
+| chat-page.unit.reasoning-effort.parse.007 | reasoning-effort.ts | A JSON array or null is rejected (negative) | unit | same | `"[]"`, `"null"` | `{}` twice, two warnings |
+| chat-page.unit.reasoning-effort.parse.008 | reasoning-effort.ts | Valid entries survive a partly invalid map | unit | same | Three entries, one valid | Only the valid one |
+| chat-page.unit.reasoning-effort.resolve.001 | reasoning-effort.ts | User pick beats override and default | unit | same | pick "minimal", override "high" | "minimal" |
+| chat-page.unit.reasoning-effort.resolve.002 | reasoning-effort.ts | Override beats the model default | unit | same | override "xhigh" on terra (default medium) | "xhigh" |
+| chat-page.unit.reasoning-effort.resolve.003 | reasoning-effort.ts | Model default applies with no pick and no override | unit | same | terra / sol / luna | medium / low / low |
+| chat-page.unit.reasoning-effort.resolve.004 | reasoning-effort.ts | An override for another model does not leak (negative) | unit | same | override on terra, resolve sol | "low" |
+| chat-page.unit.reasoning-effort.resolve.005 | reasoning-effort.ts | Falls back to "low" for a model with no default | unit | same | claude-sonnet-5 | "low" |
+| chat-page.unit.reasoning-effort.cache.001 | reasoning-effort.ts | The env parse is memoised per raw value | unit | same | Same string twice, then a different one | Cached, then re-parsed |
+| chat-page.unit.model-selection.effort.001 | model-selection.ts | Effort defaults to the effective model's default | unit | existing file mocks | Resolve with no pick | The model's `defaultReasoningEffort` |
+| chat-page.unit.model-selection.effort.002 | model-selection.ts | An explicit pick wins | unit | same | Resolve with `reasoningEffort: "high"` | "high" |
+| chat-page.unit.model-selection.effort.003 | model-selection.ts | The env override applies to the model that runs | unit | env var set for the pinned model | Resolve with no pick | The override |
+| chat-page.unit.model-selection.effort.004 | model-selection.ts | Effort follows the DOWNGRADED model, not the requested one | unit | limit exceeded → downgrade; override only on the target | Resolve | Target's override, proving resolution happens after downgrade |
 
 ---
 

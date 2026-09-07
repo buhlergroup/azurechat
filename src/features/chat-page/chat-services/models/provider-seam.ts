@@ -35,7 +35,7 @@ import { resolveAzureModel, resolveFoundryModel, resolveAnthropicModel } from ".
 import {
   MODEL_CONFIGS,
   type ChatModel,
-  type ReasoningEffort,
+  type ProviderReasoningEffort,
   type ModelConfig,
   type ModelProvider,
 } from "../models";
@@ -72,7 +72,7 @@ export interface ResolveProviderArgs {
   toggles: BuiltInToggles;
   reasoning: {
     supported: boolean;
-    effort: ReasoningEffort | undefined;
+    effort: ProviderReasoningEffort | undefined;
   };
   /**
    * Files the user attached for code_interpreter this turn (OpenAI file
@@ -266,8 +266,15 @@ function resolveAnthropicBackedProvider(args: ResolveProviderArgs): ResolvedProv
     thinking: { type: "adaptive" },
   };
   if (args.reasoning.supported && args.reasoning.effort) {
+    // Claude's adaptive thinking takes low/medium/high. Map the levels that
+    // only exist on the OpenAI side onto the nearest Claude equivalent.
+    const effort = args.reasoning.effort;
     anthropicOptions.effort =
-      args.reasoning.effort === "minimal" ? "low" : args.reasoning.effort;
+      effort === "minimal" || effort === "none"
+        ? "low"
+        : effort === "xhigh" || effort === "max"
+          ? "high"
+          : effort;
   }
 
   return {

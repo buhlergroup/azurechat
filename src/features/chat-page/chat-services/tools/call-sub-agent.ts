@@ -6,6 +6,7 @@ import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { FindPersonaByID } from "@/features/persona-page/persona-services/persona-service";
 import { MODEL_CONFIGS, DEFAULT_MODEL, type ChatModel } from "../models";
 import { resolveProvider } from "../models/provider-seam";
+import { resolveReasoningEffort } from "../models/reasoning-effort";
 import { computeTokenCostUsd } from "../chat-api/usage-data";
 import type { ToolContext } from "./tool-context";
 
@@ -124,7 +125,9 @@ export function callSubAgentTool(ctx: ToolContext) {
         },
         reasoning: {
           supported: modelConfig.supportsReasoning,
-          effort: modelConfig.defaultReasoningEffort,
+          // Same resolution as the main path minus the user pick (a sub-agent
+          // turn has no picker): REASONING_EFFORT_OVERRIDES → model default.
+          effort: resolveReasoningEffort({ modelId }),
         },
         // A sub-agent's prefix is its own persona message plus the delegated
         // task — nothing in common with the parent thread's prefix, so it
