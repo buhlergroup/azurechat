@@ -159,6 +159,12 @@ export interface PersistPayload {
   usage: UsagePayload;
   /** Agent (persona) the thread was started from — attributes per-agent stats. */
   personaId?: string;
+  /**
+   * Shape of the turn, emitted as dimensions on every chat metric so cache
+   * hit rates can later be split by tool turns vs plain turns. Absent when
+   * the caller has no step information (e.g. a sentinel row).
+   */
+  turnShape?: { stepCount: number; toolCallCount: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +191,7 @@ export async function persistThread({
   modelConfig,
   usage,
   personaId,
+  turnShape,
 }: PersistPayload): Promise<void> {
   const userId = await userHashedId();
 
@@ -375,7 +382,14 @@ export async function persistThread({
   // cache / user tiles keep populating. chatModel/email/name are resolved
   // from the session inside chat-metrics-service.
   const model = modelConfig.id;
-  const metricAttrs = { threadId };
+  // stepCount / toolCallCount ride on every metric (the service normalises
+  // them to 0 when absent) so a query can separate tool turns from plain
+  // ones — the two have very different cache behaviour.
+  const metricAttrs = {
+    threadId,
+    stepCount: turnShape?.stepCount ?? 0,
+    toolCallCount: turnShape?.toolCallCount ?? 0,
+  };
   Promise.all([
     reportPromptTokens(inputTokens, model, "user", metricAttrs),
     reportCompletionTokens(outputTokens, model, {
@@ -409,6 +423,30 @@ export async function persistThread({
  */
 export interface StepToolLayout {
   toolCallIds: readonly string[];
+}
+
+/**
+ * Turn shape for the metric dimensions: how many model steps ran and how many
+ * tool calls they made in total. Falls back to counting tool RESULTS when a
+ * step carries no toolCalls array (the onAbort path synthesises steps).
+ */
+export function deriveTurnShape(
+  steps:
+    | ReadonlyArray<{
+        toolCalls?: ReadonlyArray<unknown>;
+        toolResults?: ReadonlyArray<unknown>;
+      }>
+    | undefined,
+): { stepCount: number; toolCallCount: number } {
+  if (!steps || steps.length === 0) return { stepCount: 0, toolCallCount: 0 };
+  return {
+    stepCount: steps.length,
+    toolCallCount: steps.reduce(
+      (sum, step) =>
+        sum + (step.toolCalls?.length ?? step.toolResults?.length ?? 0),
+      0,
+    ),
+  };
 }
 
 /** Derive the per-step tool-call layout from an onFinish/onAbort event. */
@@ -700,5 +738,6 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
       cacheWriteTokens,
     },
     personaId,
+    turnShape: deriveTurnShape(event.steps),
   });
 }

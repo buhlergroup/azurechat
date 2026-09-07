@@ -16,6 +16,38 @@ async function getAttributes(chatModel: string){
     return attributes;
 }
 
+/**
+ * Turn-shape dimensions carried by every chat metric.
+ *
+ * `stepCount` is the number of model steps in the turn and `toolCallCount`
+ * the number of tool calls across those steps. Both are always emitted, 0
+ * when the caller has nothing to report, so a query can split cache hit
+ * rates by tool turns vs plain turns without having to cope with a missing
+ * dimension on half the series.
+ */
+export interface ChatTurnShape {
+    stepCount?: number;
+    toolCallCount?: number;
+}
+
+/**
+ * Normalise the turn-shape dimensions: always present, always a
+ * non-negative integer. A dimension that is sometimes a string and sometimes
+ * a number splits the series in App Insights, so coerce rather than pass
+ * through.
+ */
+function withTurnShape(attributes: any = {}) {
+    const asCount = (value: unknown) => {
+        const n = typeof value === "number" ? value : Number(value);
+        return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    };
+    return {
+        ...attributes,
+        stepCount: asCount(attributes?.stepCount),
+        toolCallCount: asCount(attributes?.toolCallCount),
+    };
+}
+
 export async function reportPromptTokens(tokenCount: number, model: string, role: string, attributes: any = {}) {
 
     const meter = getChatMeter();
@@ -28,7 +60,7 @@ export async function reportPromptTokens(tokenCount: number, model: string, role
     let defaultAttributes = <any>await getAttributes(model);
     attributes["role"] = role;
 
-    let compbinedAttributes = { ...defaultAttributes, ...attributes };
+    let compbinedAttributes = withTurnShape({ ...defaultAttributes, ...attributes });
 
     promptTokensUsed.record(tokenCount, compbinedAttributes);
 }
@@ -42,7 +74,7 @@ export async function reportCompletionTokens(tokenCount: number, model: string, 
             unit: "tokens",
         });
 
-        let combinedAttributes = { ...attributes, ...await getAttributes(model) };
+        let combinedAttributes = withTurnShape({ ...attributes, ...await getAttributes(model) });
 
         completionsTokensUsed.record(tokenCount, combinedAttributes);
 }
@@ -56,7 +88,7 @@ export async function reportCachedTokens(tokenCount: number, model: string, attr
         unit: "tokens",
     });
 
-    let combinedAttributes = { ...attributes, ...await getAttributes(model) };
+    let combinedAttributes = withTurnShape({ ...attributes, ...await getAttributes(model) });
 
     cachedTokensUsed.record(tokenCount, combinedAttributes);
 }
@@ -70,7 +102,7 @@ export async function reportCacheWriteTokens(tokenCount: number, model: string, 
         unit: "tokens",
     });
 
-    let combinedAttributes = { ...attributes, ...await getAttributes(model) };
+    let combinedAttributes = withTurnShape({ ...attributes, ...await getAttributes(model) });
 
     cacheWriteTokensUsed.record(tokenCount, combinedAttributes);
 }
@@ -84,7 +116,7 @@ export async function reportUserChatMessage(model: string, attributes: any = {})
         unit: "messages",
     });
 
-    let combinedAttributes = { ...attributes, ...await getAttributes(model) };
+    let combinedAttributes = withTurnShape({ ...attributes, ...await getAttributes(model) });
 
     userChatMessage.add(1, combinedAttributes);
 }

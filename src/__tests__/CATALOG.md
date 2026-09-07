@@ -1334,6 +1334,14 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | api.unit.chat-route.breakpoint.001 | api/chat/route.ts | No breakpoint by default — system stays a plain string | unit | flag unset | POST | `typeof options.system === "string"` |
 | api.unit.chat-route.breakpoint.002 | api/chat/route.ts | Flag on + 5.6 model marks the developer message | unit | `PROMPT_CACHE_PERSONA_BREAKPOINT=true`, promptCacheOptionsSupported | POST | `system.providerOptions.openai.promptCacheBreakpoint` is `{mode:"explicit"}` |
 | api.unit.chat-route.breakpoint.003 | api/chat/route.ts | Flag on + pre-5.6 model marks nothing (negative) | unit | flag on, gpt-4o | POST | System stays a plain string |
+| common.unit.chat-metrics.009 | chat-metrics-service.ts | A 1-step plain turn reports stepCount 1 / toolCallCount 0 | unit | OTel meter mocked | `reportPromptTokens` with the dimensions | Recorded with both dimensions |
+| common.unit.chat-metrics.010 | chat-metrics-service.ts | A 3-step tool turn's counts reach all five metrics | unit | same | All five report* calls | Four histograms plus the counter all carry stepCount 3 / toolCallCount 4 |
+| common.unit.chat-metrics.011 | chat-metrics-service.ts | The dimensions default to 0 when omitted | unit | same | `reportCachedTokens` with only a threadId | stepCount 0 / toolCallCount 0 |
+| common.unit.chat-metrics.012 | chat-metrics-service.ts | Junk counts coerce to 0 so the dimension type never splits (negative) | unit | same | `"three"` and `-2` | Both 0 |
+| common.unit.chat-metrics.013 | chat-metrics-service.ts | Existing dimensions are unchanged | unit | same | `reportPromptTokens` | email / name / userHashedId / chatModel / threadId / role all still present |
+| chat-page.unit.persist-assistant.shape.001 | persist-assistant.ts | `deriveTurnShape` counts steps and tool calls | unit | — | 1-step plain, 3-step with 3 calls, result-only step | Correct counts; zeroes for undefined/empty (negative) |
+| chat-page.unit.persist-assistant.shape.002 | persist-assistant.ts | The turn shape reaches every metric | unit | metrics mocked | `persistThread` with `turnShape` | prompt / cached / userChatMessage all receive stepCount + toolCallCount |
+| chat-page.unit.persist-assistant.shape.003 | persist-assistant.ts | Zeroes are emitted when there is no step information (negative) | unit | same | `persistThread` without `turnShape` | Both dimensions 0 |
 
 ---
 

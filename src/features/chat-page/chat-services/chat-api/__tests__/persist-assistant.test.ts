@@ -64,6 +64,7 @@ vi.mock("@/features/common/services/cosmos", () => ({
 import {
   buildAssistantUIMessage,
   deriveStepToolLayout,
+  deriveTurnShape,
   persistThread,
 } from "../persist-assistant";
 import { MODEL_CONFIGS } from "../../models";
@@ -249,9 +250,11 @@ describe("persistThread — cache-write tokens", () => {
     // Metrics are fire-and-forget.
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(mockReportCacheWriteTokens).toHaveBeenCalledWith(3_000, SOL_MODEL_ID, {
-      threadId: "thread-cw-003",
-    });
+    expect(mockReportCacheWriteTokens).toHaveBeenCalledWith(
+      3_000,
+      SOL_MODEL_ID,
+      expect.objectContaining({ threadId: "thread-cw-003" }),
+    );
   });
 
   it("reports zero writes rather than skipping the metric when the provider omits them", async () => {
@@ -261,9 +264,11 @@ describe("persistThread — cache-write tokens", () => {
     await persistThread({ ...BASE_PAYLOAD, messages: makeMessages() });
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(mockReportCacheWriteTokens).toHaveBeenCalledWith(0, MINI_MODEL_ID, {
-      threadId: "thread-persist-001",
-    });
+    expect(mockReportCacheWriteTokens).toHaveBeenCalledWith(
+      0,
+      MINI_MODEL_ID,
+      expect.objectContaining({ threadId: "thread-persist-001" }),
+    );
   });
 });
 
@@ -326,6 +331,89 @@ describe("buildAssistantUIMessage — step boundaries", () => {
       "text",
       "dynamic-tool",
     ]);
+  });
+});
+
+describe("deriveTurnShape", () => {
+  it("counts a 1-step plain turn", () => {
+    expect(deriveTurnShape([{ toolCalls: [], toolResults: [] }])).toEqual({
+      stepCount: 1,
+      toolCallCount: 0,
+    });
+  });
+
+  it("counts tool calls across a 3-step turn", () => {
+    expect(
+      deriveTurnShape([
+        { toolCalls: [{}, {}] },
+        { toolCalls: [{}] },
+        { toolCalls: [] },
+      ]),
+    ).toEqual({ stepCount: 3, toolCallCount: 3 });
+  });
+
+  it("falls back to tool results when a step has no toolCalls array (abort path)", () => {
+    expect(deriveTurnShape([{ toolResults: [{}, {}] }])).toEqual({
+      stepCount: 1,
+      toolCallCount: 2,
+    });
+  });
+
+  it("reports zeroes for an absent or empty step list (negative)", () => {
+    expect(deriveTurnShape(undefined)).toEqual({ stepCount: 0, toolCallCount: 0 });
+    expect(deriveTurnShape([])).toEqual({ stepCount: 0, toolCallCount: 0 });
+  });
+});
+
+describe("persistThread — turn-shape metric dimensions", () => {
+  it("passes stepCount and toolCallCount to every metric", async () => {
+    mockReportPromptTokens.mockClear();
+    mockReportCachedTokens.mockClear();
+    mockReportUserChatMessage.mockClear();
+    mockUpsert.mockResolvedValue({ status: "OK" as const });
+
+    await persistThread({
+      ...BASE_PAYLOAD,
+      threadId: "thread-shape-001",
+      messages: makeMessages(),
+      turnShape: { stepCount: 3, toolCallCount: 4 },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const expected = {
+      threadId: "thread-shape-001",
+      stepCount: 3,
+      toolCallCount: 4,
+    };
+    expect(mockReportPromptTokens).toHaveBeenCalledWith(
+      1000,
+      MINI_MODEL_ID,
+      "user",
+      expected,
+    );
+    expect(mockReportCachedTokens).toHaveBeenCalledWith(
+      200,
+      MINI_MODEL_ID,
+      expected,
+    );
+    expect(mockReportUserChatMessage).toHaveBeenCalledWith(
+      MINI_MODEL_ID,
+      expected,
+    );
+  });
+
+  it("emits zeroes when the caller has no step information (negative)", async () => {
+    mockReportCachedTokens.mockClear();
+    mockUpsert.mockResolvedValue({ status: "OK" as const });
+
+    await persistThread({ ...BASE_PAYLOAD, messages: makeMessages() });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockReportCachedTokens).toHaveBeenCalledWith(200, MINI_MODEL_ID, {
+      threadId: "thread-persist-001",
+      stepCount: 0,
+      toolCallCount: 0,
+    });
   });
 });
 
