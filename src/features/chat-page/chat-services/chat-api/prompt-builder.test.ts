@@ -132,6 +132,20 @@ describe("sortFunctionTools", () => {
     expect(JSON.stringify(sortedA)).toBe(JSON.stringify(sortedC));
   });
 
+  it("orders by codepoint, not by locale", () => {
+    // A locale-aware comparison puts "apple" before "Banana"; codepoint order
+    // puts every capital first. The distinction matters because localeCompare
+    // is the pod's ICU build talking: two replicas could order the same tool
+    // set differently and neither would match the other's cached prefix.
+    const sorted = sortFunctionTools([
+      { name: "apple" },
+      { name: "Banana" },
+      { name: "Zebra" },
+      { name: "zebra" },
+    ]);
+    expect(sorted.map((t) => t.name)).toEqual(["Banana", "Zebra", "apple", "zebra"]);
+  });
+
   it("does not mutate the input", () => {
     const original = [{ name: "z" }, { name: "a" }];
     const snapshot = JSON.stringify(original);

@@ -23,6 +23,7 @@ import { FindAllChatDocuments } from "../chat-document-service";
 import { FindAllChatMessagesForCurrentUser } from "../chat-message-service";
 import { EnsureChatThreadOperation } from "../chat-thread-service";
 import { uiMessagesFromChatMessages } from "./message-adapter";
+import { compareByCodepoint } from "../tools/stabilize-toolset";
 import { getBase64ImageReference } from "../chat-image-persistence-service";
 import { isImageReference } from "../chat-image-persistence-utils";
 import {
@@ -550,15 +551,19 @@ export async function loadThreadContext(
   let documentHintText: string | undefined;
   if (hasAnyDocuments) {
     // Sort the names. FindAllChatDocuments already orders by createdAt, but the
-    // hint is part of the system prompt: a reshuffle here rewrites the prompt
-    // prefix and voids the cache. Sorting locally makes the line a pure
-    // function of the document SET, independent of insertion order or of a
-    // same-millisecond createdAt tie. localeCompare with an explicit "en"
-    // locale so the order can't drift with the pod's default locale.
+    // hint is part of the prompt: a reshuffle here rewrites it and voids that
+    // much of the cache. Sorting locally makes the line a pure function of the
+    // document SET, independent of insertion order or of a same-millisecond
+    // createdAt tie.
+    //
+    // Codepoint comparison, not localeCompare. Pinning the locale to "en" was
+    // not enough: the comparison is still the pod's ICU build talking, so two
+    // replicas built against different ICU data could order the same file
+    // names differently and neither would match the other's cached prompt.
     const documentNames = hasChatDocuments
       ? [...documentsResponse.response]
           .map((doc) => doc.name)
-          .sort((a, b) => a.localeCompare(b, "en"))
+          .sort(compareByCodepoint)
           .join(", ")
       : "";
     const contextLine = hasChatDocuments

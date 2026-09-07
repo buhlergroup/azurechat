@@ -509,6 +509,32 @@ describe("chat-page.unit.thread-context.004 — the document hint is determinist
     } as never);
   });
 
+  it("orders the document names by codepoint, not by locale", async () => {
+    // Same reason as the toolset: a locale-aware sort is the pod's ICU build
+    // talking, so "Report.pdf" vs "annex.pdf" could order one way on one
+    // replica and the other way on the next. Codepoint puts capitals first.
+    const { FindAllChatDocuments } = await import("../../chat-document-service");
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: [] });
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [
+        { id: "d1", name: "annex.pdf" },
+        { id: "d2", name: "Report.pdf" },
+        { id: "d3", name: "Zeta.pdf" },
+      ],
+    } as never);
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(hintTextOf(ctx)).toContain("Report.pdf, Zeta.pdf, annex.pdf");
+
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [],
+    } as never);
+  });
+
   it("keeps the hint out of the developer message for an Azure-served thread", async () => {
     const { FindAllChatDocuments } = await import("../../chat-document-service");
     mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
