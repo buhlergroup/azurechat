@@ -18,9 +18,15 @@ import {
 } from "../persist-assistant";
 
 // ── stub the chat-message + chat-thread services so persistThread can run ───
-const upsertSpy = vi.fn(async () => ({ status: "OK" as const, response: {} }));
+// The row parameter is declared, unused, so `upsertSpy.mock.calls[n][0]` has a
+// real tuple type: the assertions below read the persisted row out of it, and
+// against a zero-arg vi.fn() that index does not type-check.
+const upsertSpy = vi.fn(async (_row: unknown) => ({
+  status: "OK" as const,
+  response: {},
+}));
 vi.mock("../../chat-message-service", () => ({
-  UpsertChatMessage: (...args: unknown[]) => upsertSpy(...args),
+  UpsertChatMessage: (row: unknown) => upsertSpy(row),
 }));
 vi.mock("../../chat-thread-service", () => ({
   UpdateChatThreadUsage: vi.fn(async () => undefined),

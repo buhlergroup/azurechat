@@ -4,7 +4,8 @@
  * Resolves the ceiling on the tokens a turn may emit. Two inputs, in order:
  *
  *   1. the MAX_OUTPUT_TOKENS_OVERRIDES env map, per model id
- *   2. the model's own `maxOutputTokens`
+ *   2. the `maxOutputTokens` on the config the CALLER resolved — passed in,
+ *      not looked up here; see ResolveMaxOutputTokensArgs for why
  *
  * ## Why this is a ceiling worth thinking about
  *
@@ -114,13 +115,26 @@ export function resetMaxOutputTokensOverridesCache(): void {
 }
 
 export interface ResolveMaxOutputTokensArgs {
+  /** The model that will actually run the turn — the override map's key. */
   modelId: ChatModel;
+  /**
+   * The ceiling from the config the CALLER already resolved, i.e.
+   * `modelConfig.maxOutputTokens`.
+   *
+   * Passed in rather than looked up here on purpose. The caller has the config
+   * for the effective model in hand, and re-deriving it from MODEL_CONFIGS
+   * would make this a second source of truth for the same decision — the very
+   * pattern that produced the document-hint defect earlier in this branch,
+   * where one place read the thread's model and another read the effective
+   * one. `resolveHistoryTokenBudget` takes its `modelBudget` the same way.
+   */
+  modelValue?: number;
   /** Overridable for tests; defaults to the parsed env map. */
   overrides?: MaxOutputTokensOverrides;
 }
 
 /**
- * The ceiling for a turn: env override → the model's own value.
+ * The ceiling for a turn: env override → the value the caller's config names.
  *
  * Returns undefined when neither names one, which the AI SDK reads as "no
  * ceiling" — the provider default applies. That is the pre-existing behaviour
@@ -132,7 +146,8 @@ export interface ResolveMaxOutputTokensArgs {
  */
 export function resolveMaxOutputTokens({
   modelId,
+  modelValue,
   overrides = getMaxOutputTokensOverrides(),
 }: ResolveMaxOutputTokensArgs): number | undefined {
-  return overrides[modelId] ?? MODEL_CONFIGS[modelId]?.maxOutputTokens;
+  return overrides[modelId] ?? modelValue;
 }

@@ -155,7 +155,10 @@ export function callSubAgentTool(ctx: ToolContext) {
         // Via the resolver, so MAX_OUTPUT_TOKENS_OVERRIDES reaches the
         // sub-agent too. Reading modelConfig directly here and in the route
         // was two call sites for one decision.
-        maxOutputTokens: resolveMaxOutputTokens({ modelId }),
+        maxOutputTokens: resolveMaxOutputTokens({
+          modelId,
+          modelValue: modelConfig.maxOutputTokens,
+        }),
         stopWhen: stepCountIs(8),
         providerOptions: resolved.providerOptions,
         abortSignal,

@@ -111,28 +111,55 @@ describe("chat-page.unit.max-output.002 — the env parse is memoised", () => {
 });
 
 describe("chat-page.unit.max-output.003 — resolveMaxOutputTokens", () => {
-  it("prefers the env override over the model's own value", () => {
+  it("prefers the env override over the value the caller resolved", () => {
     expect(
       resolveMaxOutputTokens({
         modelId: "gpt-5.6-terra",
+        modelValue: MODEL_CONFIGS["gpt-5.6-terra"].maxOutputTokens,
         overrides: { "gpt-5.6-terra": 48000 },
       }),
     ).toBe(48000);
   });
 
-  it("falls back to the model's own value", () => {
-    expect(resolveMaxOutputTokens({ modelId: "gpt-5.6-terra", overrides: {} })).toBe(
-      MODEL_CONFIGS["gpt-5.6-terra"].maxOutputTokens,
-    );
+  it("falls back to the value the caller resolved", () => {
+    expect(
+      resolveMaxOutputTokens({
+        modelId: "gpt-5.6-terra",
+        modelValue: MODEL_CONFIGS["gpt-5.6-terra"].maxOutputTokens,
+        overrides: {},
+      }),
+    ).toBe(32000);
+  });
+
+  it("uses the CALLER's value, not a fresh MODEL_CONFIGS lookup", () => {
+    // The caller has the config for the effective model in hand. Looking it up
+    // again here would make this a second source of truth for one decision —
+    // the shape that produced the document-hint defect on this branch.
+    expect(
+      resolveMaxOutputTokens({
+        modelId: "gpt-5.6-terra",
+        modelValue: 12345,
+        overrides: {},
+      }),
+    ).toBe(12345);
+  });
+
+  it("returns undefined when neither names a ceiling (negative)", () => {
+    // undefined means "send no ceiling", so the provider default applies —
+    // an unconfigured model must not inherit someone else's number.
+    expect(
+      resolveMaxOutputTokens({ modelId: "gpt-5.6-terra", overrides: {} }),
+    ).toBeUndefined();
   });
 
   it("does not leak one model's override to another (negative)", () => {
     expect(
       resolveMaxOutputTokens({
         modelId: "gpt-5.6-sol",
+        modelValue: 32000,
         overrides: { "gpt-5.6-terra": 48000 },
       }),
-    ).toBe(MODEL_CONFIGS["gpt-5.6-sol"].maxOutputTokens);
+    ).toBe(32000);
   });
 });
 

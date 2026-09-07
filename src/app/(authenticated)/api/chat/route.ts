@@ -552,7 +552,10 @@ export async function POST(req: Request) {
     // override applies here and in the sub-agent identically. Reasoning
     // tokens count against it, which is why a turn can finish with
     // finishReason "length" — see the truncation notice in persist-assistant.
-    maxOutputTokens: resolveMaxOutputTokens({ modelId: effectiveModel }),
+    maxOutputTokens: resolveMaxOutputTokens({
+      modelId: effectiveModel,
+      modelValue: modelConfig.maxOutputTokens,
+    }),
     stopWhen: stepCountIs(15),
     // Repairs bare, pre-namespacing extension tool names the model may
     // echo from old persisted thread history (see repairExtensionToolCall)
