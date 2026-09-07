@@ -104,3 +104,37 @@ export function withAnthropicPromptCache(
 
   return { system: cachedSystem, messages: out };
 }
+
+/**
+ * Marks an explicit prompt-cache breakpoint on the developer/system message
+ * for the OpenAI Responses seam. @ai-sdk/openai reads
+ * `providerOptions.openai.promptCacheBreakpoint` per MESSAGE (confirmed in
+ * responses/convert-to-openai-responses-input.ts, which emits it on both the
+ * "system" and the "developer" system-message modes), and the wire value it
+ * expects is `{ mode: "explicit" }` — hence the SystemModelMessage: the bare
+ * `system` string has nowhere to carry providerOptions.
+ *
+ * The breakpoint says "the prefix up to and including the developer message is
+ * a cache unit", which is exactly the block shared by every thread of an
+ * agent. Request-level `prompt_cache_options` stays on `mode: "implicit"`, so
+ * automatic prefix matching keeps working; the breakpoint only pins where the
+ * shared unit ends.
+ *
+ * CAVEAT: the breakpoint object's own field is literally `mode: "explicit"`,
+ * so pairing it with implicit request-level caching is a combination we have
+ * NOT been able to verify against Azure (that needs a live call). This is why
+ * the caller keeps it behind PROMPT_CACHE_PERSONA_BREAKPOINT, default off.
+ */
+export function withOpenAIPromptCacheBreakpoint(
+  system: string,
+  messages: readonly ModelMessage[],
+): { system: SystemModelMessage; messages: ModelMessage[] } {
+  return {
+    system: {
+      role: "system",
+      content: system,
+      providerOptions: { openai: { promptCacheBreakpoint: { mode: "explicit" } } },
+    },
+    messages: [...messages],
+  };
+}

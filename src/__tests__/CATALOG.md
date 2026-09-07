@@ -1314,6 +1314,26 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | chat-page.unit.model-selection.effort.002 | model-selection.ts | An explicit pick wins | unit | same | Resolve with `reasoningEffort: "high"` | "high" |
 | chat-page.unit.model-selection.effort.003 | model-selection.ts | The env override applies to the model that runs | unit | env var set for the pinned model | Resolve with no pick | The override |
 | chat-page.unit.model-selection.effort.004 | model-selection.ts | Effort follows the DOWNGRADED model, not the requested one | unit | limit exceeded → downgrade; override only on the target | Resolve | Target's override, proving resolution happens after downgrade |
+| chat-page.unit.prompt-cache-key.strategy.001 | prompt-cache-key.ts | Strategy defaults to "thread"; "persona" is case-insensitive; junk falls back | unit | — | `getPromptCacheKeyStrategy` with undefined / " PERSONA " / "global" | thread / persona / thread |
+| chat-page.unit.prompt-cache-key.shards.001 | prompt-cache-key.ts | Shard count defaults to 4 and rejects 0, negatives and junk (negative) | unit | — | `getPromptCacheKeyShards` | 4 / 8 / 4 / 4 / 4 — never a modulo by zero |
+| chat-page.unit.prompt-cache-key.signature.001 | prompt-cache-key.ts | Toolset signature ignores insertion order and duplicates | unit | — | `["b","a","b"]` vs `["a","b"]` | Equal, 8 hex chars, stable across calls |
+| chat-page.unit.prompt-cache-key.signature.002 | prompt-cache-key.ts | A different toolset yields a different signature | unit | — | Two- vs three-tool sets | Different |
+| chat-page.unit.prompt-cache-key.shard.001 | prompt-cache-key.ts | Sharding is deterministic per user and inside range | unit | — | Same hashed id twice; shard counts 1/2/4/8 | Same value; always `0 <= shard < shards` |
+| chat-page.unit.prompt-cache-key.shard.002 | prompt-cache-key.ts | A non-hex subject id still spreads across shards (negative) | unit | — | Five `user:*` ids | More than one distinct shard |
+| chat-page.unit.prompt-cache-key.resolve.001 | prompt-cache-key.ts | Thread strategy returns the thread id | unit | — | Resolve with strategy "thread" | `"thread-42"` |
+| chat-page.unit.prompt-cache-key.resolve.002 | prompt-cache-key.ts | Persona strategy builds `persona:<id>:<sig>:<shard>` | unit | — | Resolve for gpt-5.6-terra with a persona | Exactly that format; "default" when the persona is absent |
+| chat-page.unit.prompt-cache-key.resolve.003 | prompt-cache-key.ts | Two threads of the same agent + toolset + user share one key | unit | — | Resolve for thread-1 and thread-2 | Equal keys |
+| chat-page.unit.prompt-cache-key.resolve.004 | prompt-cache-key.ts | Different agents and different toolsets get different keys | unit | — | Vary personaId, then toolNames | All different |
+| chat-page.unit.prompt-cache-key.resolve.005 | prompt-cache-key.ts | gpt-5.5 and other families keep the thread id (negative) | unit | — | Resolve for 5.5 / 5.4 / claude / Kimi under persona strategy | `"thread-42"` each |
+| chat-page.unit.prompt-builder.breakpoint.001 | prompt-builder.ts | The system prompt becomes a SystemModelMessage carrying `{mode:"explicit"}` | unit | — | `withOpenAIPromptCacheBreakpoint` | `providerOptions.openai.promptCacheBreakpoint` is `{mode:"explicit"}` |
+| chat-page.unit.prompt-builder.breakpoint.002 | prompt-builder.ts | Conversation messages are copied, not annotated | unit | — | Same call | `messages` deep-equals the input, is a different array, carries no providerOptions |
+| chat-page.unit.prompt-builder.breakpoint.003 | prompt-builder.ts | Output is byte-stable across calls | unit | — | Two calls, JSON compared | Identical |
+| api.unit.chat-route.cache-key.001 | api/chat/route.ts | The thread id is the cache key by default | unit | route mocks | POST | `resolveProvider` gets `promptCacheKey: "t1"` |
+| api.unit.chat-route.cache-key.002 | api/chat/route.ts | Persona strategy gives two threads of one agent the same key | unit | env `PROMPT_CACHE_KEY_STRATEGY=persona`, gpt-5.6-terra | POST on t1 then t2 | Key matches `persona:agent-7:<sig>:<shard>` and is identical for both |
+| api.unit.chat-route.cache-key.003 | api/chat/route.ts | A non-5.6 model keeps the thread id under persona strategy (negative) | unit | same env, gpt-4o | POST | `promptCacheKey: "t1"` |
+| api.unit.chat-route.breakpoint.001 | api/chat/route.ts | No breakpoint by default — system stays a plain string | unit | flag unset | POST | `typeof options.system === "string"` |
+| api.unit.chat-route.breakpoint.002 | api/chat/route.ts | Flag on + 5.6 model marks the developer message | unit | `PROMPT_CACHE_PERSONA_BREAKPOINT=true`, promptCacheOptionsSupported | POST | `system.providerOptions.openai.promptCacheBreakpoint` is `{mode:"explicit"}` |
+| api.unit.chat-route.breakpoint.003 | api/chat/route.ts | Flag on + pre-5.6 model marks nothing (negative) | unit | flag on, gpt-4o | POST | System stays a plain string |
 
 ---
 

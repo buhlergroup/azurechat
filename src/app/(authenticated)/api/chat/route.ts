@@ -41,7 +41,12 @@ import {
   unregisterPublisher,
 } from "@/features/chat-page/chat-services/chat-api/stream-publisher";
 import { enforceSameOriginRequest } from "@/features/chat-page/chat-services/chat-api/same-origin";
-import { buildSystemMessage, withAnthropicPromptCache } from "@/features/chat-page/chat-services/chat-api/prompt-builder";
+import {
+  buildSystemMessage,
+  withAnthropicPromptCache,
+  withOpenAIPromptCacheBreakpoint,
+} from "@/features/chat-page/chat-services/chat-api/prompt-builder";
+import { resolvePromptCacheKey } from "@/features/chat-page/chat-services/models/prompt-cache-key";
 import { CHAT_DEFAULT_SYSTEM_PROMPT } from "@/features/theme/theme-config";
 import {
   FindAllExtensionForCurrentUserAndIds,
@@ -361,6 +366,27 @@ export async function POST(req: Request) {
   // Resolve provider-native parts (model, built-in tools, providerOptions)
   // through the provider seam so Anthropic / future providers slot in
   // without touching this route handler (architect2 SEV-2 B10).
+  // Prompt-cache key. Default strategy is the thread id; the "persona"
+  // strategy deliberately shares one key across the threads of an agent so
+  // the second thread onwards READS the system+tools prefix the first one
+  // wrote (measured: same key + same developer message => shared prefix on
+  // GPT-5.6). The built-in tool names are derived from the toggles rather
+  // than from the resolved seam output because the key has to be known before
+  // the seam runs, and the toggle set determines the built-ins one-to-one.
+  const cacheKeyToolNames = [
+    ...Object.keys(tools),
+    ...(effectiveToolsSafe.codeInterpreter ? ["code_interpreter"] : []),
+    ...(effectiveToolsSafe.imageGeneration ? ["image_generation"] : []),
+    ...(effectiveToolsSafe.webSearch ? ["web_search"] : []),
+  ];
+  const promptCacheKey = resolvePromptCacheKey({
+    modelId: effectiveModel,
+    threadId: ctx.thread.id,
+    personaId: ctx.thread.personaId,
+    toolNames: cacheKeyToolNames,
+    userKey: ctx.user.id,
+  });
+
   const resolved = resolveProvider({
     modelId: effectiveModel,
     thread: {
@@ -373,6 +399,7 @@ export async function POST(req: Request) {
       effort: effectiveReasoningEffort,
     },
     codeInterpreterFileIds: requestedCiFileIds,
+    promptCacheKey,
   });
   logInfo("/api/chat builtInTools", {
     keys: Object.keys(resolved.builtInTools),
@@ -438,10 +465,20 @@ export async function POST(req: Request) {
   // across turns of a thread instead of re-billed every turn. Other providers
   // pass the plain system string unchanged.
   const modelMessages = await convertToModelMessages(ctx.history);
+  // Opt-in: pin an explicit cache breakpoint at the end of the developer
+  // message on GPT-5.6, so the shared system+tools prefix is one cache unit.
+  // Off by default — see withOpenAIPromptCacheBreakpoint for why.
+  const useOpenAIBreakpoint =
+    process.env.PROMPT_CACHE_PERSONA_BREAKPOINT === "true" &&
+    modelConfig.provider !== "anthropic" &&
+    modelConfig.provider !== "foundry" &&
+    modelConfig.promptCacheOptionsSupported === true;
   const streamPrompt =
     modelConfig.provider === "anthropic"
       ? withAnthropicPromptCache(system, modelMessages)
-      : { system, messages: modelMessages };
+      : useOpenAIBreakpoint
+        ? withOpenAIPromptCacheBreakpoint(system, modelMessages)
+        : { system, messages: modelMessages };
 
   const result = streamText({
     model: resolved.model,

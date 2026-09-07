@@ -4,6 +4,7 @@ import {
   buildSystemMessage,
   sortFunctionTools,
   withAnthropicPromptCache,
+  withOpenAIPromptCacheBreakpoint,
 } from "./prompt-builder";
 
 // These tests lock down byte-for-byte stability of the parts of the request
@@ -217,5 +218,37 @@ describe("byte-for-byte invariant (the cache contract)", () => {
     expect(Buffer.from(sys1).equals(Buffer.from(sys2))).toBe(true);
     // Tool array is byte-identical (same JSON serialization)
     expect(JSON.stringify(sortedTools1)).toBe(JSON.stringify(sortedTools2));
+  });
+});
+
+describe("withOpenAIPromptCacheBreakpoint", () => {
+  const msgs: ModelMessage[] = [
+    { role: "user", content: "first question" },
+    { role: "assistant", content: "first answer" },
+    { role: "user", content: "follow-up question" },
+  ];
+
+  it("returns the system prompt as a SystemModelMessage carrying the breakpoint", () => {
+    const { system } = withOpenAIPromptCacheBreakpoint("SYSTEM PROMPT", msgs);
+    expect(system.role).toBe("system");
+    expect(system.content).toBe("SYSTEM PROMPT");
+    // The wire shape @ai-sdk/openai emits as prompt_cache_breakpoint.
+    expect(system.providerOptions?.openai?.promptCacheBreakpoint).toEqual({
+      mode: "explicit",
+    });
+  });
+
+  it("leaves the conversation messages untouched", () => {
+    const { messages } = withOpenAIPromptCacheBreakpoint("SYSTEM", msgs);
+    expect(messages).toEqual(msgs);
+    // A copy, so a later mutation cannot reach the caller's array.
+    expect(messages).not.toBe(msgs);
+    expect(messages.every((m) => m.providerOptions === undefined)).toBe(true);
+  });
+
+  it("is byte-stable across calls (the prefix must not drift)", () => {
+    expect(
+      JSON.stringify(withOpenAIPromptCacheBreakpoint("SYSTEM", msgs)),
+    ).toBe(JSON.stringify(withOpenAIPromptCacheBreakpoint("SYSTEM", msgs)));
   });
 });

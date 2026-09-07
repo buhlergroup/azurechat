@@ -296,6 +296,130 @@ describe("/api/chat route (AI SDK v6)", () => {
     });
   });
 
+  describe("prompt cache key + explicit breakpoint", () => {
+    it("passes the thread id as the cache key under the default strategy", async () => {
+      await POST(makeRequest({ message: "hello", id: "t1" }));
+      expect(mockResolveProvider).toHaveBeenCalledWith(
+        expect.objectContaining({ promptCacheKey: "t1" }),
+      );
+    });
+
+    it("shares a persona-scoped key across threads under the persona strategy", async () => {
+      const saved = process.env.PROMPT_CACHE_KEY_STRATEGY;
+      process.env.PROMPT_CACHE_KEY_STRATEGY = "persona";
+      mockResolveModelAndLimits.mockResolvedValue({
+        ...MODEL_RESULT,
+        modelConfig: { ...MODEL_RESULT.modelConfig, id: "gpt-5.6-terra" },
+        selectedModel: "gpt-5.6-terra",
+      });
+      mockLoadThreadContext.mockResolvedValue({
+        ...structuredClone(CTX),
+        thread: { ...CTX.thread, id: "t1", personaId: "agent-7" },
+      });
+      try {
+        await POST(makeRequest({ message: "hello", id: "t1" }));
+        const first = mockResolveProvider.mock.calls[0][0] as {
+          promptCacheKey?: string;
+        };
+        expect(first.promptCacheKey).toMatch(/^persona:agent-7:[0-9a-f]{8}:\d+$/);
+
+        // A DIFFERENT thread of the same agent must land on the same key —
+        // that is the whole point: it reads the prefix thread 1 wrote.
+        mockResolveProvider.mockClear();
+        // The shared mock Response body is consumed by the first POST.
+        mockToUIMessageStreamResponse.mockReturnValue(
+          new Response("stream", {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          }),
+        );
+        mockLoadThreadContext.mockResolvedValue({
+          ...structuredClone(CTX),
+          thread: { ...CTX.thread, id: "t2", personaId: "agent-7" },
+        });
+        await POST(makeRequest({ message: "hello", id: "t2" }));
+        const second = mockResolveProvider.mock.calls[0][0] as {
+          promptCacheKey?: string;
+        };
+        expect(second.promptCacheKey).toBe(first.promptCacheKey);
+      } finally {
+        if (saved === undefined) delete process.env.PROMPT_CACHE_KEY_STRATEGY;
+        else process.env.PROMPT_CACHE_KEY_STRATEGY = saved;
+      }
+    });
+
+    it("keeps the thread id for a non-5.6 model even under the persona strategy (negative)", async () => {
+      const saved = process.env.PROMPT_CACHE_KEY_STRATEGY;
+      process.env.PROMPT_CACHE_KEY_STRATEGY = "persona";
+      try {
+        // MODEL_RESULT runs gpt-4o, which is not in the 5.6 family.
+        await POST(makeRequest({ message: "hello", id: "t1" }));
+        expect(mockResolveProvider).toHaveBeenCalledWith(
+          expect.objectContaining({ promptCacheKey: "t1" }),
+        );
+      } finally {
+        if (saved === undefined) delete process.env.PROMPT_CACHE_KEY_STRATEGY;
+        else process.env.PROMPT_CACHE_KEY_STRATEGY = saved;
+      }
+    });
+
+    it("sends a plain system string when the breakpoint flag is off (default)", async () => {
+      const { streamText } = await import("ai");
+      await POST(makeRequest({ message: "hello", id: "t1" }));
+      const options = (streamText as unknown as { mock: { calls: unknown[][] } })
+        .mock.calls[0][0] as { system?: unknown };
+      expect(typeof options.system).toBe("string");
+    });
+
+    it("marks an explicit breakpoint on the developer message when the flag is on and the model is 5.6", async () => {
+      const { streamText } = await import("ai");
+      const saved = process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+      process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = "true";
+      mockResolveModelAndLimits.mockResolvedValue({
+        ...MODEL_RESULT,
+        modelConfig: {
+          ...MODEL_RESULT.modelConfig,
+          id: "gpt-5.6-terra",
+          promptCacheOptionsSupported: true,
+        },
+        selectedModel: "gpt-5.6-terra",
+      });
+      try {
+        await POST(makeRequest({ message: "hello", id: "t1" }));
+        const options = (streamText as unknown as { mock: { calls: unknown[][] } })
+          .mock.calls[0][0] as {
+          system?: { role?: string; providerOptions?: Record<string, unknown> };
+        };
+        expect(options.system?.role).toBe("system");
+        expect(
+          (options.system?.providerOptions as { openai?: Record<string, unknown> })
+            ?.openai?.promptCacheBreakpoint,
+        ).toEqual({ mode: "explicit" });
+      } finally {
+        if (saved === undefined)
+          delete process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+        else process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = saved;
+      }
+    });
+
+    it("does not mark a breakpoint on a pre-5.6 model even with the flag on (negative)", async () => {
+      const { streamText } = await import("ai");
+      const saved = process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+      process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = "true";
+      try {
+        // MODEL_RESULT's config has no promptCacheOptionsSupported flag.
+        await POST(makeRequest({ message: "hello", id: "t1" }));
+        const options = (streamText as unknown as { mock: { calls: unknown[][] } })
+          .mock.calls[0][0] as { system?: unknown };
+        expect(typeof options.system).toBe("string");
+      } finally {
+        if (saved === undefined)
+          delete process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+        else process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = saved;
+      }
+    });
+  });
+
   it("passes the effective model's maxOutputTokens into streamText", async () => {
     const { streamText } = await import("ai");
     mockResolveModelAndLimits.mockResolvedValue({
