@@ -318,9 +318,12 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
     const second = await loadThreadContext(makeUserPrompt());
 
     expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
-    // And the prefix did not move: same first conversation item both turns.
+    // And the prefix did not move: same first item in the list that reaches
+    // the model (the replayed summary), both turns.
     const firstItem = (m: typeof first) =>
-      m.history[0].parts.map((p) => (p as { text?: string }).text ?? "").join("");
+      m.modelHistory[0].parts
+        .map((p) => (p as { text?: string }).text ?? "")
+        .join("");
     expect(firstItem(second)).toBe(firstItem(first));
   });
 
@@ -397,7 +400,7 @@ describe("chat-page.unit.thread-context.003 — a stored summary is replayed, no
 
     const ctx = await loadThreadContext(makeUserPrompt());
 
-    const first = ctx.history[0];
+    const first = ctx.modelHistory[0];
     const firstText = first.parts
       .map((p) => (p as { text?: string }).text ?? "")
       .join("");
@@ -408,8 +411,18 @@ describe("chat-page.unit.thread-context.003 — a stored summary is replayed, no
     // Reused, not regenerated.
     expect(mockRecordCompaction).not.toHaveBeenCalled();
 
+    // Scaffolding stays out of `history`, which callers still use to count
+    // turns and as `originalMessages` for the browser.
+    expect(
+      ctx.history.some((m) =>
+        m.parts.some((p) =>
+          ((p as { text?: string }).text ?? "").includes(SUMMARY_REPLAY_PREFIX),
+        ),
+      ),
+    ).toBe(false);
+
     // The watermarked rows are gone from the prompt but still in Cosmos.
-    const allText = ctx.history
+    const allText = ctx.modelHistory
       .flatMap((m) => m.parts.map((p) => (p as { text?: string }).text ?? ""))
       .join(" ");
     expect(allText).not.toContain("old question");
@@ -429,7 +442,7 @@ describe("chat-page.unit.thread-context.003 — a stored summary is replayed, no
     mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
 
     const ctx = await loadThreadContext(makeUserPrompt());
-    const firstText = ctx.history[0].parts
+    const firstText = ctx.modelHistory[0].parts
       .map((p) => (p as { text?: string }).text ?? "")
       .join("");
     expect(firstText).not.toContain(SUMMARY_REPLAY_PREFIX);
@@ -447,7 +460,7 @@ describe("chat-page.unit.thread-context.003 — a stored summary is replayed, no
     });
 
     const ctx = await loadThreadContext(makeUserPrompt());
-    const allText = ctx.history
+    const allText = ctx.modelHistory
       .flatMap((m) => m.parts.map((p) => (p as { text?: string }).text ?? ""))
       .join(" ");
     expect(allText).toContain("still here");
@@ -455,6 +468,15 @@ describe("chat-page.unit.thread-context.003 — a stored summary is replayed, no
 });
 
 describe("chat-page.unit.thread-context.004 — the document hint is deterministic", () => {
+  /** The hint rides in the prompt tail as a system message; read it back. */
+  const hintTextOf = (ctx: {
+    modelHistory: { role: string; parts: unknown[] }[];
+  }) =>
+    ctx.modelHistory
+      .filter((m) => m.role === "system")
+      .flatMap((m) => m.parts.map((p) => (p as { text?: string }).text ?? ""))
+      .join("");
+
   it("lists document names in sorted order regardless of Cosmos order", async () => {
     const { FindAllChatDocuments } = await import("../../chat-document-service");
     mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
@@ -477,9 +499,30 @@ describe("chat-page.unit.thread-context.004 — the document hint is determinist
     } as never);
     const reversed = await loadThreadContext(makeUserPrompt());
 
-    expect(forward.documentHint).toContain("alpha.pdf, mid.pdf, zeta.pdf");
+    expect(hintTextOf(forward)).toContain("alpha.pdf, mid.pdf, zeta.pdf");
     // Byte-identical either way: the hint is a function of the document SET.
-    expect(reversed.documentHint).toBe(forward.documentHint);
+    expect(hintTextOf(reversed)).toBe(hintTextOf(forward));
+
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [],
+    } as never);
+  });
+
+  it("keeps the hint out of the developer message for an Azure-served thread", async () => {
+    const { FindAllChatDocuments } = await import("../../chat-document-service");
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: [] });
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [{ id: "d1", name: "manual.pdf" }],
+    } as never);
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(ctx.documentHintPlacement).toBe("tail-message");
+    expect(ctx.documentHint).toBeUndefined();
+    expect(hintTextOf(ctx)).toContain("manual.pdf");
 
     vi.mocked(FindAllChatDocuments).mockResolvedValue({
       status: "OK",

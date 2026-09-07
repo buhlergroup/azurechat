@@ -409,7 +409,11 @@ export async function POST(req: Request) {
   // the latest turn so the tools+system+history prefix is replayed (cache-read)
   // across turns of a thread instead of re-billed every turn. Other providers
   // pass the plain system string unchanged.
-  const modelMessages = await convertToModelMessages(ctx.history);
+  // ctx.modelHistory, not ctx.history: it is the same conversation plus the
+  // prompt scaffolding (replayed summary, document hint) already in the order
+  // the model must see it. ctx.history stays the real conversation for the
+  // title check and for originalMessages below.
+  const modelMessages = await convertToModelMessages(ctx.modelHistory);
   const streamPrompt =
     modelConfig.provider === "anthropic"
       ? withAnthropicPromptCache(system, modelMessages)

@@ -319,10 +319,34 @@ export interface ThreadContextUser {
 export interface ThreadContext {
   thread: ChatThreadModel;
   user: ThreadContextUser;
-  /** History in AI SDK UIMessage format (oldest-first, ready to pass to streamText) */
+  /**
+   * The real conversation in AI SDK UIMessage format, oldest-first, ending
+   * with the turn the user just submitted. Persisted messages only — no
+   * prompt scaffolding — so callers can still count turns (`length === 1`
+   * means a first turn) and hand it to `toUIMessageStreamResponse` as
+   * `originalMessages` without a synthetic item leaking to the browser.
+   */
   history: UIMessage[];
-  /** System-prompt appendix injected when documents are attached */
+  /**
+   * `history` plus the prompt scaffolding, in the exact order it must reach
+   * `convertToModelMessages`: the replayed summary (if any), then the
+   * conversation, then the document hint (if it goes in the tail), then the
+   * current user turn. This is what streamText should be given.
+   */
+  modelHistory: UIMessage[];
+  /**
+   * Document hint for the DEVELOPER message, set only when this thread's
+   * provider cannot take a mid-conversation system message (see
+   * `documentHintPlacement`). Undefined when the hint is already in
+   * `modelHistory` — or when there are no documents at all.
+   */
   documentHint: string | undefined;
+  /**
+   * Where the document hint ended up. `"tail-message"` keeps the developer
+   * message static for the life of the thread; `"developer-message"` is the
+   * fallback. Exposed for logging and tests, not for dispatch.
+   */
+  documentHintPlacement: "tail-message" | "developer-message" | "none";
   threadDocumentIds: string[];
   personaDocumentIds: string[];
   defaultTools: DefaultTools | undefined;
@@ -421,7 +445,7 @@ export async function loadThreadContext(
   const hasAnyDocuments = hasChatDocuments || hasPersonaDocuments;
 
   // Build document hint matching the logic in chat-api-response.ts lines 114-123
-  let documentHint: string | undefined;
+  let documentHintText: string | undefined;
   if (hasAnyDocuments) {
     // Sort the names. FindAllChatDocuments already orders by createdAt, but the
     // hint is part of the system prompt: a reshuffle here rewrites the prompt
@@ -438,7 +462,7 @@ export async function loadThreadContext(
     const contextLine = hasChatDocuments
       ? `DOCUMENT CONTEXT: The user has attached the following document(s) to this conversation: ${documentNames}.`
       : `DOCUMENT CONTEXT: The user has persona-linked document(s) available for this conversation.`;
-    documentHint =
+    documentHintText =
       `\n\n${contextLine}\n\n` +
       `MANDATORY BEHAVIOR WHEN DOCUMENTS ARE PRESENT:\n` +
       `- You MUST first call the search_documents tool with the user's question as the query before composing an answer.\n` +
@@ -446,6 +470,39 @@ export async function loadThreadContext(
       `- Ground your answer in the retrieved content and cite filenames when relevant.\n` +
       `- Do not answer purely from prior knowledge when documents are attached.`;
   }
+
+  // 4b. Where the hint goes.
+  //
+  // The hint is the most volatile input to the prompt: it appears, disappears
+  // and changes wording the moment a user attaches or removes a document. In
+  // the developer message — even at its end — a change there is a change to
+  // the FIRST item of the prompt, so nothing after it can be reused and the
+  // whole thread is re-billed at the cache-write rate. Moved into the tail,
+  // between the history and the current question, it changes only the last few
+  // hundred bytes and the developer message plus the entire history stay
+  // byte-identical and cacheable.
+  //
+  // Not every provider will take a system message in the middle of `messages`:
+  //   - azure (Responses API): supported. @ai-sdk/openai emits it as an
+  //     `input` item with role system/developer at whatever position it holds.
+  //   - foundry (Chat Completions): supported. Same conversion, and the API
+  //     accepts a system message at any index.
+  //   - anthropic (Azure /anthropic Messages API): @ai-sdk/anthropic does
+  //     handle it, but by pushing a `role: "system"` message and requesting
+  //     the `mid-conversation-system-2026-04-07` beta. Whether the Azure
+  //     /anthropic surface honours that beta cannot be established without a
+  //     live call, and getting it wrong is a hard 400 rather than a
+  //     degradation — so Claude threads keep the developer-message placement.
+  const provider = thread.selectedModel
+    ? MODEL_CONFIGS[thread.selectedModel]?.provider ?? "azure"
+    : "azure";
+  const supportsMidConversationSystem = provider !== "anthropic";
+  const documentHintPlacement: ThreadContext["documentHintPlacement"] =
+    documentHintText === undefined
+      ? "none"
+      : supportsMidConversationSystem
+        ? "tail-message"
+        : "developer-message";
 
   // 5. Extension IDs (full extension objects + header secrets are
   //    resolved later by route.ts so we don't fetch them twice).
@@ -498,11 +555,36 @@ export async function loadThreadContext(
     ],
   };
 
+  // The hint as its own developer message in the prompt tail. Role "system":
+  // `convertToModelMessages` maps a system UIMessage to a system ModelMessage
+  // at the same index, and the provider seams then render it as a
+  // system/developer item (see the placement note above).
+  const documentHintMessages: UIMessage[] =
+    documentHintPlacement === "tail-message" && documentHintText
+      ? [
+          {
+            // Derived from the thread, so the item is byte-identical across
+            // turns for as long as the document set is unchanged.
+            id: `dochint-${thread.id}`,
+            role: "system",
+            parts: [{ type: "text", text: documentHintText.trimStart() }],
+          },
+        ]
+      : [];
+
   return {
     thread,
     user,
-    history: [...summaryPrefix, ...history, userUIMessage],
-    documentHint,
+    history: [...history, userUIMessage],
+    modelHistory: [
+      ...summaryPrefix,
+      ...history,
+      ...documentHintMessages,
+      userUIMessage,
+    ],
+    documentHint:
+      documentHintPlacement === "developer-message" ? documentHintText : undefined,
+    documentHintPlacement,
     threadDocumentIds: chatDocumentIds,
     personaDocumentIds,
     defaultTools: thread.defaultTools,
