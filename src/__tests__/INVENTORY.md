@@ -228,15 +228,20 @@ This is the largest feature folder with complex state management and streaming.
 
 **Chat Messages:**
 - `chat-services/chat-message-service.ts`
-  - `FindTopChatMessagesForCurrentUser(threadId, top)` → Load message history
-  - `FindAllChatMessagesForCurrentUser(threadId)` → Get all messages
+  - `FindTopChatMessagesForCurrentUser(threadId, top)` → Newest N rows (default 30). NOT used by the chat path any more — the row cap made the prompt prefix slide on every turn past row 30
+  - `FindAllChatMessagesForCurrentUser(threadId)` → The whole thread, `createdAt ASC`, then put into a total order by `sortHistoryRowsDeterministically`. This is what the chat path loads
   - `CreateChatMessage(message)` → Save new message
   - `UpsertChatMessage(message)` → Create/update message
   - `DeleteChatMessage(messageId)` → Soft delete message
 
+**History Ordering:**
+- `chat-services/chat-history-order.ts`
+  - `sortHistoryRowsDeterministically(rows)` — Total order over `(createdAt, sequence, id)`. `ORDER BY createdAt` alone is not total: parallel tool calls persist in the same millisecond and Cosmos leaves their order undefined, so two reads of one thread could differ and move the prompt prefix
+  - **Tests:** `chat-services/chat-history-order.test.ts` (Vitest)
+
 **Chat Documents:**
 - `chat-services/chat-document-service.ts`
-  - `FindAllChatDocuments(threadId)` → List attached documents
+  - `FindAllChatDocuments(threadId)` → List attached documents, `ORDER BY createdAt ASC` so the names in the prompt cannot reshuffle
   - `DeleteAllChatDocuments(threadId)` → Remove documents from thread
 
 **Code Interpreter:**
@@ -306,10 +311,27 @@ This is the largest feature folder with complex state management and streaming.
 
 **Prompt Building (with tests):**
 - `chat-services/chat-api/prompt-builder.ts`
-  - `buildSystemMessage(inputs)` — Assembles cache-stable system prompt
+  - `buildSystemMessage(inputs)` — Assembles the cache-stable developer message: `staticSystemPrompt → personaMessage → trailingStaticBlock → documentHint`
   - `isoDate(now)` — ISO-8601 date formatting (locale-independent)
   - `sortFunctionTools(tools)` — Sorts tools by name for cache key stability
+  - `withAnthropicPromptCache(system, messages)` — Two `cache_control` breakpoints for the Azure /anthropic Messages API
   - **Tests:** `chat-services/chat-api/prompt-builder.test.ts` (Vitest)
+
+**History Budget & Summarisation (with tests):**
+- `chat-services/chat-api/history-budget.ts` — Pure. Deterministic token estimate, turn segmentation, watermark, and the trim plan (trim only over budget, then to 60 % in one block, cutting only at turn boundaries, never the newest two turns)
+  - `estimateTextTokens` / `estimateMessageTokens` / `estimateHistoryTokens`
+  - `splitIntoTurns(messages)` — A turn opens at every user row
+  - `applyHistoryWatermark(messages, coversThroughMessageId)` — Makes a trim stick instead of sliding forward a turn per turn
+  - `planHistoryTrim(messages, options)` — The trim decision
+  - `resolveHistoryTokenBudget` / `resolveHistoryTrimTargetRatio` — env `HISTORY_TOKEN_BUDGET` / `HISTORY_TRIM_TARGET_RATIO` > per-model `historyTokenBudget` > defaults (80 000 / 0.6)
+  - **Tests:** `chat-services/chat-api/history-budget.test.ts` (Vitest)
+- `chat-services/chat-api/history-summary.ts` — Pure. Row shape, summariser prompt, replay text
+  - **Tests:** `chat-services/chat-api/history-summary.test.ts` (Vitest)
+- `chat-services/chat-api/history-summary-service.ts` — Cosmos read/write of the compaction row plus the summariser call (injectable; unit tests never reach a model). Gated by `HISTORY_SUMMARY_ENABLED`; deployment from `HISTORY_SUMMARY_DEPLOYMENT_NAME`, else luna, else mini
+  - `FindChatHistorySummary` / `UpsertChatHistorySummary` / `SoftDeleteChatHistorySummary`
+  - `recordHistoryCompaction(input)` — Advances the watermark; summarises when enabled
+  - **Tests:** `chat-services/chat-api/history-summary-service.test.ts` (Vitest)
+- **Append-only invariant:** `chat-services/chat-api/__tests__/history-append-only.test.ts` — The model-message list for turn n must be an exact item-by-item prefix of turn n+1 (developer message included). Compaction is the only sanctioned exception
 
 **Utilities:**
 - `chat-services/utils.ts`
