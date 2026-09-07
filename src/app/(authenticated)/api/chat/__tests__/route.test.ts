@@ -212,6 +212,30 @@ describe("/api/chat route (AI SDK v6)", () => {
     expect(mockRepairExtensionToolCall).toHaveBeenCalledWith("repair-args");
   });
 
+  it("passes the effective model's maxOutputTokens into streamText", async () => {
+    const { streamText } = await import("ai");
+    mockResolveModelAndLimits.mockResolvedValue({
+      ...MODEL_RESULT,
+      modelConfig: { ...MODEL_RESULT.modelConfig, maxOutputTokens: 16000 },
+    });
+    await POST(makeRequest({ message: "hello", id: "t1" }));
+
+    const streamTextMock = streamText as unknown as { mock: { calls: unknown[][] } };
+    const options = streamTextMock.mock.calls[0][0] as { maxOutputTokens?: number };
+    expect(options.maxOutputTokens).toBe(16000);
+  });
+
+  it("leaves maxOutputTokens undefined when the model config has no cap (negative)", async () => {
+    const { streamText } = await import("ai");
+    // MODEL_RESULT's config carries no maxOutputTokens — the option must not
+    // be invented, so the provider default still applies.
+    await POST(makeRequest({ message: "hello", id: "t1" }));
+
+    const streamTextMock = streamText as unknown as { mock: { calls: unknown[][] } };
+    const options = streamTextMock.mock.calls[0][0] as { maxOutputTokens?: number };
+    expect(options.maxOutputTokens).toBeUndefined();
+  });
+
   it("passes the resolved effective model into resolveProvider (no-regression: effective == selected)", async () => {
     const req = makeRequest({ message: "hello", id: "t1" });
     await POST(req);

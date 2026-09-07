@@ -1258,6 +1258,9 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | chat-page.unit.persist-assistant.cache-write.002 | persist-assistant.ts | Write tokens stay uncached-priced for a model with no write price (negative) | unit | same | `persistThread` on gpt-5.4-mini with a write count | Cost matches the three-bucket formula |
 | chat-page.unit.persist-assistant.cache-write.003 | persist-assistant.ts | Emits `cacheWriteTokensUsed` with the threadId dimension | unit | `chat-metrics-service` mocked | `persistThread` with 3k writes | `reportCacheWriteTokens(3000, model, { threadId })` |
 | chat-page.unit.persist-assistant.cache-write.004 | persist-assistant.ts | Emits 0 rather than skipping when the provider reports no writes | unit | same | `persistThread` with no `cacheWriteTokens` | `reportCacheWriteTokens(0, model, { threadId })` |
+| api.unit.chat-route.max-output.001 | api/chat/route.ts | The effective model's `maxOutputTokens` reaches streamText | unit | `ai` streamText mocked; model-selection mocked with `maxOutputTokens: 16000` | POST a message, read the streamText options | `options.maxOutputTokens === 16000` |
+| api.unit.chat-route.max-output.002 | api/chat/route.ts | No cap is invented when the config has none (negative) | unit | model config without `maxOutputTokens` | POST a message | `options.maxOutputTokens` is `undefined` |
+| chat-page.unit.call-sub-agent.max-output.001 | call-sub-agent.ts | The sub-agent generation is capped by the model's `maxOutputTokens` | unit | `generateText` mocked; persona on gpt-5.4-mini | Execute the tool | `generateText` receives `maxOutputTokens: 8000` |
 
 ---
 

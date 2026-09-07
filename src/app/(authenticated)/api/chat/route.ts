@@ -413,6 +413,9 @@ export async function POST(req: Request) {
     system: streamPrompt.system,
     messages: streamPrompt.messages,
     tools: allTools,
+    // Per-model ceiling on emitted tokens. Reasoning tokens count against it
+    // on the Responses API, so the configured values leave room for both.
+    maxOutputTokens: modelConfig.maxOutputTokens,
     stopWhen: stepCountIs(15),
     // Repairs bare, pre-namespacing extension tool names the model may
     // echo from old persisted thread history (see repairExtensionToolCall)

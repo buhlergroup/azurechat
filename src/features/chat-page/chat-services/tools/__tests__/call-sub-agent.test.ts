@@ -139,6 +139,19 @@ describe("callSubAgentTool – execute", () => {
     );
   });
 
+  it("caps the sub-agent generation with the model's maxOutputTokens", async () => {
+    const t = callSubAgentTool(makeCtx());
+    await (t as any).execute(
+      { agent_id: "agent-1", task: "Do something" },
+      { abortSignal: undefined }
+    );
+
+    // FAKE_PERSONA runs on gpt-5.4-mini, whose configured cap is 8000.
+    expect(mockGenerateText).toHaveBeenCalledWith(
+      expect.objectContaining({ maxOutputTokens: 8000 })
+    );
+  });
+
   it("passes abortSignal to generateText", async () => {
     const abortController = new AbortController();
     const t = callSubAgentTool(makeCtx());

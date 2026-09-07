@@ -114,6 +114,7 @@ export function callSubAgentTool(ctx: ToolContext) {
         system: persona.personaMessage,
         messages: [{ role: "user", content: args.task }],
         tools: subToolset,
+        maxOutputTokens: modelConfig.maxOutputTokens,
         stopWhen: stepCountIs(8),
         abortSignal,
       });

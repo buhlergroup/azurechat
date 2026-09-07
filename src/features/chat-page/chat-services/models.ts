@@ -109,6 +109,15 @@ export interface ModelConfig {
   defaultReasoningEffort?: ReasoningEffort;
   pricing: ModelPricing;
   contextWindow: number;
+  /**
+   * Upper bound on the tokens the model may emit for one call, passed to
+   * streamText/generateText as `maxOutputTokens`. Without it a runaway
+   * generation can only be stopped by the provider's own (very high) default,
+   * which on a reasoning model means an open-ended output bill. NOTE: on the
+   * Responses API reasoning tokens count against this budget, so the value has
+   * to leave room for both the thinking and the answer.
+   */
+  maxOutputTokens?: number;
   fallbackModel?: ChatModel;
   dailyTokenLimit?: number;
   dailyCostLimit?: number;
@@ -148,6 +157,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "low",
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
+    maxOutputTokens: 16000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
@@ -165,6 +175,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "low",
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
+    maxOutputTokens: 16000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
@@ -181,6 +192,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "medium",
     pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
+    maxOutputTokens: 16000,
     hardCapEligible: true,
     capabilities: ["vision", "webSearch", "code"],
   },
@@ -198,6 +210,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // No cacheWritePerMillion: gpt-5.5 does not bill cache writes separately.
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50 },
     contextWindow: 1050000,
+    maxOutputTokens: 16000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
@@ -214,6 +227,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "low",
     pricing: { inputPerMillion: 2.50, outputPerMillion: 15.00, cachedInputPerMillion: 0.25 },
     contextWindow: 1050000,
+    maxOutputTokens: 16000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
@@ -229,6 +243,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     defaultReasoningEffort: "medium",
     pricing: { inputPerMillion: 0.75, outputPerMillion: 4.50, cachedInputPerMillion: 0.075 },
     contextWindow: 400000,
+    maxOutputTokens: 8000,
     capabilities: ["vision", "webSearch", "code"],
   },
   // ── Foundry-hosted low-cost downgrade targets ──────────────────────────
@@ -252,6 +267,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     deploymentName: process.env.FOUNDRY_DEEPSEEK_DEPLOYMENT_NAME,
     pricing: { inputPerMillion: 0.30, outputPerMillion: 1.20, cachedInputPerMillion: 0.03 },
     contextWindow: 163840,
+    maxOutputTokens: 8000,
     hardCapEligible: true,
     capabilities: ["code", "imageGen"],
   },
@@ -271,6 +287,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     deploymentName: process.env.FOUNDRY_KIMI_DEPLOYMENT_NAME,
     pricing: { inputPerMillion: 0.15, outputPerMillion: 2.50, cachedInputPerMillion: 0.015 },
     contextWindow: 262144,
+    maxOutputTokens: 8000,
     hardCapEligible: true,
     capabilities: ["vision", "imageGen", "code"],
   },
@@ -292,6 +309,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // TODO: confirm Grok pricing before relying on cost tracking (placeholder).
     pricing: { inputPerMillion: 3.0, outputPerMillion: 15.0, cachedInputPerMillion: 0.75 },
     contextWindow: 256000,
+    maxOutputTokens: 8000,
   },
   // ── Anthropic Claude (Azure /anthropic Messages API) ───────────────────
   // Premium selectable models — NOT downgrade targets (Opus is pricier than
@@ -312,6 +330,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     deploymentName: process.env.AZURE_ANTHROPIC_OPUS48_DEPLOYMENT_NAME,
     pricing: { inputPerMillion: 15.0, outputPerMillion: 75.0, cachedInputPerMillion: 1.5 },
     contextWindow: 1000000,
+    maxOutputTokens: 16000,
     // Image input + Claude's native web search/fetch (wired in the anthropic
     // seam). Code execution is deferred (needs the separate Anthropic Files
     // API). Can't call the Azure built-ins (image gen etc.).
@@ -333,6 +352,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     deploymentName: process.env.AZURE_ANTHROPIC_SONNET5_DEPLOYMENT_NAME,
     pricing: { inputPerMillion: 3.0, outputPerMillion: 15.0, cachedInputPerMillion: 0.3 },
     contextWindow: 1000000,
+    maxOutputTokens: 16000,
     // Image input + native web search/fetch (wired in the anthropic seam).
     // Code execution deferred (Anthropic Files API differs).
     capabilities: ["vision", "webSearch"],
