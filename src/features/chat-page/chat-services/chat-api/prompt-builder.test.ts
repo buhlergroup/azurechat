@@ -236,7 +236,6 @@ describe("byte-for-byte invariant (the cache contract)", () => {
 
   const personaMessage = "Be a helpful coding assistant. Always cite line numbers when referring to code.";
   const staticSystemPrompt = "You are a friendly Bühler Chat AI assistant.\n\nFORMAT WITH MARKDOWN.";
-  const today = "2026-04-30";
 
   it("two requests with identical thread state produce identical system messages and tool arrays", () => {
     const toolsRequest1 = [
@@ -251,8 +250,11 @@ describe("byte-for-byte invariant (the cache contract)", () => {
       { name: "call_sub_agent", description: "..." },
     ];
 
-    const sys1 = buildSystemMessage({ staticSystemPrompt, personaMessage, today, documentHint: "" });
-    const sys2 = buildSystemMessage({ staticSystemPrompt, personaMessage, today, documentHint: "" });
+    // `today` used to be passed here; the builder never accepted it (a date in
+    // the prefix would void the cache at every UTC midnight) and TypeScript
+    // was flagging it.
+    const sys1 = buildSystemMessage({ staticSystemPrompt, personaMessage, documentHint: "" });
+    const sys2 = buildSystemMessage({ staticSystemPrompt, personaMessage, documentHint: "" });
     const sortedTools1 = sortFunctionTools(toolsRequest1);
     const sortedTools2 = sortFunctionTools(toolsRequest2);
 

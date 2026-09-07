@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Logger ────────────────────────────────────────────────────────────────────
 vi.mock("@/features/common/services/logger", () => ({
@@ -30,8 +30,48 @@ vi.mock("../../chat-thread-service", () => ({
 const mockFindHistory = vi.fn();
 const mockCreateMessage = vi.fn(async () => ({ status: "OK" }));
 vi.mock("../../chat-message-service", () => ({
-  FindTopChatMessagesForCurrentUser: (...a: unknown[]) => mockFindHistory(...a),
+  FindAllChatMessagesForCurrentUser: (...a: unknown[]) => mockFindHistory(...a),
   CreateChatMessage: (...a: unknown[]) => mockCreateMessage(...a),
+}));
+
+// ── History summary service ───────────────────────────────────────────────────
+// Stands in for both Cosmos and the summariser model. `recordHistoryCompaction`
+// is the expensive call (one model round-trip per trim), so counting it is how
+// these tests assert that a trim happens once and is then reused.
+let summaryRow: any = null;
+let summaryEnabled = false;
+const mockFindSummary = vi.fn(async () => summaryRow);
+const mockRecordCompaction = vi.fn(
+  async (input: {
+    threadId: string;
+    coversThroughMessageId: string;
+    droppedMessages: unknown[];
+    previous?: any;
+  }) => {
+    summaryRow = {
+      id: `summary-${input.threadId}`,
+      type: "CHAT_HISTORY_SUMMARY",
+      threadId: input.threadId,
+      userId: "user-hash",
+      isDeleted: false,
+      createdAt: new Date("2026-09-07"),
+      role: "system",
+      kind: "summary",
+      content: summaryEnabled ? "FACTS: the earlier turns said things." : "",
+      coversThroughMessageId: input.coversThroughMessageId,
+      coversMessageCount:
+        (input.previous?.coversMessageCount ?? 0) + input.droppedMessages.length,
+      model: summaryEnabled ? "luna-dep" : "",
+      estimatedTokens: summaryEnabled ? 10 : 0,
+    };
+    return summaryRow;
+  },
+);
+vi.mock("../history-summary-service", () => ({
+  FindChatHistorySummary: (...a: unknown[]) => mockFindSummary(...(a as [])),
+  recordHistoryCompaction: (...a: unknown[]) =>
+    mockRecordCompaction(...(a as [any])),
+  isHistorySummaryEnabled: () => summaryEnabled,
 }));
 
 // ── Document service ──────────────────────────────────────────────────────────
@@ -52,6 +92,16 @@ vi.mock("../../utils", () => ({
 import { loadThreadContext } from "../thread-context";
 import { MESSAGE_ATTRIBUTE } from "../../models";
 import type { ChatThreadModel, UserPrompt } from "../../models";
+import { SUMMARY_REPLAY_PREFIX } from "../history-summary";
+import { CHARS_PER_TOKEN } from "../history-budget";
+
+beforeEach(() => {
+  summaryRow = null;
+  summaryEnabled = false;
+  delete process.env.HISTORY_TOKEN_BUDGET;
+  mockFindSummary.mockClear();
+  mockRecordCompaction.mockClear();
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -82,9 +132,15 @@ function makeUserPrompt(threadId = "thread-001"): UserPrompt {
   } as unknown as UserPrompt;
 }
 
-function makeHistoryRow(role: "user" | "assistant", content: string) {
+let rowSeq = 0;
+function makeHistoryRow(
+  role: "user" | "assistant",
+  content: string,
+  id?: string,
+) {
+  rowSeq += 1;
   return {
-    id: `msg-${role}`,
+    id: id ?? `msg-${role}-${rowSeq}`,
     createdAt: new Date("2026-01-01"),
     isDeleted: false,
     threadId: "thread-001",
@@ -94,6 +150,17 @@ function makeHistoryRow(role: "user" | "assistant", content: string) {
     role,
     type: MESSAGE_ATTRIBUTE,
   };
+}
+
+/** `count` user+assistant pairs, each side costing ~`tokens/2` estimated tokens. */
+function makeTurns(count: number, tokensPerTurn: number) {
+  const chars = Math.floor((tokensPerTurn * CHARS_PER_TOKEN) / 2);
+  const rows: ReturnType<typeof makeHistoryRow>[] = [];
+  for (let i = 0; i < count; i++) {
+    rows.push(makeHistoryRow("user", "u".repeat(chars)));
+    rows.push(makeHistoryRow("assistant", "a".repeat(chars)));
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,12 +187,13 @@ describe("loadThreadContext — existing thread with history", () => {
   it("hydrates at least 1 UIMessage from 1 user + 1 assistant row", async () => {
     const thread = makeThread();
     mockEnsureThread.mockResolvedValue({ status: "OK", response: thread });
-    // Cosmos returns newest-first; thread-context reverses before adapting.
+    // FindAllChatMessagesForCurrentUser orders createdAt ASC, i.e. oldest
+    // first — no reversal in thread-context any more.
     mockFindHistory.mockResolvedValue({
       status: "OK",
       response: [
-        makeHistoryRow("assistant", "I can help with that."),
         makeHistoryRow("user", "Hello"),
+        makeHistoryRow("assistant", "I can help with that."),
       ],
     });
 
@@ -168,5 +236,254 @@ describe("loadThreadContext — turnId is minted per request", () => {
     expect(ctxA.turnId).toMatch(/^turn-/);
     expect(ctxB.turnId).toMatch(/^turn-/);
     expect(ctxA.turnId).not.toBe(ctxB.turnId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// History loading: full thread, token budget, summary replay
+// ---------------------------------------------------------------------------
+
+describe("chat-page.unit.thread-context.001 — the chat path loads the whole thread", () => {
+  it("calls the un-capped loader with only the thread id (no row limit)", async () => {
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: [] });
+
+    await loadThreadContext(makeUserPrompt());
+
+    expect(mockFindHistory).toHaveBeenCalledWith("thread-001");
+    // The old `TOP 30` path passed a row cap here; a second argument would
+    // mean the sliding window is back.
+    expect(mockFindHistory.mock.calls[0]).toHaveLength(1);
+  });
+
+  it("keeps far more than 30 rows when they fit the token budget", async () => {
+    // 100 tiny turns = 200 rows, a few thousand estimated tokens. Under the
+    // old cap the model saw 30 rows; it must now see all of them.
+    const rows = makeTurns(100, 40);
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    // 200 history rows + the current user turn.
+    expect(ctx.history).toHaveLength(201);
+    expect(mockRecordCompaction).not.toHaveBeenCalled();
+  });
+
+  it("treats loaded rows as oldest-first without reversing them", async () => {
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: [
+        makeHistoryRow("user", "first question"),
+        makeHistoryRow("assistant", "first answer"),
+        makeHistoryRow("user", "second question"),
+      ],
+    });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+    const texts = ctx.history.map((m) =>
+      m.parts.map((p) => (p as { text?: string }).text ?? "").join(""),
+    );
+    expect(texts.indexOf("first question")).toBeLessThan(
+      texts.indexOf("first answer"),
+    );
+    expect(texts.indexOf("first answer")).toBeLessThan(
+      texts.indexOf("second question"),
+    );
+  });
+});
+
+describe("chat-page.unit.thread-context.002 — the token budget trims once and the trim sticks", () => {
+  it("records the compaction exactly once across two loads", async () => {
+    // The property that matters: the summariser (and the Cosmos write) run on
+    // the turn that trims, and NOT on the turns after it. A per-turn call here
+    // would mean the prefix moves every turn, which is the failure this whole
+    // change removes.
+    process.env.HISTORY_TOKEN_BUDGET = "10000";
+    summaryEnabled = true;
+    const rows = makeTurns(40, 500); // ~20,000 estimated tokens
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const first = await loadThreadContext(makeUserPrompt());
+    expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
+
+    // Second turn: the same rows come back from Cosmos (a trim deletes
+    // nothing) plus a new turn. The persisted watermark must absorb them.
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: [...rows, ...makeTurns(1, 200)],
+    });
+    const second = await loadThreadContext(makeUserPrompt());
+
+    expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
+    // And the prefix did not move: same first conversation item both turns.
+    const firstItem = (m: typeof first) =>
+      m.history[0].parts.map((p) => (p as { text?: string }).text ?? "").join("");
+    expect(firstItem(second)).toBe(firstItem(first));
+  });
+
+  it("passes the newest dropped row as the watermark", async () => {
+    process.env.HISTORY_TOKEN_BUDGET = "10000";
+    const rows = makeTurns(40, 500);
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    await loadThreadContext(makeUserPrompt());
+
+    const call = mockRecordCompaction.mock.calls[0][0] as unknown as {
+      coversThroughMessageId: string;
+      droppedMessages: { id: string }[];
+    };
+    const dropped = call.droppedMessages;
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(call.coversThroughMessageId).toBe(dropped[dropped.length - 1].id);
+  });
+
+  it("cuts at a turn boundary, so the oldest surviving row is a user row", async () => {
+    process.env.HISTORY_TOKEN_BUDGET = "10000";
+    const rows = makeTurns(40, 500);
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+    expect(ctx.history[0].role).toBe("user");
+    expect(ctx.history.length).toBeLessThan(rows.length);
+  });
+
+  it("does not trim, or call the summariser, when the thread fits", async () => {
+    process.env.HISTORY_TOKEN_BUDGET = "100000";
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: makeTurns(20, 100) });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(mockRecordCompaction).not.toHaveBeenCalled();
+    expect(ctx.history).toHaveLength(41); // 40 rows + current turn
+  });
+});
+
+describe("chat-page.unit.thread-context.003 — a stored summary is replayed, not regenerated", () => {
+  function storedSummary(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "summary-thread-001",
+      type: "CHAT_HISTORY_SUMMARY",
+      threadId: "thread-001",
+      userId: "user-hash",
+      isDeleted: false,
+      createdAt: new Date("2026-09-01"),
+      role: "system",
+      kind: "summary",
+      content: "FACTS: answer in metric units.",
+      coversThroughMessageId: "msg-watermark",
+      coversMessageCount: 4,
+      model: "luna-dep",
+      estimatedTokens: 8,
+      ...overrides,
+    };
+  }
+
+  it("puts the summary first, prefixed, and reuses it with no new call", async () => {
+    summaryRow = storedSummary();
+    const rows = [
+      makeHistoryRow("user", "old question", "msg-old"),
+      makeHistoryRow("assistant", "old answer", "msg-watermark"),
+      makeHistoryRow("user", "recent question"),
+      makeHistoryRow("assistant", "recent answer"),
+    ];
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    const first = ctx.history[0];
+    const firstText = first.parts
+      .map((p) => (p as { text?: string }).text ?? "")
+      .join("");
+    expect(firstText.startsWith(SUMMARY_REPLAY_PREFIX)).toBe(true);
+    expect(firstText).toContain("FACTS: answer in metric units.");
+    // A user message, so every provider seam handles it without change.
+    expect(first.role).toBe("user");
+    // Reused, not regenerated.
+    expect(mockRecordCompaction).not.toHaveBeenCalled();
+
+    // The watermarked rows are gone from the prompt but still in Cosmos.
+    const allText = ctx.history
+      .flatMap((m) => m.parts.map((p) => (p as { text?: string }).text ?? ""))
+      .join(" ");
+    expect(allText).not.toContain("old question");
+    expect(allText).toContain("recent question");
+  });
+
+  it("replays nothing when the row is a watermark with no summary text", async () => {
+    // The feature can be off while the watermark still holds; an empty summary
+    // must not put a bare heading in front of the conversation.
+    summaryRow = storedSummary({ content: "", model: "", estimatedTokens: 0 });
+    const rows = [
+      makeHistoryRow("user", "old question", "msg-old"),
+      makeHistoryRow("assistant", "old answer", "msg-watermark"),
+      makeHistoryRow("user", "recent question"),
+    ];
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+    const firstText = ctx.history[0].parts
+      .map((p) => (p as { text?: string }).text ?? "")
+      .join("");
+    expect(firstText).not.toContain(SUMMARY_REPLAY_PREFIX);
+    expect(firstText).toContain("recent question");
+  });
+
+  it("falls back to the full history when the watermark row is gone", async () => {
+    summaryRow = storedSummary({
+      coversThroughMessageId: "a-row-the-user-deleted",
+    });
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: [makeHistoryRow("user", "still here")],
+    });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+    const allText = ctx.history
+      .flatMap((m) => m.parts.map((p) => (p as { text?: string }).text ?? ""))
+      .join(" ");
+    expect(allText).toContain("still here");
+  });
+});
+
+describe("chat-page.unit.thread-context.004 — the document hint is deterministic", () => {
+  it("lists document names in sorted order regardless of Cosmos order", async () => {
+    const { FindAllChatDocuments } = await import("../../chat-document-service");
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: [] });
+
+    const docs = [
+      { id: "d1", name: "zeta.pdf" },
+      { id: "d2", name: "alpha.pdf" },
+      { id: "d3", name: "mid.pdf" },
+    ];
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: docs,
+    } as never);
+    const forward = await loadThreadContext(makeUserPrompt());
+
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [...docs].reverse(),
+    } as never);
+    const reversed = await loadThreadContext(makeUserPrompt());
+
+    expect(forward.documentHint).toContain("alpha.pdf, mid.pdf, zeta.pdf");
+    // Byte-identical either way: the hint is a function of the document SET.
+    expect(reversed.documentHint).toBe(forward.documentHint);
+
+    vi.mocked(FindAllChatDocuments).mockResolvedValue({
+      status: "OK",
+      response: [],
+    } as never);
   });
 });
