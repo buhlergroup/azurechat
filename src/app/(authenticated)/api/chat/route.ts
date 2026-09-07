@@ -759,6 +759,7 @@ export async function POST(req: Request) {
           inputTokens: u.inputTokens ?? 0,
           outputTokens: u.outputTokens ?? 0,
           cachedTokens: u.inputTokenDetails?.cacheReadTokens ?? 0,
+          cacheWriteTokens: u.inputTokenDetails?.cacheWriteTokens ?? 0,
           modelConfig,
         }),
       };

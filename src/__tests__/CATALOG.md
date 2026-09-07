@@ -1248,6 +1248,16 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 |---|---|---|---|---|---|---|
 | chat-page.unit.provider-seam.cache.001 | provider-seam.ts | `promptCacheOptions` is sent for every GPT-5.6 model | unit | `./provider` + `@ai-sdk/azure` stubbed (existing file mocks) | `resolveProvider` for gpt-5.6-sol / -terra / -luna | `providerOptions.openai.promptCacheOptions` equals `{ mode: "implicit", ttl: "30m" }`; `promptCacheKey` / `store` unchanged |
 | chat-page.unit.provider-seam.cache.002 | provider-seam.ts | `promptCacheOptions` is omitted for pre-5.6 models (negative) | unit | same | `resolveProvider` for gpt-5.5 / gpt-5.4 / gpt-5.4-mini | `promptCacheOptions` is `undefined` (the model answers HTTP 400 when it is sent) |
+| chat-page.unit.usage-data.cost.001 | usage-data.ts | `computeTokenCostUsd` splits input into uncached / cache-read / cache-write | unit | — | 10k input, 6k read, 3k write, 1k output at GPT-5.6-shaped pricing | Cost equals the four buckets summed at their own rates |
+| chat-page.unit.usage-data.cost.002 | usage-data.ts | A full cache write costs 12.5x the same turn served from cache | unit | — | Same token counts, once all-write and once all-read | write > read and the ratio is 12.5 (1.25x input vs 0.1x input) |
+| chat-page.unit.usage-data.cost.003 | usage-data.ts | Write count is ignored for a model with no write price (negative) | unit | pricing without `cacheWritePerMillion` | Cost with 3k writes vs cost with none | Identical — those tokens stay in the uncached-input bucket |
+| chat-page.unit.usage-data.cost.004 | usage-data.ts | Uncached bucket clamps at zero when read + write exceed input | unit | — | 1k input with 800 read + 800 write | Cost is read + write only, never negative input |
+| chat-page.unit.usage-data.cost.005 | usage-data.ts | Returns 0 when pricing is absent (negative) | unit | `pricing: undefined` | Call with non-zero tokens | 0 |
+| chat-page.unit.usage-data.cost.006 | usage-data.ts | `computeRequestUsage` carries `cacheWriteTokens` into the client block | unit | — | Call with `cacheWriteTokens: 300`, and again omitting it | 300, then the 0 default |
+| chat-page.unit.persist-assistant.cache-write.001 | persist-assistant.ts | Thread usage cost bills cache writes at the write rate | unit | Cosmos batch rejects → sequential path; thread/usage services mocked | `persistThread` on gpt-5.6-sol with 6k read + 3k write | `UpdateChatThreadUsage` receives the four-bucket cost |
+| chat-page.unit.persist-assistant.cache-write.002 | persist-assistant.ts | Write tokens stay uncached-priced for a model with no write price (negative) | unit | same | `persistThread` on gpt-5.4-mini with a write count | Cost matches the three-bucket formula |
+| chat-page.unit.persist-assistant.cache-write.003 | persist-assistant.ts | Emits `cacheWriteTokensUsed` with the threadId dimension | unit | `chat-metrics-service` mocked | `persistThread` with 3k writes | `reportCacheWriteTokens(3000, model, { threadId })` |
+| chat-page.unit.persist-assistant.cache-write.004 | persist-assistant.ts | Emits 0 rather than skipping when the provider reports no writes | unit | same | `persistThread` with no `cacheWriteTokens` | `reportCacheWriteTokens(0, model, { threadId })` |
 
 ---
 

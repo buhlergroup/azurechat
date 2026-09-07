@@ -61,6 +61,20 @@ export async function reportCachedTokens(tokenCount: number, model: string, attr
     cachedTokensUsed.record(tokenCount, combinedAttributes);
 }
 
+export async function reportCacheWriteTokens(tokenCount: number, model: string, attributes: any = {}) {
+
+    const meter = getChatMeter();
+
+    const cacheWriteTokensUsed = meter.createHistogram("cacheWriteTokensUsed", {
+        description: "Number of prompt tokens written into the model's prompt cache (billed at a premium on GPT-5.6+)",
+        unit: "tokens",
+    });
+
+    let combinedAttributes = { ...attributes, ...await getAttributes(model) };
+
+    cacheWriteTokensUsed.record(tokenCount, combinedAttributes);
+}
+
 export async function reportUserChatMessage(model: string, attributes: any = {}) {
 
     const meter = getChatMeter();

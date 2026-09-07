@@ -6,6 +6,7 @@ import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { FindPersonaByID } from "@/features/persona-page/persona-services/persona-service";
 import { MODEL_CONFIGS, DEFAULT_MODEL, type ChatModel } from "../models";
 import { resolveAzureModel } from "../models/provider";
+import { computeTokenCostUsd } from "../chat-api/usage-data";
 import type { ToolContext } from "./tool-context";
 
 const MAX_SUB_AGENT_DEPTH = 2;
@@ -117,28 +118,28 @@ export function callSubAgentTool(ctx: ToolContext) {
         abortSignal,
       });
 
-      // Compute cost from pricing config. ai@6's LanguageModelUsage flattened:
-      //   - inputTokens (total input incl. cached)
-      //   - outputTokens
-      //   - totalTokens
-      // cachedInputTokens / reasoningTokens moved to inputTokenDetails /
-      // outputTokenDetails. We probe both legacy and new locations so the
-      // tool works whether the underlying provider has migrated or not.
-      const pricing = modelConfig.pricing;
+      // ai@6's LanguageModelUsage keeps cache accounting under
+      // inputTokenDetails (cacheReadTokens / cacheWriteTokens);
+      // `cachedInputTokens` is the deprecated flat alias for reads. Probe both
+      // so the tool keeps reporting on either SDK line.
       const inputTokens = result.usage?.inputTokens ?? 0;
       const outputTokens = result.usage?.outputTokens ?? 0;
       const cachedTokens =
         (result.usage as any)?.inputTokenDetails?.cacheReadTokens ??
         (result.usage as any)?.cachedInputTokens ??
         0;
+      const cacheWriteTokens =
+        (result.usage as any)?.inputTokenDetails?.cacheWriteTokens ?? 0;
       const totalTokens =
         result.usage?.totalTokens ?? inputTokens + outputTokens;
 
-      const costUsd = pricing
-        ? ((inputTokens - cachedTokens) / 1_000_000) * pricing.inputPerMillion +
-          (cachedTokens / 1_000_000) * pricing.cachedInputPerMillion +
-          (outputTokens / 1_000_000) * pricing.outputPerMillion
-        : 0;
+      const costUsd = computeTokenCostUsd({
+        inputTokens,
+        outputTokens,
+        cachedTokens,
+        cacheWriteTokens,
+        pricing: modelConfig.pricing,
+      });
 
       logInfo("callSubAgentTool: completed", {
         agentId: args.agent_id,
@@ -146,6 +147,8 @@ export function callSubAgentTool(ctx: ToolContext) {
         responseLength: result.text.length,
         inputTokens,
         outputTokens,
+        cachedTokens,
+        cacheWriteTokens,
         costUsd,
       });
 
@@ -155,7 +158,14 @@ export function callSubAgentTool(ctx: ToolContext) {
         model: modelId,
         response: result.text,
         summary: `Agent "${persona.name}" responded successfully.`,
-        usage: { inputTokens, outputTokens, cachedTokens, totalTokens, costUsd },
+        usage: {
+          inputTokens,
+          outputTokens,
+          cachedTokens,
+          cacheWriteTokens,
+          totalTokens,
+          costUsd,
+        },
       };
     },
   });

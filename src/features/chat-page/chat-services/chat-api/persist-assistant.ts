@@ -34,6 +34,7 @@ import {
   reportPromptTokens,
   reportCompletionTokens,
   reportCachedTokens,
+  reportCacheWriteTokens,
   reportUserChatMessage,
 } from "@/features/common/services/chat-metrics-service";
 import { UpsertChatMessage } from "../chat-message-service";
@@ -43,6 +44,7 @@ import { MESSAGE_ATTRIBUTE } from "../models";
 import type { ChatMessageModel } from "../models";
 import { uniqueId } from "@/features/common/util";
 import { chatMessagesFromUIMessages } from "./message-adapter";
+import { computeTokenCostUsd } from "./usage-data";
 import { rewriteSandboxUrls } from "./rewrite-sandbox-urls";
 import {
   ingestContainerFileSourcesToChatStore,
@@ -127,6 +129,12 @@ export interface UsagePayload {
   inputTokens: number;
   outputTokens: number;
   cachedTokens?: number;
+  /**
+   * Input tokens the provider WROTE into the prompt cache this turn. GPT-5.6
+   * bills these at 1.25x the uncached input rate, so they need their own
+   * bucket in the cost formula instead of being folded into plain input.
+   */
+  cacheWriteTokens?: number;
 }
 
 export interface PersistPayload {
@@ -276,20 +284,21 @@ export async function persistThread({
     }
   }
 
-  // Calculate cost
+  // Calculate cost via the shared formula (usage-data.computeTokenCostUsd) so
+  // the persisted rollup and the live per-turn block the header shows are
+  // always the same number.
   const inputTokens = usage.inputTokens;
   const outputTokens = usage.outputTokens;
   const cachedTokens = usage.cachedTokens ?? 0;
+  const cacheWriteTokens = usage.cacheWriteTokens ?? 0;
 
-  const pricing = modelConfig.pricing;
-  let costUsd = 0;
-  if (pricing) {
-    const nonCachedInput = inputTokens - cachedTokens;
-    costUsd =
-      (nonCachedInput / 1_000_000) * pricing.inputPerMillion +
-      (cachedTokens / 1_000_000) * pricing.cachedInputPerMillion +
-      (outputTokens / 1_000_000) * pricing.outputPerMillion;
-  }
+  const costUsd = computeTokenCostUsd({
+    inputTokens,
+    outputTokens,
+    cachedTokens,
+    cacheWriteTokens,
+    pricing: modelConfig.pricing,
+  });
 
   logInfo("Persisting assistant turn usage", {
     threadId,
@@ -297,6 +306,7 @@ export async function persistThread({
     inputTokens,
     outputTokens,
     cachedTokens,
+    cacheWriteTokens,
     costUsd,
     rowCount: rows.length,
   });
@@ -374,6 +384,7 @@ export async function persistThread({
       inputTokens,
     }),
     reportCachedTokens(cachedTokens, model, metricAttrs),
+    reportCacheWriteTokens(cacheWriteTokens, model, metricAttrs),
     reportUserChatMessage(model, metricAttrs),
   ]).catch((err: unknown) =>
     logError("Failed to emit chat usage metrics", {
@@ -580,20 +591,27 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
     });
   }
 
-  // AI SDK v6 surfaces cached tokens via inputTokenDetails.cacheReadTokens;
-  // older versions used cachedInputTokens (now deprecated). Prefer the new
-  // path and fall back to the deprecated one so we don't lose telemetry on
-  // SDK upgrades. See task #36.
+  // AI SDK v6 surfaces cache accounting under inputTokenDetails:
+  // `cacheReadTokens` (prefix served from cache) and `cacheWriteTokens`
+  // (prefix written into it — @ai-sdk/openai >= 3.0.84 maps the Responses
+  // API's input_tokens_details.cache_write_tokens onto it). `cachedInputTokens`
+  // is the deprecated flat alias for reads; keep reading it as a fallback so
+  // an SDK downgrade doesn't silently zero the telemetry. Writes have no
+  // legacy alias — undefined there means "this provider reports no writes".
   const usageDetails = event.totalUsage as {
     inputTokens?: number;
     outputTokens?: number;
     cachedInputTokens?: number;
-    inputTokenDetails?: { cacheReadTokens?: number };
+    inputTokenDetails?: {
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+    };
   };
   const cachedTokens =
     usageDetails.inputTokenDetails?.cacheReadTokens ??
     usageDetails.cachedInputTokens ??
     undefined;
+  const cacheWriteTokens = usageDetails.inputTokenDetails?.cacheWriteTokens;
 
   await persistThread({
     threadId,
@@ -605,6 +623,7 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
       inputTokens: usageDetails.inputTokens ?? 0,
       outputTokens: usageDetails.outputTokens ?? 0,
       cachedTokens,
+      cacheWriteTokens,
     },
     personaId,
   });

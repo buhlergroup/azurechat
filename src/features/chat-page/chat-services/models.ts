@@ -34,6 +34,14 @@ export interface ModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
   cachedInputPerMillion: number;
+  /**
+   * Price per 1M tokens WRITTEN into the prompt cache. GPT-5.6 bills a cache
+   * write at 1.25x the uncached input rate; earlier generations don't bill
+   * writes separately. Absence therefore means "no write surcharge" and the
+   * write tokens are billed at `inputPerMillion` like any other input
+   * (see computeTokenCostUsd).
+   */
+  cacheWritePerMillion?: number;
 }
 
 /**
@@ -121,10 +129,11 @@ export interface ModelConfig {
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
   // ── GPT-5.6 family (2026-07-09) ─────────────────────────────────────────
-  // Pricing per the OpenAI GPT-5.6 announcement: Sol $5/$30, Terra $2.50/$15,
-  // Luna $1/$6 per 1M tokens; cache reads keep the 90% cached-input discount.
-  // NOTE: gpt-5.6+ bills cache WRITES at 1.25× the uncached input rate — not
-  // yet modelled here, so totalCostUsd slightly underestimates on cache writes.
+  // Official list prices per 1M tokens (input / output / cached input / cache
+  // write): Sol 5.00 / 30.00 / 0.50 / 6.25, Terra 2.00 / 12.00 / 0.20 / 2.50,
+  // Luna 0.20 / 1.20 / 0.02 / 0.25. Cache reads keep the 90% cached-input
+  // discount; cache WRITES are billed at 1.25x the uncached input rate and
+  // are modelled via ModelPricing.cacheWritePerMillion.
   "gpt-5.6-sol": {
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",
@@ -137,7 +146,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    pricing: { inputPerMillion: 5, outputPerMillion: 30.00, cachedInputPerMillion: 0.5 },
+    pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
@@ -154,7 +163,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    pricing: { inputPerMillion: 2.50, outputPerMillion: 15.00, cachedInputPerMillion: 0.25 },
+    pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
@@ -170,7 +179,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
     defaultReasoningEffort: "medium",
-    pricing: { inputPerMillion: 1.00, outputPerMillion: 6.00, cachedInputPerMillion: 0.10 },
+    pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
     hardCapEligible: true,
     capabilities: ["vision", "webSearch", "code"],
@@ -186,7 +195,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT55_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    pricing: { inputPerMillion: 5, outputPerMillion: 30.00, cachedInputPerMillion: 0.5 },
+    // No cacheWritePerMillion: gpt-5.5 does not bill cache writes separately.
+    pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50 },
     contextWindow: 1050000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
@@ -644,6 +654,12 @@ export interface UsageDataResponse {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  /**
+   * Input tokens the provider WROTE into the prompt cache this turn. Optional
+   * because the persisted thread usage a reloaded page seeds from does not
+   * track writes; the live path always supplies it.
+   */
+  cacheWriteTokens?: number;
   totalTokens: number;
   costUsd: number;
   threadTotalCostUsd: number;
