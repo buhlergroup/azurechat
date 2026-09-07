@@ -44,11 +44,13 @@ vi.mock("@/features/common/services/openai", () => ({
 }));
 
 import {
+  DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS,
   FindChatHistorySummary,
   SoftDeleteChatHistorySummary,
   isHistorySummaryEnabled,
   recordHistoryCompaction,
   resolveHistorySummaryDeployment,
+  resolveHistorySummaryTimeoutMs,
 } from "./history-summary-service";
 import { HISTORY_SUMMARY_ATTRIBUTE } from "./history-summary";
 import type { BudgetMessage } from "./history-budget";
@@ -56,6 +58,7 @@ import type { BudgetMessage } from "./history-budget";
 const ENV_KEYS = [
   "HISTORY_SUMMARY_ENABLED",
   "HISTORY_SUMMARY_DEPLOYMENT_NAME",
+  "HISTORY_SUMMARY_TIMEOUT_MS",
   "AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME",
   "AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME",
 ] as const;
@@ -414,5 +417,118 @@ describe("chat-page.unit.history-summary-service.005 — read and invalidate", (
   it("is a no-op when there is nothing to soft-delete", async () => {
     await SoftDeleteChatHistorySummary("t1");
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("chat-page.unit.history-summary-service.006 — the summariser has a deadline", () => {
+  it("resolves the timeout from the env, ignoring nonsense", () => {
+    // A typo must not become "give up immediately", and must not become
+    // "wait forever" either.
+    expect(resolveHistorySummaryTimeoutMs(undefined)).toBe(
+      DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS,
+    );
+    expect(resolveHistorySummaryTimeoutMs("")).toBe(DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS);
+    expect(resolveHistorySummaryTimeoutMs("nope")).toBe(
+      DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS,
+    );
+    expect(resolveHistorySummaryTimeoutMs("0")).toBe(DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS);
+    expect(resolveHistorySummaryTimeoutMs("-5000")).toBe(
+      DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS,
+    );
+    expect(resolveHistorySummaryTimeoutMs("5000")).toBe(5000);
+    expect(resolveHistorySummaryTimeoutMs("5000.9")).toBe(5000);
+  });
+
+  it("defaults to 20 seconds", () => {
+    expect(DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS).toBe(20_000);
+  });
+
+  it("falls back to the plain trim when the summariser hangs", async () => {
+    // This call is on the REQUEST path — it runs before the stream starts, so
+    // a hanging deployment would otherwise stall the turn with no ceiling.
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+    process.env.HISTORY_SUMMARY_TIMEOUT_MS = "25";
+
+    let settle: (() => void) | undefined;
+    const hangs = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          // Never resolves on its own; kept addressable so the test can free
+          // it rather than leaving a dangling promise behind.
+          settle = () => resolve("too late");
+        }),
+    );
+
+    const row = await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      summarise: hangs,
+    });
+
+    // The trim STILL STICKS: the watermark is the thing that makes the prompt
+    // cheap, and it is written whether or not there is a summary to go with it.
+    expect(row).not.toBeNull();
+    expect(row!.content).toBe("");
+    expect(row!.coversThroughMessageId).toBe("m2");
+    expect(row!.model).toBe("");
+
+    const warned = logWarn.mock.calls.map((c) => String(c[0])).join(" | ");
+    expect(warned).toContain("timed out");
+    expect(warned).toContain("falling back to plain trimming");
+    // The payload has to say it was a timeout, not just that something failed.
+    const timeoutCall = logWarn.mock.calls.find((c) =>
+      String(c[0]).includes("timed out"),
+    );
+    expect((timeoutCall?.[1] as { timedOut?: boolean })?.timedOut).toBe(true);
+    expect((timeoutCall?.[1] as { timeoutMs?: number })?.timeoutMs).toBe(25);
+
+    settle?.();
+  });
+
+  it("aborts the signal it handed the summariser, rather than abandoning the call", async () => {
+    // An abandoned HTTP call keeps spending on a result nobody will read.
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+    process.env.HISTORY_SUMMARY_TIMEOUT_MS = "25";
+
+    let seenSignal: AbortSignal | undefined;
+    const hangs = vi.fn(
+      (input: { signal?: AbortSignal }) =>
+        new Promise<string>(() => {
+          seenSignal = input.signal;
+        }),
+    );
+
+    await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      summarise: hangs,
+    });
+
+    expect(seenSignal).toBeDefined();
+    expect(seenSignal!.aborted).toBe(true);
+  });
+
+  it("does not interfere with a summariser that answers in time", async () => {
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+    process.env.HISTORY_SUMMARY_TIMEOUT_MS = "5000";
+
+    const row = await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      summarise: summariserReturning("FACTS: metric units."),
+    });
+
+    expect(row!.content).toBe("FACTS: metric units.");
+    expect(row!.model).toBe("luna-dep");
+    const warned = logWarn.mock.calls.map((c) => String(c[0])).join(" | ");
+    expect(warned).not.toContain("timed out");
   });
 });

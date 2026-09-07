@@ -90,6 +90,84 @@ export function resolveHistorySummaryDeployment(): string | undefined {
  */
 const MAX_SUMMARY_INPUT_CHARS = 400_000;
 
+/**
+ * Ceiling on what the summariser may EMIT.
+ *
+ * The prompt asks it to stay under SUMMARY_TOKEN_RESERVE (1,500) tokens, but
+ * an instruction is not a limit — and this output is replayed at the front of
+ * every later prompt in the thread, so an oversized summary is not a one-off
+ * cost, it is rent. 2,000 leaves headroom above the instruction without
+ * letting a runaway summary become a permanent line item.
+ */
+const SUMMARY_MAX_OUTPUT_TOKENS = 2_000;
+
+/**
+ * How long the summariser gets before the trim gives up on it.
+ *
+ * This call sits ON THE REQUEST PATH: it runs inside loadThreadContext, before
+ * the stream starts, so every millisecond it takes is a millisecond the user
+ * spends looking at nothing. It only happens on a trimming turn — once every
+ * few dozen turns — but a throttled or hanging deployment would otherwise
+ * stall that turn indefinitely, with no ceiling at all.
+ *
+ * A timeout is not a degradation here: the fallback is the plain trim, which
+ * is what the feature flag being off does anyway. The watermark is still
+ * written, so the trim still sticks; only the summary text is lost.
+ *
+ * 20 seconds is generous for ~2,000 output tokens on the cheapest model in
+ * the family, and still well inside what a user will wait for a first token.
+ */
+export const DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS = 20_000;
+
+/**
+ * Resolve the summariser timeout. `HISTORY_SUMMARY_TIMEOUT_MS` overrides the
+ * default; a value that is absent, unparseable or non-positive is ignored
+ * rather than honoured, because a typo must not turn into "give up
+ * immediately" (or, worse, "wait forever").
+ */
+export function resolveHistorySummaryTimeoutMs(
+  raw: string | undefined = process.env.HISTORY_SUMMARY_TIMEOUT_MS,
+): number {
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  return DEFAULT_HISTORY_SUMMARY_TIMEOUT_MS;
+}
+
+/** Thrown when the summariser outruns its budget. Caught by the caller. */
+export class HistorySummaryTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`history summariser exceeded ${timeoutMs}ms`);
+    this.name = "HistorySummaryTimeoutError";
+  }
+}
+
+/**
+ * Run `work` with a deadline. The AbortSignal is handed to the work so a real
+ * HTTP call is CANCELLED rather than left running to completion in the
+ * background — abandoning it would keep spending on a result nobody reads.
+ *
+ * The timer is always cleared, so a fast success cannot leave a pending timer
+ * holding the process (or a test runner) open.
+ */
+async function withDeadline<T>(
+  timeoutMs: number,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new HistorySummaryTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([work(controller.signal), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cosmos: read
 // ---------------------------------------------------------------------------
@@ -182,6 +260,12 @@ export type SummariserFn = (input: {
   systemPrompt: string;
   userPrompt: string;
   deployment: string;
+  /**
+   * Trips when the summariser has outrun its deadline. Forwarded to the HTTP
+   * call so it is cancelled rather than abandoned. A fake in a test may
+   * ignore it — the deadline is enforced by the caller either way.
+   */
+  signal?: AbortSignal;
 }) => Promise<string>;
 
 /**
@@ -197,6 +281,7 @@ async function callSummariserModel(input: {
   systemPrompt: string;
   userPrompt: string;
   deployment: string;
+  signal?: AbortSignal;
 }): Promise<string> {
   // The V1 client serves the 5.6 deployments; the mini client is the one wired
   // to the titles deployment. Pick by which env var the deployment name came
@@ -205,13 +290,21 @@ async function callSummariserModel(input: {
     input.deployment === process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME;
   const client = isMiniDeployment ? OpenAIMiniInstance() : OpenAIV1Instance();
 
-  const completion = await client.chat.completions.create({
-    model: input.deployment,
-    messages: [
-      { role: "system", content: input.systemPrompt },
-      { role: "user", content: input.userPrompt },
-    ],
-  });
+  const completion = await client.chat.completions.create(
+    {
+      model: input.deployment,
+      messages: [
+        { role: "system", content: input.systemPrompt },
+        { role: "user", content: input.userPrompt },
+      ],
+      // The prompt ASKS for brevity; this enforces it. The summary is
+      // replayed in every later prompt of the thread, so its size is rent
+      // rather than a one-off. `max_completion_tokens`, not `max_tokens`:
+      // the 5.x generation this runs on rejects the older field.
+      max_completion_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
+    },
+    { signal: input.signal },
+  );
 
   return completion.choices[0]?.message?.content?.trim() ?? "";
 }
@@ -310,9 +403,16 @@ export async function recordHistoryCompaction(
 }
 
 /**
- * Run the summariser over one dropped block. Returns null on any failure —
- * a missing deployment, a throwing call, or an empty answer — each logged as a
- * warning so a silently degraded thread is still visible in the logs.
+ * Run the summariser over one dropped block. Returns null on any failure — a
+ * missing deployment, a throwing call, a TIMEOUT, or an empty answer — each
+ * logged as a warning so a silently degraded thread is still visible in the
+ * logs.
+ *
+ * Every one of those falls back to the same place: the plain trim. The
+ * watermark is still written by the caller, so the trim still sticks and the
+ * prompt is still cheap; what is lost is the summary text, which is exactly
+ * what the feature flag being off costs anyway. That is why this returns null
+ * rather than throwing — a summariser problem must never fail the turn.
  */
 async function summariseDroppedBlock(input: {
   threadId: string;
@@ -339,21 +439,32 @@ async function summariseDroppedBlock(input: {
       : fullPrompt;
 
   const summarise = input.summarise ?? callSummariserModel;
+  const timeoutMs = resolveHistorySummaryTimeoutMs();
 
   let raw: string;
   try {
-    raw = await summarise({
-      systemPrompt: HISTORY_SUMMARY_SYSTEM_PROMPT,
-      userPrompt,
-      deployment,
-    });
+    // Bounded even for an injected fake: the deadline belongs to the request
+    // path, not to whichever summariser happens to be wired in.
+    raw = await withDeadline(timeoutMs, (signal) =>
+      summarise({
+        systemPrompt: HISTORY_SUMMARY_SYSTEM_PROMPT,
+        userPrompt,
+        deployment,
+        signal,
+      }),
+    );
   } catch (e) {
+    const timedOut = e instanceof HistorySummaryTimeoutError;
     logWarn(
-      "history-summary: summariser call failed; falling back to plain trimming",
+      timedOut
+        ? "history-summary: summariser timed out; falling back to plain trimming"
+        : "history-summary: summariser call failed; falling back to plain trimming",
       {
         threadId: input.threadId,
         deployment,
         droppedMessageCount: input.droppedMessages.length,
+        timedOut,
+        timeoutMs,
         error: e instanceof Error ? e.message : String(e),
       },
     );
