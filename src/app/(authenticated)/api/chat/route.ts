@@ -380,12 +380,17 @@ export async function POST(req: Request) {
     ...(effectiveToolsSafe.imageGeneration ? ["image_generation"] : []),
     ...(effectiveToolsSafe.webSearch ? ["web_search"] : []),
   ];
+  // The shard key must be OPAQUE: prompt_cache_key travels to the provider in
+  // the request body, and ctx.user.id is the user's EMAIL address. Reuse the
+  // rate-limit subject ("user:<sha256 hashed id>"), which is already resolved
+  // at the top of this handler — opaque, stable per user, and no second
+  // session lookup.
   const promptCacheKey = resolvePromptCacheKey({
     modelId: effectiveModel,
     threadId: ctx.thread.id,
     personaId: ctx.thread.personaId,
     toolNames: cacheKeyToolNames,
-    userKey: ctx.user.id,
+    userKey: rateLimitKey,
   });
 
   const resolved = resolveProvider({

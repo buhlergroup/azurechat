@@ -348,6 +348,35 @@ describe("/api/chat route (AI SDK v6)", () => {
       }
     });
 
+    it("shards on the hashed user id, never on the email in ctx.user.id", async () => {
+      const saved = process.env.PROMPT_CACHE_KEY_STRATEGY;
+      process.env.PROMPT_CACHE_KEY_STRATEGY = "persona";
+      mockResolveModelAndLimits.mockResolvedValue({
+        ...MODEL_RESULT,
+        modelConfig: { ...MODEL_RESULT.modelConfig, id: "gpt-5.6-terra" },
+        selectedModel: "gpt-5.6-terra",
+      });
+      // CTX.user.id is an email-shaped value in production; it must not reach
+      // the provider, since prompt_cache_key travels in the request body.
+      mockLoadThreadContext.mockResolvedValue({
+        ...structuredClone(CTX),
+        thread: { ...CTX.thread, id: "t1", personaId: "agent-7" },
+        user: { ...CTX.user, id: "someone@example.com", email: "someone@example.com" },
+      });
+      try {
+        await POST(makeRequest({ message: "hello", id: "t1" }));
+        const key = (
+          mockResolveProvider.mock.calls[0][0] as { promptCacheKey?: string }
+        ).promptCacheKey;
+        expect(key).not.toContain("someone@example.com");
+        expect(key).not.toContain("@");
+        expect(key).toMatch(/^persona:agent-7:[0-9a-f]{8}:\d+$/);
+      } finally {
+        if (saved === undefined) delete process.env.PROMPT_CACHE_KEY_STRATEGY;
+        else process.env.PROMPT_CACHE_KEY_STRATEGY = saved;
+      }
+    });
+
     it("keeps the thread id for a non-5.6 model even under the persona strategy (negative)", async () => {
       const saved = process.env.PROMPT_CACHE_KEY_STRATEGY;
       process.env.PROMPT_CACHE_KEY_STRATEGY = "persona";

@@ -413,7 +413,9 @@ describe("persistThread — row sequence", () => {
       vi.useRealTimers();
     }
 
-    const rows = mockUpsert.mock.calls.map((c) => c[0] as ChatMessageModel);
+    const rows = mockUpsert.mock.calls.map(
+      (c) => (c as unknown[])[0] as ChatMessageModel,
+    );
     expect(rows).toHaveLength(3);
     const createdAt = rows.map((r) => new Date(r.createdAt).getTime());
     expect(new Set(createdAt).size).toBe(1);
@@ -427,7 +429,9 @@ describe("persistThread — row sequence", () => {
     mockUpsert.mockClear();
     mockUpsert.mockResolvedValue({ status: "OK" as const });
     await persistThread({ ...BASE_PAYLOAD, messages: makeMessages() });
-    const rows = mockUpsert.mock.calls.map((c) => c[0] as ChatMessageModel);
+    const rows = mockUpsert.mock.calls.map(
+      (c) => (c as unknown[])[0] as ChatMessageModel,
+    );
     expect(Math.min(...rows.map((r) => r.sequence ?? -1))).toBe(1);
   });
 });

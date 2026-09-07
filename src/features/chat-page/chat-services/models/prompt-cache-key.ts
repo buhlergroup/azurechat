@@ -99,7 +99,12 @@ export interface ResolvePromptCacheKeyArgs {
    * set determines the built-ins one-to-one.
    */
   toolNames: readonly string[];
-  /** The user's hashed id — only used to pick a shard. */
+  /**
+   * Opaque per-user value used ONLY to pick a shard. Must never be a raw
+   * identifier: prompt_cache_key is sent to the provider in the request body,
+   * so an email or display name here would leak. Callers pass the SHA-256
+   * hashed user id.
+   */
   userKey: string;
   /** Overridable for tests. */
   strategy?: PromptCacheKeyStrategy;

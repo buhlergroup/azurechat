@@ -328,13 +328,15 @@ describe("resolveModelAndLimits — reasoning effort", () => {
       [PINNED_MODEL]: "minimal",
     });
     resetReasoningEffortOverridesCache();
+    // The CheckLimits mock's inferred return type is the narrow
+    // `{ exceeded: boolean }`; widen for the exceeded shape.
     mockCheckLimits.mockResolvedValue({
       exceeded: true,
       fallbackModel: PINNED_MODEL,
       limitType: "tokens",
       currentUsage: 50_000,
       limit: 40_000,
-    });
+    } as unknown as { exceeded: boolean });
     try {
       const thread = makeThread({ selectedModel: "gpt-5.5" });
       const result = await resolveModelAndLimits(

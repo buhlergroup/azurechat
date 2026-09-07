@@ -1173,7 +1173,13 @@ src/__tests__/
 | Extensions | `features/extensions-page/extension-services/extension-service.ts` | `CreateExtension()`, `FindAllExtensionForCurrentUser()` |
 | Prompts | `features/prompt-page/prompt-service.ts` | `CreatePrompt()`, `FindAllPromptForCurrentUser()` |
 | Usage | `features/common/services/usage-service.ts` | `GetDailyUsage()`, `CheckLimits()` |
-| Models | `features/chat-page/chat-services/models.ts` | `MODEL_CONFIGS`, `ChatModel`, `ChatThreadModel` |
+| Models | `features/chat-page/chat-services/models.ts` | `MODEL_CONFIGS`, `ChatModel`, `ChatThreadModel`, `DEFAULT_MODEL`, `resolveDefaultModel()` |
+| Provider seam | `features/chat-page/chat-services/models/provider-seam.ts` | `resolveProvider()` — model + built-in tools + providerOptions |
+| Prompt-cache key | `features/chat-page/chat-services/models/prompt-cache-key.ts` | `resolvePromptCacheKey()`, `toolsetSignature()`, `shardForUser()` |
+| Reasoning effort | `features/chat-page/chat-services/models/reasoning-effort.ts` | `resolveReasoningEffort()`, `parseReasoningEffortOverrides()` |
+| Tool order | `features/chat-page/chat-services/tools/stabilize-toolset.ts` | `stabilizeToolset()`, `compareByCodepoint()` |
+| Code-interpreter container | `features/chat-page/chat-services/code-interpreter-container.ts` | `ensureCodeInterpreterContainer()` |
+| Usage / cost | `features/chat-page/chat-services/chat-api/usage-data.ts` | `computeTokenCostUsd()`, `computeRequestUsage()` |
 | AI Search | `features/chat-page/chat-services/azure-ai-search/azure-ai-search.ts` | `SimpleSearch()`, `InsertChatDocumentWithEmbedding()` |
 | Cosmos | `features/common/services/cosmos.ts` | `HistoryContainer()`, `ConfigContainer()` |
 
