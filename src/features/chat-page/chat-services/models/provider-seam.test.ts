@@ -162,6 +162,31 @@ describe("provider-seam — Azure branch", () => {
     expect(openai.include).toBeUndefined();
   });
 
+  it("uses promptCacheKey when the caller overrides it, otherwise the thread id", () => {
+    const overridden = resolveProvider({
+      modelId: "gpt-5.6-sol",
+      thread: { id: "thread-parent", codeInterpreterContainerId: undefined },
+      toggles: offToggles,
+      reasoning: baseReasoning,
+      promptCacheKey: "thread-parent:sub:agent-9",
+    });
+    expect(
+      (overridden.providerOptions.openai as Record<string, unknown>)
+        .promptCacheKey,
+    ).toBe("thread-parent:sub:agent-9");
+
+    const defaulted = resolveProvider({
+      modelId: "gpt-5.6-sol",
+      thread: { id: "thread-parent", codeInterpreterContainerId: undefined },
+      toggles: offToggles,
+      reasoning: baseReasoning,
+    });
+    expect(
+      (defaulted.providerOptions.openai as Record<string, unknown>)
+        .promptCacheKey,
+    ).toBe("thread-parent");
+  });
+
   it("emits reasoning options only when supported + effort provided", () => {
     const r = resolveProvider({
       modelId: "gpt-5.5",

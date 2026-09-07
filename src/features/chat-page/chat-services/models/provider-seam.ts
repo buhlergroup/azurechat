@@ -87,6 +87,17 @@ export interface ResolveProviderArgs {
    * persisted `codeInterpreterFileIdsSignature`.
    */
   codeInterpreterFileIds?: string[];
+  /**
+   * Overrides the value sent as `promptCacheKey`. Defaults to `thread.id`.
+   * Two callers need this:
+   *   - the sub-agent tool, whose prefix (its own persona message + the
+   *     delegated task) has nothing in common with the parent thread's, so
+   *     sharing the parent's key would only cause cache misses;
+   *   - the persona cache-key strategy (prompt-cache-key.ts), which
+   *     deliberately shares one key across threads that have the same
+   *     developer message so they can read each other's prefix.
+   */
+  promptCacheKey?: string;
 }
 
 /**
@@ -180,7 +191,7 @@ function resolveAzureBackedProvider(
   // under the hood so the providerOptions namespace is "openai", not
   // "azure" — verified from @ai-sdk/openai/internal types.
   const openaiOptions: Record<string, JSONValue> = {
-    promptCacheKey: args.thread.id,
+    promptCacheKey: args.promptCacheKey ?? args.thread.id,
     store: false,
   };
   // GPT-5.6 exposes `prompt_cache_options`: implicit mode keeps the automatic

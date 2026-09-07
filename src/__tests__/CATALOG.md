@@ -1261,6 +1261,10 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | api.unit.chat-route.max-output.001 | api/chat/route.ts | The effective model's `maxOutputTokens` reaches streamText | unit | `ai` streamText mocked; model-selection mocked with `maxOutputTokens: 16000` | POST a message, read the streamText options | `options.maxOutputTokens === 16000` |
 | api.unit.chat-route.max-output.002 | api/chat/route.ts | No cap is invented when the config has none (negative) | unit | model config without `maxOutputTokens` | POST a message | `options.maxOutputTokens` is `undefined` |
 | chat-page.unit.call-sub-agent.max-output.001 | call-sub-agent.ts | The sub-agent generation is capped by the model's `maxOutputTokens` | unit | `generateText` mocked; persona on gpt-5.4-mini | Execute the tool | `generateText` receives `maxOutputTokens: 8000` |
+| chat-page.unit.provider-seam.cache.003 | provider-seam.ts | `promptCacheKey` honours the caller override, else the thread id | unit | existing file mocks | `resolveProvider` with and without `promptCacheKey` | Override wins; otherwise `thread.id` |
+| chat-page.unit.call-sub-agent.seam.001 | call-sub-agent.ts | Sub-agent turns carry a sub-agent cache key, `store: false` and the model's effort | unit | `generateText` + provider mocks | Execute the tool on a gpt-5.4-mini persona | `providerOptions.openai.promptCacheKey === "thread-1:sub:agent-1"`, `store === false`, no effort keys (model is non-reasoning) |
+| chat-page.unit.call-sub-agent.seam.002 | call-sub-agent.ts | A GPT-5.6 sub-agent gets `promptCacheOptions` and an effort | unit | persona on gpt-5.6-sol | Execute the tool | `promptCacheOptions` is `{ implicit, 30m }`; `reasoningEffort === "low"` |
+| chat-page.unit.call-sub-agent.seam.003 | call-sub-agent.ts | A Claude persona resolves through the anthropic seam (negative for Azure) | unit | persona on claude-sonnet-5 | Execute the tool | `resolveAnthropicModel` called, `resolveAzureModel` NOT called, options namespaced under `anthropic` |
 
 ---
 

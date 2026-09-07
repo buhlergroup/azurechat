@@ -5,7 +5,7 @@ import { tool, generateText, stepCountIs } from "ai";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { FindPersonaByID } from "@/features/persona-page/persona-services/persona-service";
 import { MODEL_CONFIGS, DEFAULT_MODEL, type ChatModel } from "../models";
-import { resolveAzureModel } from "../models/provider";
+import { resolveProvider } from "../models/provider-seam";
 import { computeTokenCostUsd } from "../chat-api/usage-data";
 import type { ToolContext } from "./tool-context";
 
@@ -102,6 +102,37 @@ export function callSubAgentTool(ctx: ToolContext) {
         );
       }
 
+      // Resolve the model AND its provider options through the same seam the
+      // main /api/chat path uses. Before this the tool called
+      // resolveAzureModel directly and sent NO providerOptions at all, which
+      // meant: no promptCacheKey (so a repeated delegation never hit the
+      // prompt cache and re-wrote its whole prefix every time), no
+      // store: false (the turn was retained server-side), no reasoning
+      // effort — the model fell back to its provider default — and Claude /
+      // Foundry personas were wrongly resolved as Azure models.
+      //
+      // Built-in tool toggles stay off: a sub-agent has never had access to
+      // code_interpreter / image_generation / web_search, and turning them on
+      // here would be a behaviour change, not a cache fix.
+      const resolved = resolveProvider({
+        modelId,
+        thread: { id: ctx.threadId, codeInterpreterContainerId: undefined },
+        toggles: {
+          codeInterpreter: false,
+          imageGeneration: false,
+          webSearch: false,
+        },
+        reasoning: {
+          supported: modelConfig.supportsReasoning,
+          effort: modelConfig.defaultReasoningEffort,
+        },
+        // A sub-agent's prefix is its own persona message plus the delegated
+        // task — nothing in common with the parent thread's prefix, so it
+        // gets its own cache key namespace rather than polluting the
+        // parent's.
+        promptCacheKey: `${ctx.threadId}:sub:${args.agent_id}`,
+      });
+
       logDebug("callSubAgentTool: calling generateText", {
         agentName: persona.name,
         model: modelConfig.deploymentName,
@@ -110,12 +141,13 @@ export function callSubAgentTool(ctx: ToolContext) {
       });
 
       const result = await generateText({
-        model: resolveAzureModel(modelId),
+        model: resolved.model,
         system: persona.personaMessage,
         messages: [{ role: "user", content: args.task }],
         tools: subToolset,
         maxOutputTokens: modelConfig.maxOutputTokens,
         stopWhen: stepCountIs(8),
+        providerOptions: resolved.providerOptions,
         abortSignal,
       });
 
