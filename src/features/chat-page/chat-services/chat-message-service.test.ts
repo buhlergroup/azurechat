@@ -163,6 +163,57 @@ describe("chat-page.unit.message-service.015 — FindAllChatMessagesForCurrentUs
   });
 });
 
+describe("chat-page.unit.message-service.016 — the loader hands the cache fields through untouched", () => {
+  // The seam: the assistant turn is persisted with a `sequence` (write order
+  // inside the turn) and a `stepLayout` (the step boundaries the live turn
+  // had). The loader is the only thing between those writes and the adapter
+  // that replays them, so it must apply the sequence AND leave both fields on
+  // the rows. Dropping either one silently reverts the prompt to a shape the
+  // provider has not cached.
+  const SAME = new Date("2026-09-07T11:00:00.000Z");
+
+  it("applies sequence as the tie-break and preserves sequence and stepLayout", async () => {
+    const layout = ["step-start", "tool:call-1", "step-start", "text:6"];
+    // Handed over in the order a same-millisecond Cosmos read can produce.
+    historyContainer.items.query.mockImplementationOnce(() => ({
+      fetchAll: async () => ({
+        resources: [
+          { id: "t1", createdAt: SAME, role: "tool", content: "{}", sequence: 2 },
+          { id: "a1", createdAt: SAME, role: "assistant", content: "answer", sequence: 1, stepLayout: layout },
+          { id: "u1", createdAt: SAME, role: "user", content: "question" },
+        ],
+      }),
+    }));
+
+    const result = await FindAllChatMessagesForCurrentUser("thread-1");
+
+    expect(result.status).toBe("OK");
+    const rows = (result as any).response;
+    // user (no sequence, counts as 0) → assistant (1) → tool (2).
+    expect(rows.map((r: any) => r.id)).toEqual(["u1", "a1", "t1"]);
+    expect(rows[1].sequence).toBe(1);
+    expect(rows[1].stepLayout).toEqual(layout);
+    expect(rows[2].sequence).toBe(2);
+  });
+
+  it("keeps rows written before either field existed in a stable order", async () => {
+    historyContainer.items.query.mockImplementationOnce(() => ({
+      fetchAll: async () => ({
+        resources: [
+          { id: "b", createdAt: SAME, role: "assistant", content: "b" },
+          { id: "a", createdAt: SAME, role: "user", content: "a" },
+        ],
+      }),
+    }));
+
+    const result = await FindAllChatMessagesForCurrentUser("thread-1");
+    const rows = (result as any).response;
+    expect(rows.map((r: any) => r.id)).toEqual(["a", "b"]);
+    expect(rows[0].sequence).toBeUndefined();
+    expect(rows[0].stepLayout).toBeUndefined();
+  });
+});
+
 describe("chat-page.unit.message-service.003 — FindAllChatMessagesForCurrentUser returns OK with resources", () => {
   it("returns messages array", async () => {
     const m1 = { id: "m1", role: "user", content: "hello" };

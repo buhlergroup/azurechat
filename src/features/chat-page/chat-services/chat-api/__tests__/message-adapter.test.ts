@@ -42,8 +42,13 @@ const CTX = { threadId: "thread-1", userId: "user-1" };
  * regenerated on the return trip (UIMessage carries no Cosmos-level ids).
  */
 function stripVolatile(row: ChatMessageModel) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, createdAt, ...rest } = row;
+  // Deliberately drop `id` and `createdAt`. Written as a delete on a shallow
+  // copy rather than as a rest-destructure, because the destructure needs an
+  // eslint-disable for a rule this repo's flat config does not register — and
+  // an unknown rule name in a disable comment is itself an eslint error.
+  const rest: Record<string, unknown> = { ...row };
+  delete rest.id;
+  delete rest.createdAt;
   return rest;
 }
 

@@ -332,6 +332,7 @@ This is the largest feature folder with complex state management and streaming.
   - `recordHistoryCompaction(input)` — Advances the watermark; summarises when enabled
   - **Tests:** `chat-services/chat-api/history-summary-service.test.ts` (Vitest)
 - **Append-only invariant:** `chat-services/chat-api/__tests__/history-append-only.test.ts` — The model-message list for turn n must be an exact item-by-item prefix of turn n+1 (developer message included). Compaction is the only sanctioned exception
+- **Step-layout seam:** the same suite also pins the join between the two halves of this change set — `stepLayout` and `sequence`, written by `persist-assistant.ts`, must survive `FindAllChatMessagesForCurrentUser` and replay through `message-adapter.ts` in the live step shape, and the `CHAT_HISTORY_SUMMARY` row must stay invisible to both
 
 **Utilities:**
 - `chat-services/utils.ts`

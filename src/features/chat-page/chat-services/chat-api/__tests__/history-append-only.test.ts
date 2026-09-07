@@ -592,3 +592,172 @@ describe("history.append-only.005 — a same-millisecond write order cannot resh
     expect(shuffled).toEqual(forward);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe("history.append-only.006 — a persisted step layout replays through the loader", () => {
+  /**
+   * The seam between the two halves of this change set.
+   *
+   * The cache half writes two extra fields on the rows of a tool turn:
+   * `stepLayout` (the step boundaries the live turn had) and `sequence` (the
+   * write order within the turn). The history half is what reads them back —
+   * it orders the thread on (createdAt, sequence, id) and hands the rows to
+   * the adapter that re-inserts the step boundaries.
+   *
+   * If either field were dropped, renamed or reordered on the way through, the
+   * replayed turn would serialise to a DIFFERENT list of model messages than
+   * the live turn produced, and the provider's cached prefix would not match —
+   * which is the whole failure both halves exist to remove. So: the layout
+   * must survive the loader, and the result must still be append-only.
+   */
+
+  /** One tool turn, persisted exactly as persist-assistant.ts writes it. */
+  function persistedToolTurnWithLayout(
+    question: string,
+    answer: string,
+    callId: string,
+  ) {
+    return [
+      // The user row is written by loadThreadContext and carries no sequence.
+      makeRow("user", question),
+      makeRow("assistant", answer, {
+        sequence: 1,
+        stepLayout: ["step-start", `tool:${callId}`, "step-start", `text:${answer.length}`],
+      }),
+      makeRow(
+        "tool",
+        JSON.stringify({
+          name: "search_documents",
+          arguments: JSON.stringify({ query: question }),
+          result: JSON.stringify({ hits: 2 }),
+          call_id: callId,
+        }),
+        { sequence: 2 },
+      ),
+    ];
+  }
+
+  it("splits the replayed turn on the persisted step boundaries", async () => {
+    const rows = persistedToolTurnWithLayout("find it", "Found it.", "call-1");
+    const input = await buildModelInput(rows, "and now this");
+
+    // Live shape: assistant(tool-call) → tool(result) → assistant(text).
+    // Without the layout the adapter emits ONE assistant message carrying both
+    // the tool call and the text, which is a different prefix.
+    const roles = input.map((m) => m.role);
+    expect(roles).toEqual([
+      "system", // developer message
+      "user", // find it
+      "assistant", // the tool call
+      "tool", // its result
+      "assistant", // Found it.
+      "user", // and now this
+    ]);
+
+    const textAssistant = input[4];
+    expect(JSON.stringify(textAssistant.content)).toContain("Found it.");
+  });
+
+  it("keeps the layout intact through the deterministic order", async () => {
+    const { sortHistoryRowsDeterministically } = await import(
+      "../../chat-history-order"
+    );
+    const rows = persistedToolTurnWithLayout("find it", "Found it.", "call-1");
+
+    const forward = await buildModelInput(
+      sortHistoryRowsDeterministically(rows as never),
+      "and now this",
+    );
+    // Same rows, handed over in the order a same-millisecond Cosmos read could
+    // produce. `sequence` is the only thing that can put them back.
+    const tied = rows.map((r) => ({ ...r, createdAt: new Date("2026-09-07T11:00:00.000Z") }));
+    const shuffled = await buildModelInput(
+      sortHistoryRowsDeterministically([tied[2], tied[1], tied[0]] as never),
+      "and now this",
+    );
+
+    expect(shuffled).toEqual(forward);
+  });
+
+  it("turn n is an exact prefix of turn n+1 across tool turns with layouts", async () => {
+    let rows = persistedToolTurnWithLayout("find it", "Found it.", "call-1");
+    let previous = await buildModelInput(rows, "question 1");
+
+    for (let i = 1; i <= 3; i++) {
+      rows = [
+        ...rows,
+        ...persistedToolTurnWithLayout(`question ${i}`, `answer ${i}`, `call-${i + 1}`),
+      ];
+      const next = await buildModelInput(rows, `question ${i + 1}`);
+      expectExactPrefix(previous, next);
+      previous = next;
+    }
+  });
+
+  it("still replays rows written before the layout existed", async () => {
+    // Backward compatibility: no stepLayout, no sequence — the flat shape the
+    // adapter has always produced, and it must stay append-only too.
+    const oldRows = persistedToolTurn("legacy question", "legacy answer");
+    const turnN = await buildModelInput(oldRows, "question n");
+    const turnNPlus1 = await buildModelInput(
+      [...oldRows, ...persistedTurn("question n", "answer n")],
+      "question n+1",
+    );
+    expectExactPrefix(turnN, turnNPlus1);
+  });
+
+  it("mixes layout-carrying and layout-less turns without moving the older ones", async () => {
+    const legacy = persistedToolTurn("legacy question", "legacy answer");
+    const modern = persistedToolTurnWithLayout("modern question", "modern answer", "call-9");
+
+    const turnN = await buildModelInput(legacy, "question n");
+    const turnNPlus1 = await buildModelInput(
+      [...legacy, ...persistedTurn("question n", "answer n"), ...modern],
+      "question n+1",
+    );
+    expectExactPrefix(turnN, turnNPlus1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("history.append-only.007 — the compaction row never enters the history", () => {
+  it("uses a type no message query selects", async () => {
+    const { HISTORY_SUMMARY_ATTRIBUTE } = await import("../history-summary");
+    // The loader filters on r.type = MESSAGE_ATTRIBUTE, so a distinct type is
+    // what keeps the summary row out of the transcript AND out of the step
+    // layout replay. If these two ever became equal, the row would be loaded
+    // as a message.
+    expect(HISTORY_SUMMARY_ATTRIBUTE).not.toBe(MESSAGE_ATTRIBUTE);
+  });
+
+  it("replays the summary as a plain item with no step layout to apply", async () => {
+    const rows: unknown[] = [];
+    for (let i = 0; i < 20; i++) rows.push(...bigTurn(500));
+    process.env.HISTORY_TOKEN_BUDGET = "6000";
+
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+    const ctx = await loadThreadContext(prompt("question"));
+
+    const replayed = ctx.modelHistory[0];
+    expect(replayed.role).toBe("user");
+    // No metadata at all — so uiMessagesFromChatMessages' step-layout pass has
+    // nothing to act on even if the item were routed through it.
+    expect((replayed as { metadata?: unknown }).metadata).toBeUndefined();
+    expect(replayed.parts).toHaveLength(1);
+    expect(replayed.parts[0].type).toBe("text");
+
+    // And it is prompt scaffolding only: the browser-facing history must not
+    // contain it, or the user would see a summary bubble appear in the thread.
+    expect(ctx.history).not.toContain(replayed);
+    expect(
+      ctx.history.some((m) =>
+        m.parts.some(
+          (p) => p.type === "text" && p.text.includes(SUMMARY_REPLAY_PREFIX),
+        ),
+      ),
+    ).toBe(false);
+  });
+});
