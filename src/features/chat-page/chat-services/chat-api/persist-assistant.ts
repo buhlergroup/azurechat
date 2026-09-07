@@ -35,6 +35,7 @@ import {
   reportCompletionTokens,
   reportCachedTokens,
   reportCacheWriteTokens,
+  reportTruncatedTurn,
   reportUserChatMessage,
 } from "@/features/common/services/chat-metrics-service";
 import { UpsertChatMessage } from "../chat-message-service";
@@ -121,6 +122,34 @@ export function friendlyErrorMessage(err: { message: string; name?: string }): s
   return "_⚠️ Something went wrong generating the reply. Please try again, or start a new chat if it keeps happening._";
 }
 
+/**
+ * Appended to a reply the provider cut short at the output ceiling.
+ *
+ * `finishReason: "length"` used to be indistinguishable from a finished
+ * answer: the text simply stopped, usually mid-sentence, and the user's only
+ * clue was that it read oddly. Reasoning makes it more likely rather than
+ * less — reasoning tokens count against the same ceiling, so a turn at high
+ * effort can spend most of the budget thinking and leave little for the
+ * answer.
+ *
+ * Kept short, and phrased as a fact about the answer rather than an error,
+ * because the part above it is usually still useful. Italic markdown to match
+ * the other sentinels in this file.
+ */
+export const TRUNCATION_NOTICE =
+  "\n\n_The answer was cut at the output limit. Ask for the rest, or for a shorter answer._";
+
+/**
+ * Append the truncation notice, unless it is already there.
+ *
+ * The idempotence matters: a turn can be persisted more than once (the retry
+ * in route.ts's onFinish handler), and two notices on one message reads like a
+ * bug in the app rather than a limit on the answer.
+ */
+export function withTruncationNotice(text: string): string {
+  return text.endsWith(TRUNCATION_NOTICE) ? text : `${text}${TRUNCATION_NOTICE}`;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -165,6 +194,12 @@ export interface PersistPayload {
    * the caller has no step information (e.g. a sentinel row).
    */
   turnShape?: { stepCount: number; toolCallCount: number };
+  /**
+   * The provider stopped at the output ceiling rather than because the answer
+   * was done (`finishReason: "length"`). Counted as its own metric so a rise
+   * in truncations is visible without waiting for a complaint.
+   */
+  truncated?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +227,7 @@ export async function persistThread({
   usage,
   personaId,
   turnShape,
+  truncated,
 }: PersistPayload): Promise<void> {
   const userId = await userHashedId();
 
@@ -406,6 +442,9 @@ export async function persistThread({
     reportCachedTokens(cachedTokens, model, metricAttrs),
     reportCacheWriteTokens(cacheWriteTokens, model, metricAttrs),
     reportUserChatMessage(model, metricAttrs),
+    // Only on a truncated turn, so the counter reads as a count of
+    // truncations and not as a series with a lot of zeroes in it.
+    ...(truncated ? [reportTruncatedTurn(model, metricAttrs)] : []),
   ]).catch((err: unknown) =>
     logError("Failed to emit chat usage metrics", {
       error: err instanceof Error ? err.message : String(err),
@@ -648,6 +687,28 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
     ? friendlyErrorMessage(streamError)
     : "_The model didn't produce a response. Try rephrasing your message, or ask again._";
 
+  // Truncation. The provider stopped because the turn hit its output ceiling,
+  // not because the answer was finished — so the text ends mid-sentence and
+  // nothing in the reply says why. Reasoning tokens count against the same
+  // ceiling, which makes this MORE likely at high effort, not less.
+  //
+  // Two things happen: the notice goes on the persisted text so the user can
+  // see it, and it is logged and counted so a rise in truncations is visible
+  // without waiting for someone to complain. An empty finish is left to the
+  // sentinel above, which already explains itself.
+  const finishReason = (event as { finishReason?: string }).finishReason;
+  const wasTruncated = finishReason === "length" && !isEmptyFinish;
+  if (wasTruncated) {
+    logWarn("persistAssistantFromFinishEvent: turn truncated at the output limit", {
+      threadId,
+      turnId,
+      modelId: modelConfig.id,
+      maxOutputTokens: modelConfig.maxOutputTokens,
+      outputTokens: event.totalUsage?.outputTokens,
+      textLength: event.text?.length ?? 0,
+    });
+  }
+
   // image_generation tool results carry the bytes as raw base64 in
   // output.result (~2 MB per 1024² PNG), which blows past Cosmos's 2 MB
   // request-size cap. Ingest them into the chat-image-service store and
@@ -668,7 +729,11 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
 
   const assistant = buildAssistantUIMessage(
     {
-      text: isEmptyFinish ? sentinelText : event.text,
+      text: isEmptyFinish
+        ? sentinelText
+        : wasTruncated
+          ? withTruncationNotice(event.text)
+          : event.text,
       reasoningText: event.reasoningText,
       toolResults: ingestedToolResults,
       // Only record step boundaries for a turn that actually produced steps;
@@ -745,5 +810,6 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
     },
     personaId,
     turnShape: deriveTurnShape(event.steps),
+    truncated: wasTruncated,
   });
 }

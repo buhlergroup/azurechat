@@ -132,11 +132,27 @@ export interface ModelConfig {
   contextWindow: number;
   /**
    * Upper bound on the tokens the model may emit for one call, passed to
-   * streamText/generateText as `maxOutputTokens`. Without it a runaway
-   * generation can only be stopped by the provider's own (very high) default,
-   * which on a reasoning model means an open-ended output bill. NOTE: on the
-   * Responses API reasoning tokens count against this budget, so the value has
-   * to leave room for both the thinking and the answer.
+   * streamText/generateText as `maxOutputTokens`. Not a context limit — a
+   * guardrail against one runaway turn billing at the output rate.
+   *
+   * REASONING TOKENS COUNT AGAINST IT. On the Responses API the ceiling covers
+   * reasoning plus the visible answer, and on Anthropic's Messages API
+   * `max_tokens` covers thinking plus the answer — so at effort "high" and
+   * above a turn can spend most of the budget thinking and then be cut off
+   * mid-sentence. The chat path surfaces `finishReason: "length"` rather than
+   * letting that pass as a complete answer.
+   *
+   * The numbers, and why they differ:
+   *   32000  the 5.6 family and 5.5 — reasoning-heavy, and the models people
+   *          bring long-form work to. 16000 was measurably tight at high
+   *          effort.
+   *   16000  Claude (thinking is adaptive, so the cap is the bill guardrail
+   *          rather than the thinking budget) and gpt-5.4.
+   *    8000  the small models, which are picked for speed and cost.
+   *
+   * `MAX_OUTPUT_TOKENS_OVERRIDES` overrides this per model per environment;
+   * see models/max-output-tokens.ts. Absent here and unset there means no
+   * ceiling is sent and the provider default applies.
    */
   maxOutputTokens?: number;
   fallbackModel?: ChatModel;
@@ -189,7 +205,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
-    maxOutputTokens: 16000,
+    maxOutputTokens: 32000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
@@ -210,7 +226,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
-    maxOutputTokens: 16000,
+    maxOutputTokens: 32000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },
@@ -228,7 +244,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
-    maxOutputTokens: 16000,
+    maxOutputTokens: 32000,
     hardCapEligible: true,
     capabilities: ["vision", "webSearch", "code"],
   },
@@ -247,7 +263,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // No cacheWritePerMillion: gpt-5.5 does not bill cache writes separately.
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50 },
     contextWindow: 1050000,
-    maxOutputTokens: 16000,
+    maxOutputTokens: 32000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
   },

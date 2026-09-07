@@ -171,4 +171,86 @@ describe("streamText.onFinish — background completion", () => {
     expect(roles).toContain("assistant");
     expect(roles.filter((r) => r === "tool" || r === "function")).toHaveLength(1);
   });
+
+  const truncatingModelConfig = {
+    id: "gpt-test",
+    deploymentName: "gpt-test",
+    maxOutputTokens: 32000,
+    pricing: {
+      inputPerMillion: 1,
+      cachedInputPerMillion: 0,
+      outputPerMillion: 2,
+    },
+  } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["modelConfig"];
+
+  it("marks a turn the provider cut at the output limit", async () => {
+    // finishReason "length" used to be indistinguishable from a finished
+    // answer: the text just stopped, usually mid-sentence, and nothing in the
+    // reply said why. Reasoning makes it MORE likely, not less — reasoning
+    // tokens come out of the same ceiling.
+    upsertSpy.mockClear();
+    await persistAssistantFromFinishEvent({
+      threadId: "thread-1",
+      messageId: "msg-T",
+      event: {
+        text: "Step 1: open the valve. Step 2: wait for the",
+        reasoningText: undefined,
+        toolResults: [],
+        finishReason: "length",
+        totalUsage: { inputTokens: 5, outputTokens: 32000 },
+      } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["event"],
+      modelConfig: truncatingModelConfig,
+    });
+
+    const assistantRow = upsertSpy.mock.calls
+      .map((c) => c[0] as { role?: string; content?: string })
+      .find((r) => r.role === "assistant");
+    expect(assistantRow?.content).toContain("Step 2: wait for the");
+    expect(assistantRow?.content).toContain("cut at the output limit");
+  });
+
+  it("leaves an ordinary finish untouched (negative)", async () => {
+    upsertSpy.mockClear();
+    await persistAssistantFromFinishEvent({
+      threadId: "thread-1",
+      messageId: "msg-N",
+      event: {
+        text: "All done.",
+        reasoningText: undefined,
+        toolResults: [],
+        finishReason: "stop",
+        totalUsage: { inputTokens: 5, outputTokens: 3 },
+      } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["event"],
+      modelConfig: truncatingModelConfig,
+    });
+
+    const assistantRow = upsertSpy.mock.calls
+      .map((c) => c[0] as { role?: string; content?: string })
+      .find((r) => r.role === "assistant");
+    expect(assistantRow?.content).toBe("All done.");
+  });
+
+  it("does not stack the notice on top of the empty-finish sentinel", async () => {
+    // An empty finish already explains itself, and a reply that is BOTH empty
+    // and truncated would otherwise get two explanations for one failure.
+    upsertSpy.mockClear();
+    await persistAssistantFromFinishEvent({
+      threadId: "thread-1",
+      messageId: "msg-E",
+      event: {
+        text: "",
+        reasoningText: undefined,
+        toolResults: [],
+        finishReason: "length",
+        totalUsage: { inputTokens: 5, outputTokens: 0 },
+      } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["event"],
+      modelConfig: truncatingModelConfig,
+    });
+
+    const assistantRow = upsertSpy.mock.calls
+      .map((c) => c[0] as { role?: string; content?: string })
+      .find((r) => r.role === "assistant");
+    expect(assistantRow?.content).toContain("didn't produce a response");
+    expect(assistantRow?.content).not.toContain("cut at the output limit");
+  });
 });

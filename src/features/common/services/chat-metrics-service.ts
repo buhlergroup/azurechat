@@ -116,6 +116,22 @@ export async function reportCacheWriteTokens(tokenCount: number, model: string, 
     cacheWriteTokensUsed.record(tokenCount, combinedAttributes);
 }
 
+export async function reportTruncatedTurn(model: string, attributes: any = {}) {
+
+    const meter = getChatMeter();
+
+    // A COUNTER, not a histogram: the question is "how often", and one series
+    // that can be compared against userChatMessage gives a truncation RATE.
+    const truncatedTurns = meter.createCounter("truncatedTurns", {
+        description: "Turns the provider cut short at the output token ceiling (finishReason=length)",
+        unit: "turns",
+    });
+
+    let combinedAttributes = withTurnShape({ ...attributes, ...await getAttributes(model) });
+
+    truncatedTurns.add(1, combinedAttributes);
+}
+
 export async function reportUserChatMessage(model: string, attributes: any = {}) {
 
     const meter = getChatMeter();

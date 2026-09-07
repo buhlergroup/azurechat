@@ -6,6 +6,7 @@ import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { FindPersonaByID } from "@/features/persona-page/persona-services/persona-service";
 import { MODEL_CONFIGS, DEFAULT_MODEL, type ChatModel } from "../models";
 import { resolveProvider } from "../models/provider-seam";
+import { resolveMaxOutputTokens } from "../models/max-output-tokens";
 import { resolveReasoningEffort } from "../models/reasoning-effort";
 import { stabilizeToolset } from "./stabilize-toolset";
 import { computeTokenCostUsd } from "../chat-api/usage-data";
@@ -151,7 +152,10 @@ export function callSubAgentTool(ctx: ToolContext) {
         // Same canonical tool order as the main path — a sub-agent's prefix
         // is cached under its own key and has to be just as stable.
         tools: stabilizeToolset(subToolset, Object.keys(resolved.builtInTools)),
-        maxOutputTokens: modelConfig.maxOutputTokens,
+        // Via the resolver, so MAX_OUTPUT_TOKENS_OVERRIDES reaches the
+        // sub-agent too. Reading modelConfig directly here and in the route
+        // was two call sites for one decision.
+        maxOutputTokens: resolveMaxOutputTokens({ modelId }),
         stopWhen: stepCountIs(8),
         providerOptions: resolved.providerOptions,
         abortSignal,

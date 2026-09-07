@@ -32,6 +32,7 @@ import { createSandboxUrlTransform } from "@/features/chat-page/chat-services/ch
 import { createImageGenerationStreamRewriter } from "@/features/chat-page/chat-services/chat-api/image-generation-stream-rewriter";
 import { createCodeInterpreterStreamRewriter } from "@/features/chat-page/chat-services/chat-api/code-interpreter-stream-rewriter";
 import { resolveProvider, getFileIdsSignature } from "@/features/chat-page/chat-services/models/provider-seam";
+import { resolveMaxOutputTokens } from "@/features/chat-page/chat-services/models/max-output-tokens";
 import { ensureCodeInterpreterContainer } from "@/features/chat-page/chat-services/code-interpreter-container";
 import { computeRequestUsage, type ChatMessageMetadata } from "@/features/chat-page/chat-services/chat-api/usage-data";
 import {
@@ -547,9 +548,11 @@ export async function POST(req: Request) {
     system: streamPrompt.system,
     messages: streamPrompt.messages,
     tools: allTools,
-    // Per-model ceiling on emitted tokens. Reasoning tokens count against it
-    // on the Responses API, so the configured values leave room for both.
-    maxOutputTokens: modelConfig.maxOutputTokens,
+    // Per-model ceiling on emitted tokens, via the resolver so the env
+    // override applies here and in the sub-agent identically. Reasoning
+    // tokens count against it, which is why a turn can finish with
+    // finishReason "length" — see the truncation notice in persist-assistant.
+    maxOutputTokens: resolveMaxOutputTokens({ modelId: effectiveModel }),
     stopWhen: stepCountIs(15),
     // Repairs bare, pre-namespacing extension tool names the model may
     // echo from old persisted thread history (see repairExtensionToolCall)
