@@ -175,6 +175,42 @@ describe("provider-seam — Azure branch", () => {
     expect(openai.include).toEqual(["reasoning.encrypted_content"]);
   });
 
+  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const)(
+    "sends promptCacheOptions { implicit, 30m } for %s",
+    (modelId) => {
+      const r = resolveProvider({
+        modelId,
+        thread: baseThread,
+        toggles: offToggles,
+        reasoning: baseReasoning,
+      });
+      const openai = r.providerOptions.openai as Record<string, unknown>;
+      expect(openai.promptCacheOptions).toEqual({
+        mode: "implicit",
+        ttl: "30m",
+      });
+      // The key + store contract is unchanged by the cache options.
+      expect(openai.promptCacheKey).toBe("thread-1");
+      expect(openai.store).toBe(false);
+    },
+  );
+
+  it.each(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"] as const)(
+    "omits promptCacheOptions for %s (the model answers HTTP 400)",
+    (modelId) => {
+      const r = resolveProvider({
+        modelId,
+        thread: baseThread,
+        toggles: offToggles,
+        reasoning: baseReasoning,
+      });
+      const openai = r.providerOptions.openai as Record<string, unknown>;
+      expect(openai.promptCacheOptions).toBeUndefined();
+      expect(openai.promptCacheKey).toBe("thread-1");
+      expect(openai.store).toBe(false);
+    },
+  );
+
   it("omits reasoning options when supported=true but effort is undefined", () => {
     const r = resolveProvider({
       modelId: "gpt-5.5",

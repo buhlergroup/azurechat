@@ -37,6 +37,19 @@ export interface ModelPricing {
 }
 
 /**
+ * Model generation ("family"). Gates provider features that are generation-
+ * specific rather than per-model:
+ *   - GPT-5.6 accepts the Responses-API `prompt_cache_options` block and
+ *     bills cache writes; earlier generations reject it with HTTP 400.
+ *   - the persona prompt-cache-key strategy only applies to GPT-5.6, whose
+ *     implicit cache matches partial prefixes.
+ *   - each generation accepts a different set of reasoning-effort levels.
+ * Absence means "unclassified"; every feature gated on a family treats an
+ * absent family as "not that family", so old entries keep working.
+ */
+export type ModelFamily = "gpt-5.6" | "gpt-5.5" | "gpt-5.4" | "foundry" | "claude";
+
+/**
  * The upstream provider that serves this model. Switches the route's
  * provider-seam to a different concrete implementation:
  *
@@ -75,6 +88,15 @@ export interface ModelConfig {
   supportsComputerUse?: boolean;
   /** Optional override of the route's provider seam. Defaults to "azure". */
   provider?: ModelProvider;
+  /** Model generation. Absence means "unclassified" — see ModelFamily. */
+  family?: ModelFamily;
+  /**
+   * True when the model accepts the Responses-API `prompt_cache_options`
+   * block (`{ mode, ttl }`). GPT-5.6 does. gpt-5.5 and older answer
+   * HTTP 400 "prompt_cache_options is not supported on this model", so this
+   * capability is gated per model instead of being sent unconditionally.
+   */
+  promptCacheOptionsSupported?: boolean;
   deploymentName?: string;
   defaultReasoningEffort?: ReasoningEffort;
   pricing: ModelPricing;
@@ -108,6 +130,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.6 Sol",
     description: "Flagship GPT-5.6 model with state-of-the-art capabilities",
     getInstance: () => OpenAIV1ReasoningInstance(),
+    family: "gpt-5.6",
+    promptCacheOptionsSupported: true,
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
@@ -123,6 +147,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.6 Terra",
     description: "Balanced GPT-5.6 model for everyday advanced tasks",
     getInstance: () => OpenAIV1ReasoningInstance(),
+    family: "gpt-5.6",
+    promptCacheOptionsSupported: true,
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
@@ -138,6 +164,8 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.6 Luna",
     description: "Fast and efficient GPT-5.6 model for everyday tasks",
     getInstance: () => OpenAIV1Instance(),
+    family: "gpt-5.6",
+    promptCacheOptionsSupported: true,
     supportsReasoning: false,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
@@ -152,6 +180,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.5",
     description: "Latest GPT-5.5 model with state-of-the-art capabilities",
     getInstance: () => OpenAIV1ReasoningInstance(),
+    family: "gpt-5.5",
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
@@ -167,6 +196,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.4",
     description: "Latest GPT-5.4 model with state-of-the-art capabilities",
     getInstance: () => OpenAIV1ReasoningInstance(),
+    family: "gpt-5.4",
     supportsReasoning: true,
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
@@ -182,6 +212,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     name: "GPT-5.4 Mini",
     description: "Fast and efficient GPT-5.4 model for everyday tasks",
     getInstance: () => OpenAIV1Instance(),
+    family: "gpt-5.4",
     supportsReasoning: false,
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT54_MINI_DEPLOYMENT_NAME,
@@ -205,6 +236,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
       );
     },
     provider: "foundry",
+    family: "foundry",
     supportsReasoning: false,
     supportsResponsesAPI: false,
     deploymentName: process.env.FOUNDRY_DEEPSEEK_DEPLOYMENT_NAME,
@@ -223,6 +255,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
       );
     },
     provider: "foundry",
+    family: "foundry",
     supportsReasoning: false,
     supportsResponsesAPI: false,
     deploymentName: process.env.FOUNDRY_KIMI_DEPLOYMENT_NAME,
@@ -241,6 +274,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
       );
     },
     provider: "foundry",
+    family: "foundry",
     // Foundry emits the reasoning item inconsistently; no effort selector.
     supportsReasoning: false,
     supportsResponsesAPI: false,
@@ -262,6 +296,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
       );
     },
     provider: "anthropic",
+    family: "claude",
     supportsReasoning: true,
     supportsResponsesAPI: false,
     deploymentName: process.env.AZURE_ANTHROPIC_OPUS48_DEPLOYMENT_NAME,
@@ -282,6 +317,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
       );
     },
     provider: "anthropic",
+    family: "claude",
     supportsReasoning: true,
     supportsResponsesAPI: false,
     deploymentName: process.env.AZURE_ANTHROPIC_SONNET5_DEPLOYMENT_NAME,

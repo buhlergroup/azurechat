@@ -117,7 +117,7 @@ export function resolveProvider(args: ResolveProviderArgs): ResolvedProvider {
 
   switch (providerTag) {
     case "azure":
-      return resolveAzureBackedProvider(args);
+      return resolveAzureBackedProvider(args, config);
     case "foundry":
       return resolveFoundryBackedProvider(args);
     case "anthropic":
@@ -129,7 +129,10 @@ export function resolveProvider(args: ResolveProviderArgs): ResolvedProvider {
   }
 }
 
-function resolveAzureBackedProvider(args: ResolveProviderArgs): ResolvedProvider {
+function resolveAzureBackedProvider(
+  args: ResolveProviderArgs,
+  config: ModelConfig,
+): ResolvedProvider {
   const model = resolveAzureModel(args.modelId);
 
   // Built-in tools that Azure runs server-side (Responses API).
@@ -180,6 +183,15 @@ function resolveAzureBackedProvider(args: ResolveProviderArgs): ResolvedProvider
     promptCacheKey: args.thread.id,
     store: false,
   };
+  // GPT-5.6 exposes `prompt_cache_options`: implicit mode keeps the automatic
+  // prefix matching we already rely on, and ttl "30m" extends the cache
+  // lifetime from the ~5-minute default so a user who thinks between turns
+  // still lands a cache read instead of re-writing the whole prefix.
+  // Strictly gated: gpt-5.5 and older answer HTTP 400
+  // "prompt_cache_options is not supported on this model".
+  if (config.promptCacheOptionsSupported) {
+    openaiOptions.promptCacheOptions = { mode: "implicit", ttl: "30m" };
+  }
   if (args.reasoning.supported && args.reasoning.effort) {
     openaiOptions.reasoningEffort = args.reasoning.effort;
     openaiOptions.reasoningSummary = "auto";

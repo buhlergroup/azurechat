@@ -1230,6 +1230,29 @@ Source: `proxy.ts` lines 15-55.
 
 ---
 
+## chat-page — prompt-cache write efficiency (2026-09)
+
+Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
+`features/chat-page/chat-services/models/prompt-cache-key.ts`,
+`features/chat-page/chat-services/chat-api/usage-data.ts`,
+`features/chat-page/chat-services/chat-api/persist-assistant.ts`,
+`features/chat-page/chat-services/chat-api/message-adapter.ts`,
+`features/chat-page/chat-services/chat-api/model-selection.ts`,
+`features/chat-page/chat-services/tools/call-sub-agent.ts`,
+`features/chat-page/chat-services/code-interpreter-container.ts`,
+`app/(authenticated)/api/models/route.ts`.
+
+### Unit cases
+
+| ID | Target file | Case title | Type | Preconditions/mocks | Steps | Expected outcome |
+|---|---|---|---|---|---|---|
+| chat-page.unit.provider-seam.cache.001 | provider-seam.ts | `promptCacheOptions` is sent for every GPT-5.6 model | unit | `./provider` + `@ai-sdk/azure` stubbed (existing file mocks) | `resolveProvider` for gpt-5.6-sol / -terra / -luna | `providerOptions.openai.promptCacheOptions` equals `{ mode: "implicit", ttl: "30m" }`; `promptCacheKey` / `store` unchanged |
+| chat-page.unit.provider-seam.cache.002 | provider-seam.ts | `promptCacheOptions` is omitted for pre-5.6 models (negative) | unit | same | `resolveProvider` for gpt-5.5 / gpt-5.4 / gpt-5.4-mini | `promptCacheOptions` is `undefined` (the model answers HTTP 400 when it is sent) |
+
+---
+
+---
+
 ## Pos/Neg Coverage Matrix
 
 Every exported symbol / component listed in INVENTORY.md is represented below. "+ case IDs" = positive cases; "– case IDs" = negative cases. "no negative needed" reasons annotated where the surface is genuinely irreducible.
