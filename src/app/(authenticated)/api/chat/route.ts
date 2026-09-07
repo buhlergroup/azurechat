@@ -29,6 +29,7 @@ import { createSandboxUrlTransform } from "@/features/chat-page/chat-services/ch
 import { createImageGenerationStreamRewriter } from "@/features/chat-page/chat-services/chat-api/image-generation-stream-rewriter";
 import { createCodeInterpreterStreamRewriter } from "@/features/chat-page/chat-services/chat-api/code-interpreter-stream-rewriter";
 import { resolveProvider, getFileIdsSignature } from "@/features/chat-page/chat-services/models/provider-seam";
+import { ensureCodeInterpreterContainer } from "@/features/chat-page/chat-services/code-interpreter-container";
 import { computeRequestUsage, type ChatMessageMetadata } from "@/features/chat-page/chat-services/chat-api/usage-data";
 import {
   UpdateChatTitle,
@@ -320,6 +321,40 @@ export async function POST(req: Request) {
         threadId: ctx.thread.id,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  // Prompt-cache prefix stability for code_interpreter. The tool definition
+  // is part of the cached prefix, and it used to change between turn 1
+  // (container: {} or { fileIds }) and turn 2 (container: "<harvested id>"),
+  // so a code-interpreter thread could never match its own cached prefix.
+  // Creating the container BEFORE the first model call puts the id in the
+  // definition from turn 1 onwards. If creation fails we keep the old
+  // bootstrap-then-harvest path, which still works.
+  if (effectiveToolsSafe.codeInterpreter && !ctx.thread.codeInterpreterContainerId) {
+    const containerId = await ensureCodeInterpreterContainer({
+      threadId: ctx.thread.id,
+      existingContainerId: ctx.thread.codeInterpreterContainerId,
+      fileIds: requestedCiFileIds,
+    });
+    if (containerId) {
+      ctx.thread.codeInterpreterContainerId = containerId;
+      // Persist immediately: the id has to survive to the next turn even if
+      // the model never calls the tool this turn (otherwise turn 2 would
+      // mint another container and change the definition again).
+      try {
+        await UpdateChatThreadCodeInterpreterContainer(
+          ctx.thread.id,
+          containerId,
+          requestedCiSignature,
+        );
+      } catch (err) {
+        logError("/api/chat failed to persist pre-created container id", {
+          threadId: ctx.thread.id,
+          containerId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 

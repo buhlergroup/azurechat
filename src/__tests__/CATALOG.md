@@ -1283,6 +1283,16 @@ Targets: `features/chat-page/chat-services/models/provider-seam.ts`,
 | chat-page.unit.persist-assistant.steps.002 | persist-assistant.ts | `buildAssistantUIMessage` emits step-start markers | unit | — | Build with a 2-step layout | Parts are step-start / dynamic-tool / step-start / text |
 | chat-page.unit.persist-assistant.steps.003 | persist-assistant.ts | No layout supplied keeps the flat part shape (back-compat) | unit | — | Build without `stepLayout` | Parts are text / dynamic-tool |
 | chat-page.unit.persist-assistant.steps.004 | persist-assistant.ts | A tool result no step claimed is still persisted (negative) | unit | layout with an empty step | Build | The tool part is appended rather than dropped |
+| chat-page.unit.ci-container.001 | code-interpreter-container.ts | An existing container is returned without an API call | unit | `OpenAIV1Instance` mocked | Call with `existingContainerId` | Same id back; `containers.create` not called |
+| chat-page.unit.ci-container.002 | code-interpreter-container.ts | A new container is named after the thread with an explicit idle window | unit | same | Call with no existing id | `create({ name: "chat-t1", expires_after: { last_active_at, 20 } })` |
+| chat-page.unit.ci-container.003 | code-interpreter-container.ts | Attached files are deduped and sorted so the call is deterministic | unit | same | Call with `["file-b","file-a","file-b"]` | `file_ids: ["file-a","file-b"]` |
+| chat-page.unit.ci-container.004 | code-interpreter-container.ts | A rejected create returns undefined so the caller falls back (negative) | unit | create rejects | Call | Resolves `undefined`, does not throw |
+| chat-page.unit.ci-container.005 | code-interpreter-container.ts | A create with no id in the response returns undefined (negative) | unit | create resolves `{}` | Call | `undefined` |
+| chat-page.unit.ci-container.006 | code-interpreter-container.ts | A client without the containers API returns undefined (negative) | unit | client stub `{}` | Call | `undefined`, no TypeError |
+| api.unit.chat-route.ci-container.001 | api/chat/route.ts | The container is created before the first model call and declared on turn 1 | unit | container module + thread service mocked | POST with codeInterpreterEnabled | `resolveProvider` receives the pre-created id; it is persisted immediately |
+| api.unit.chat-route.ci-container.002 | api/chat/route.ts | An existing container is reused, none created | unit | thread already has an id | POST | `ensureCodeInterpreterContainer` not called; seam gets the existing id |
+| api.unit.chat-route.ci-container.003 | api/chat/route.ts | Creation failure falls back to the inline bootstrap (negative) | unit | ensure resolves undefined | POST | Seam gets `undefined`; nothing persisted |
+| api.unit.chat-route.ci-container.004 | api/chat/route.ts | No container is created when code_interpreter is off (negative) | unit | toggle off | POST | `ensureCodeInterpreterContainer` not called |
 
 ---
 

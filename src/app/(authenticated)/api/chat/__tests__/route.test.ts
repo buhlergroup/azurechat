@@ -43,6 +43,20 @@ vi.mock("@/features/chat-page/chat-services/models/provider-seam", () => ({
   getFileIdsSignature: (ids: string[] | undefined) =>
     !ids || ids.length === 0 ? "" : [...new Set(ids)].sort().join(","),
 }));
+const mockEnsureContainer = vi.fn();
+vi.mock(
+  "@/features/chat-page/chat-services/code-interpreter-container",
+  () => ({
+    ensureCodeInterpreterContainer: (...a: unknown[]) =>
+      mockEnsureContainer(...a),
+  }),
+);
+const mockUpdateContainer = vi.fn(async () => ({ status: "OK" }));
+vi.mock("@/features/chat-page/chat-services/chat-thread-service", () => ({
+  UpdateChatTitle: vi.fn(async () => ({ status: "OK" })),
+  UpdateChatThreadCodeInterpreterContainer: (...a: unknown[]) =>
+    mockUpdateContainer(...(a as [])),
+}));
 vi.mock("@/features/extensions-page/extension-services/extension-service", () => ({
   FindAllExtensionForCurrentUserAndIds: (...a: unknown[]) => mockFindAllExtensions(...a),
   FindSecureHeaderValue: vi.fn(async () => ({ status: "ERROR", errors: [] })),
@@ -210,6 +224,76 @@ describe("/api/chat route (AI SDK v6)", () => {
     // rather than asserting on function identity.
     await options.experimental_repairToolCall?.("repair-args");
     expect(mockRepairExtensionToolCall).toHaveBeenCalledWith("repair-args");
+  });
+
+  describe("code_interpreter container pre-creation (prefix stability)", () => {
+    const ciCtx = {
+      ...CTX,
+      thread: { ...CTX.thread, codeInterpreterContainerId: undefined },
+      defaultTools: { codeInterpreter: true },
+    };
+
+    it("creates the container before the first model call and declares it on turn 1", async () => {
+      mockLoadThreadContext.mockResolvedValue(structuredClone(ciCtx));
+      mockEnsureContainer.mockResolvedValue("cntr_precreated");
+
+      await POST(makeRequest({ message: "plot this", id: "t1", codeInterpreterEnabled: true }));
+
+      expect(mockEnsureContainer).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId: "t1", fileIds: [] }),
+      );
+      // The seam sees the id on the FIRST turn, so the tool definition it
+      // builds is the same string every later turn will send.
+      expect(mockResolveProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thread: expect.objectContaining({
+            codeInterpreterContainerId: "cntr_precreated",
+          }),
+        }),
+      );
+      // Persisted straight away — otherwise turn 2 would mint another one.
+      expect(mockUpdateContainer).toHaveBeenCalledWith("t1", "cntr_precreated", "");
+    });
+
+    it("reuses the thread's existing container without creating another", async () => {
+      mockLoadThreadContext.mockResolvedValue({
+        ...structuredClone(ciCtx),
+        thread: { ...ciCtx.thread, codeInterpreterContainerId: "cntr_existing" },
+      });
+
+      await POST(makeRequest({ message: "again", id: "t1", codeInterpreterEnabled: true }));
+
+      expect(mockEnsureContainer).not.toHaveBeenCalled();
+      expect(mockResolveProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thread: expect.objectContaining({
+            codeInterpreterContainerId: "cntr_existing",
+          }),
+        }),
+      );
+    });
+
+    it("falls back to the old inline bootstrap when creation fails (negative)", async () => {
+      mockLoadThreadContext.mockResolvedValue(structuredClone(ciCtx));
+      mockEnsureContainer.mockResolvedValue(undefined);
+
+      await POST(makeRequest({ message: "plot this", id: "t1", codeInterpreterEnabled: true }));
+
+      expect(mockResolveProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thread: expect.objectContaining({
+            codeInterpreterContainerId: undefined,
+          }),
+        }),
+      );
+      expect(mockUpdateContainer).not.toHaveBeenCalled();
+    });
+
+    it("does not create a container when code_interpreter is off (negative)", async () => {
+      mockLoadThreadContext.mockResolvedValue(structuredClone(CTX));
+      await POST(makeRequest({ message: "hello", id: "t1" }));
+      expect(mockEnsureContainer).not.toHaveBeenCalled();
+    });
   });
 
   it("passes the effective model's maxOutputTokens into streamText", async () => {
