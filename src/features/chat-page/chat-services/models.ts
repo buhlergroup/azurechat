@@ -5,8 +5,6 @@ import {
 } from "@/features/common/services/openai";
 import { logError } from "@/features/common/services/logger";
 
-export const DEFAULT_MODEL: ChatModel = "gpt-5.6-sol";
-
 export const CHAT_DOCUMENT_ATTRIBUTE = "CHAT_DOCUMENT";
 export const CHAT_THREAD_ATTRIBUTE = "CHAT_THREAD";
 export const MESSAGE_ATTRIBUTE = "CHAT_MESSAGE";
@@ -172,7 +170,9 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME,
-    defaultReasoningEffort: "low",
+    // Terra is the default model: "medium" is the effort at which it earns
+    // its keep on everyday work. Sol and Luna stay on "low".
+    defaultReasoningEffort: "medium",
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -358,6 +358,40 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     capabilities: ["vision", "webSearch"],
   },
 };
+
+/**
+ * Model used when the request, the thread and the picker all say nothing.
+ * This is the code default; `DEFAULT_MODEL_ID` overrides it at deploy time.
+ */
+export const CODE_DEFAULT_MODEL: ChatModel = "gpt-5.6-terra";
+
+/**
+ * Resolve the default model, letting the deployment override the code
+ * default via the `DEFAULT_MODEL_ID` env var. An unknown id is ignored with
+ * a logged warning rather than crashing the app or — worse — silently
+ * routing every chat to a model that has no deployment behind it.
+ *
+ * NOTE: this is a server-side env var, so it is NOT inlined into the client
+ * bundle; a browser evaluating this module sees CODE_DEFAULT_MODEL. That is
+ * harmless because the picker takes its default from /api/models (server) and
+ * the route re-resolves the effective model server-side on every turn.
+ */
+export function resolveDefaultModel(
+  raw: string | undefined = process.env.DEFAULT_MODEL_ID,
+): ChatModel {
+  const candidate = raw?.trim();
+  if (!candidate) return CODE_DEFAULT_MODEL;
+  if (Object.prototype.hasOwnProperty.call(MODEL_CONFIGS, candidate)) {
+    return candidate as ChatModel;
+  }
+  logError("DEFAULT_MODEL_ID is not a known model id — ignoring", {
+    value: candidate,
+    fallback: CODE_DEFAULT_MODEL,
+  });
+  return CODE_DEFAULT_MODEL;
+}
+
+export const DEFAULT_MODEL: ChatModel = resolveDefaultModel();
 
 /** Models the user can't currently select (e.g. over budget), with the reason. */
 export type DisabledModels = Partial<Record<ChatModel, { reason: string }>>;
