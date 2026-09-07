@@ -112,14 +112,20 @@ export interface ModelConfig {
   /**
    * Effort levels this model's provider accepts. Only needed where they
    * differ from DEFAULT_REASONING_EFFORT_LEVELS: GPT-5.6 adds "xhigh"/"max",
-   * both 5.6 and 5.5 add "none". Used to validate the
-   * REASONING_EFFORT_OVERRIDES env map — sending a level a model rejects is
-   * an HTTP 400 on every turn.
+   * both 5.6 and 5.5 add "none", and NEITHER accepts "minimal". Used to
+   * validate the REASONING_EFFORT_OVERRIDES env map — sending a level a model
+   * rejects is an HTTP 400 on every turn.
    *
-   * An array here must therefore be a SUPERSET of the levels the picker
-   * offers (DEFAULT_REASONING_EFFORT_LEVELS), or an env override could be
-   * refused for a level a user can select by hand. Pinned by
-   * chat-page.unit.models.reasoning.
+   * This array is the PROVIDER's word, measured against the deployment, and
+   * nothing may widen it to suit the UI. Both directions are covered:
+   * `getPickableReasoningEfforts` hides a level the model does not take, and
+   * `resolveReasoningEffort` maps a stored or hand-sent one down to "low"
+   * before the request is built. Verified on the dev deployments:
+   *
+   *   gpt-5.5      400 Unsupported value: 'minimal' is not supported with the
+   *                'gpt-5.5-2026-04-24' model. Supported values are: 'none',
+   *                'low', 'medium', 'high', and 'xhigh'.
+   *   gpt-5.6-*    same, with 'max' additionally supported.
    */
   supportedReasoningEfforts?: ReadonlyArray<ProviderReasoningEffort>;
   pricing: ModelPricing;
@@ -180,7 +186,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -201,7 +207,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     // Terra is the default model: "medium" is the effort at which it earns
     // its keep on everyday work. Sol and Luna stay on "low".
     defaultReasoningEffort: "medium",
-    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
     maxOutputTokens: 16000,
@@ -219,7 +225,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsResponsesAPI: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
     maxOutputTokens: 16000,
@@ -237,7 +243,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsImageGeneration: true,
     deploymentName: process.env.AZURE_OPENAI_API_GPT55_DEPLOYMENT_NAME,
     defaultReasoningEffort: "low",
-    supportedReasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh"],
     // No cacheWritePerMillion: gpt-5.5 does not bill cache writes separately.
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50 },
     contextWindow: 1050000,
@@ -358,12 +364,11 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     family: "claude",
     supportsReasoning: true,
     supportsResponsesAPI: false,
-    // Without this, resolveReasoningEffort falls through to its hardcoded
-    // "low" and the premium model a user picked for hard work thinks as
-    // little as it can. The seam maps the levels Claude does not have
-    // (minimal/none → low, xhigh/max → high), so the picker's whole range is
-    // safe to leave at the default list.
-    defaultReasoningEffort: "medium",
+    // "low", matching the effort every Claude turn has actually been running
+    // at: resolveReasoningEffort's hardcoded fallback. Making the default
+    // explicit is the fix; RAISING it is a product and cost decision, taken
+    // separately, and REASONING_EFFORT_OVERRIDES is the lever for it.
+    defaultReasoningEffort: "low",
     deploymentName: process.env.AZURE_ANTHROPIC_OPUS48_DEPLOYMENT_NAME,
     // Anthropic bills a 5-minute ephemeral cache WRITE at 1.25x base input
     // and a read at 0.1x, same shape as GPT-5.6. The write price has to be
@@ -397,7 +402,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportsReasoning: true,
     supportsResponsesAPI: false,
     // See the note on claude-opus-4-8.
-    defaultReasoningEffort: "medium",
+    defaultReasoningEffort: "low",
     deploymentName: process.env.AZURE_ANTHROPIC_SONNET5_DEPLOYMENT_NAME,
     // 1.25x base input for a 5-minute ephemeral cache write; see the note on
     // claude-opus-4-8.
@@ -758,6 +763,54 @@ export type ProviderReasoningEffort =
 /** Levels accepted when a ModelConfig names none — the picker's own set. */
 export const DEFAULT_REASONING_EFFORT_LEVELS: ReadonlyArray<ProviderReasoningEffort> =
   ["minimal", "low", "medium", "high"];
+
+/**
+ * The levels the effort picker may show for a model, in the picker's own
+ * order: its four options, minus anything the model's provider does not
+ * accept.
+ *
+ * Filtering rather than trusting the UI's list is the whole point. The picker
+ * offered "minimal" to every reasoning model, but no GPT-5.5 or 5.6
+ * deployment accepts it — a user selecting it pinned the value on the thread
+ * and every later turn answered 400 until they changed it back. A level the
+ * provider rejects must not be selectable.
+ *
+ * Client-safe: a pure filter over MODEL_CONFIGS with no logging and no
+ * server-only import, so the selector component can call it directly.
+ */
+export function getPickableReasoningEfforts(
+  modelId: ChatModel | undefined,
+): ReadonlyArray<ReasoningEffort> {
+  const supported = modelId
+    ? MODEL_CONFIGS[modelId]?.supportedReasoningEfforts
+    : undefined;
+  if (!supported) return DEFAULT_REASONING_EFFORT_LEVELS as ReadonlyArray<ReasoningEffort>;
+  return (DEFAULT_REASONING_EFFORT_LEVELS as ReadonlyArray<ReasoningEffort>).filter(
+    (level) => supported.includes(level),
+  );
+}
+
+/**
+ * The level to USE for a model, given one that was asked for. An effort the
+ * model does not accept maps to "low" — the cheapest level every reasoning
+ * model in the table does accept, and the one the code fell back to anyway
+ * before any of this was configurable.
+ *
+ * Mapping rather than passing it through is a change of position, and the
+ * reason is measurement: `resolveReasoningEffort` used to argue that
+ * "silently rewriting someone's explicit choice is worse than passing it on".
+ * It is not, when passing it on is an HTTP 400 on every turn of the thread.
+ */
+export function clampReasoningEffort(
+  modelId: ChatModel | undefined,
+  effort: ProviderReasoningEffort,
+): ProviderReasoningEffort {
+  const supported = modelId
+    ? MODEL_CONFIGS[modelId]?.supportedReasoningEfforts
+    : undefined;
+  const levels = supported ?? DEFAULT_REASONING_EFFORT_LEVELS;
+  return levels.includes(effort) ? effort : "low";
+}
 
 /**
  * Coarse conversation-intent classes used for intent-based model downgrade.

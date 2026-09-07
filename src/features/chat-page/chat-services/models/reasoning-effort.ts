@@ -20,6 +20,7 @@
 
 import { logWarn } from "@/features/common/services/logger";
 import {
+  clampReasoningEffort,
   DEFAULT_REASONING_EFFORT_LEVELS,
   MODEL_CONFIGS,
   type ChatModel,
@@ -125,19 +126,39 @@ export interface ResolveReasoningEffortArgs {
 }
 
 /**
- * Effort for a turn: user pick → env override → model default → "low".
+ * Effort for a turn: user pick → env override → model default → "low", then
+ * clamped to what the model's provider actually accepts.
  *
- * The user pick is deliberately NOT validated against the model's level list:
- * it comes from the picker, which only offers levels the UI supports, and
- * silently rewriting someone's explicit choice is worse than passing it on.
+ * The user pick USED to be passed through unvalidated, on the reasoning that
+ * the picker only offers levels the UI supports and that rewriting someone's
+ * explicit choice is worse than honouring it. Measurement settled that: no
+ * GPT-5.5 or 5.6 deployment accepts "minimal", the picker offered it anyway,
+ * and the value is pinned on the thread — so one click produced an HTTP 400
+ * on every subsequent turn until the user found their way back. A clamp to
+ * "low" is a small, visible-in-the-log demotion; the alternative is a dead
+ * thread. The picker no longer offers it either
+ * (`getPickableReasoningEfforts`); this is the backstop for values already
+ * stored on a thread, and for a hand-built request body.
  */
 export function resolveReasoningEffort({
   modelId,
   userPick,
   overrides = getReasoningEffortOverrides(),
 }: ResolveReasoningEffortArgs): ProviderReasoningEffort {
-  if (userPick) return userPick;
-  const override = overrides[modelId];
-  if (override) return override;
-  return MODEL_CONFIGS[modelId]?.defaultReasoningEffort ?? "low";
+  const wanted =
+    userPick ??
+    overrides[modelId] ??
+    MODEL_CONFIGS[modelId]?.defaultReasoningEffort ??
+    "low";
+
+  const effort = clampReasoningEffort(modelId, wanted);
+  if (effort !== wanted) {
+    logWarn("reasoning-effort: level not supported by the model; using low", {
+      modelId,
+      requested: wanted,
+      used: effort,
+      supported: getSupportedReasoningEfforts(MODEL_CONFIGS[modelId]),
+    });
+  }
+  return effort;
 }

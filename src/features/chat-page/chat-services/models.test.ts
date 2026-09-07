@@ -11,9 +11,11 @@ vi.mock("@/features/common/services/logger", () => ({
 }));
 
 import {
+  clampReasoningEffort,
   CODE_DEFAULT_MODEL,
   DEFAULT_MODEL,
   DEFAULT_REASONING_EFFORT_LEVELS,
+  getPickableReasoningEfforts,
   MODEL_CONFIGS,
   resolveDefaultModel,
 } from "./models";
@@ -219,20 +221,84 @@ describe("chat-page.unit.models.reasoning — every model can be asked to think"
     }
   });
 
-  it("accepts every level the picker offers, on every model that declares a list", () => {
-    // The list validates REASONING_EFFORT_OVERRIDES. If it omitted a level the
-    // picker offers, an env override could be refused for a level a user can
-    // already select by hand — which is how "minimal" came to be missing from
-    // the whole GPT-5.6 family.
+  it("always leaves 'low' available, because that is what a clamp falls back to", () => {
+    // The list is the provider's word and may be NARROWER than the picker's
+    // four options — no GPT-5.5 or 5.6 deployment accepts "minimal", measured.
+    // Both directions handle that: the picker hides what the model will not
+    // take, and clampReasoningEffort maps anything else to "low". So the one
+    // thing every list must contain is "low".
     for (const [id, config] of entries) {
       const levels = config.supportedReasoningEfforts;
       if (!levels) continue;
-      for (const level of DEFAULT_REASONING_EFFORT_LEVELS) {
-        expect(
-          levels,
-          `${id} declares a level list that omits the picker's "${level}"`,
-        ).toContain(level);
+      expect(levels.length, `${id} declares an empty level list`).toBeGreaterThan(0);
+      expect(levels, `${id} has no "low" for a clamp to fall back to`).toContain("low");
+    }
+  });
+
+  it("pins the measured level sets for the families that answered 400", () => {
+    // Verbatim from the dev deployments. Widening either of these to suit the
+    // UI is what caused the 400s, so they are pinned rather than derived.
+    for (const [id, config] of entries) {
+      if (config.family === "gpt-5.6") {
+        expect(config.supportedReasoningEfforts, id).toEqual([
+          "none", "low", "medium", "high", "xhigh", "max",
+        ]);
+      }
+      if (config.family === "gpt-5.5") {
+        expect(config.supportedReasoningEfforts, id).toEqual([
+          "none", "low", "medium", "high", "xhigh",
+        ]);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("chat-page.unit.models.effort-clamp — the picker follows the provider", () => {
+  it("hides a level the model does not accept", () => {
+    // No 5.6 or 5.5 deployment takes "minimal".
+    expect(getPickableReasoningEfforts("gpt-5.6-terra")).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getPickableReasoningEfforts("gpt-5.5")).toEqual(["low", "medium", "high"]);
+  });
+
+  it("offers all four for a model that names no list, and for no model at all", () => {
+    // gpt-5.4 declares no list, so it keeps the picker's own four.
+    expect(getPickableReasoningEfforts("gpt-5.4")).toEqual([
+      ...DEFAULT_REASONING_EFFORT_LEVELS,
+    ]);
+    expect(getPickableReasoningEfforts(undefined)).toEqual([
+      ...DEFAULT_REASONING_EFFORT_LEVELS,
+    ]);
+  });
+
+  it("keeps the picker's own order, not the config's", () => {
+    // The config lists "none" first; the picker must not start showing it.
+    const pickable = getPickableReasoningEfforts("gpt-5.6-sol");
+    expect(pickable).not.toContain("none");
+    expect(pickable).toEqual([...pickable].sort(
+      (a, b) =>
+        DEFAULT_REASONING_EFFORT_LEVELS.indexOf(a) -
+        DEFAULT_REASONING_EFFORT_LEVELS.indexOf(b),
+    ));
+  });
+
+  it("maps an unsupported level down to low, and leaves a supported one alone", () => {
+    expect(clampReasoningEffort("gpt-5.6-terra", "minimal")).toBe("low");
+    expect(clampReasoningEffort("gpt-5.5", "minimal")).toBe("low");
+    expect(clampReasoningEffort("gpt-5.5", "max")).toBe("low"); // 5.5 stops at xhigh
+    expect(clampReasoningEffort("gpt-5.6-terra", "max")).toBe("max");
+    expect(clampReasoningEffort("gpt-5.6-terra", "xhigh")).toBe("xhigh");
+    expect(clampReasoningEffort("gpt-5.4", "minimal")).toBe("minimal");
+  });
+
+  it("is idempotent and safe for an unknown model", () => {
+    const once = clampReasoningEffort("gpt-5.6-sol", "minimal");
+    expect(clampReasoningEffort("gpt-5.6-sol", once)).toBe(once);
+    expect(clampReasoningEffort(undefined, "minimal")).toBe("minimal");
   });
 });

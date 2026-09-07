@@ -25,13 +25,11 @@ beforeEach(() => {
 });
 
 describe("getSupportedReasoningEfforts", () => {
-  it("reports the GPT-5.6 levels including xhigh and max", () => {
-    // "minimal" is in the list because the picker offers it: the list is what
-    // validates REASONING_EFFORT_OVERRIDES, so omitting a selectable level
-    // would refuse an env override for something a user can pick by hand.
+  it("reports the GPT-5.6 levels including xhigh and max, and NOT minimal", () => {
+    // Measured: gpt-5.6-terra answers 400 for "minimal". The list is the
+    // provider's word — the picker and the clamp follow it, not the reverse.
     expect(getSupportedReasoningEfforts(MODEL_CONFIGS["gpt-5.6-terra"])).toEqual([
       "none",
-      "minimal",
       "low",
       "medium",
       "high",
@@ -128,13 +126,17 @@ describe("parseReasoningEffortOverrides", () => {
 
 describe("resolveReasoningEffort — resolution order", () => {
   it("prefers an explicit user pick over both the override and the default", () => {
+    // The pick has to be a level the model accepts, or the clamp is what the
+    // assertion measures instead of the precedence. "low" is deliberately the
+    // opposite direction from the "high" override, so a precedence regression
+    // cannot hide behind the clamp's own fallback value.
     expect(
       resolveReasoningEffort({
         modelId: "gpt-5.6-terra",
-        userPick: "minimal",
+        userPick: "xhigh",
         overrides: { "gpt-5.6-terra": "high" },
       }),
-    ).toBe("minimal");
+    ).toBe("xhigh");
   });
 
   it("prefers the env override over the model default", () => {
@@ -177,14 +179,56 @@ describe("resolveReasoningEffort — resolution order", () => {
   });
 
   it("uses the model's own default for a Claude thread", () => {
-    // Claude used to have none, so every Claude turn ran at the hardcoded
-    // "low" — the premium model thinking as little as it could.
+    // Claude declared no default, so it ran at the hardcoded fallback. The
+    // default is now explicit and deliberately the SAME value, so this change
+    // set does not move Claude's cost; REASONING_EFFORT_OVERRIDES raises it.
+    expect(MODEL_CONFIGS["claude-opus-4-8"].defaultReasoningEffort).toBe("low");
     expect(
       resolveReasoningEffort({ modelId: "claude-opus-4-8", overrides: {} }),
-    ).toBe("medium");
+    ).toBe("low");
     expect(
       resolveReasoningEffort({ modelId: "claude-sonnet-5", overrides: {} }),
-    ).toBe("medium");
+    ).toBe("low");
+  });
+
+  it("clamps a user pick the model does not accept, and says so", () => {
+    // The pick is stored on the thread, so passing "minimal" through meant a
+    // 400 on every later turn, not just the one the user clicked.
+    expect(
+      resolveReasoningEffort({
+        modelId: "gpt-5.6-terra",
+        userPick: "minimal",
+        overrides: {},
+      }),
+    ).toBe("low");
+    expect(mockLogWarn).toHaveBeenCalledTimes(1);
+    expect(mockLogWarn.mock.calls[0][0]).toMatch(/not supported by the model/i);
+  });
+
+  it("clamps a level that exists on a newer family (negative)", () => {
+    // "max" is a 5.6 level; 5.5 stops at xhigh.
+    expect(
+      resolveReasoningEffort({ modelId: "gpt-5.5", userPick: "max", overrides: {} }),
+    ).toBe("low");
+  });
+
+  it("leaves a supported pick alone and logs nothing", () => {
+    expect(
+      resolveReasoningEffort({
+        modelId: "gpt-5.6-terra",
+        userPick: "xhigh",
+        overrides: {},
+      }),
+    ).toBe("xhigh");
+    expect(mockLogWarn).not.toHaveBeenCalled();
+  });
+
+  it("still honours a model that has no list at all", () => {
+    // gpt-5.4 declares none, so the picker's four apply and "minimal" stands.
+    expect(
+      resolveReasoningEffort({ modelId: "gpt-5.4", userPick: "minimal", overrides: {} }),
+    ).toBe("minimal");
+    expect(mockLogWarn).not.toHaveBeenCalled();
   });
 });
 

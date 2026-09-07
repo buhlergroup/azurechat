@@ -656,6 +656,7 @@ const ChatPageInner = (props: ChatPageProps) => {
                 }}
                 disabled={isStreaming}
                 showReasoningModelsOnly={MODEL_CONFIGS[effectiveModel]?.supportsReasoning}
+                modelId={effectiveModel}
               />
               <PromptInputModelSelect
                 value={effectiveModel}
