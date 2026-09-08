@@ -80,6 +80,18 @@ vi.mock("../models/provider-seam", () => ({
   resolveProvider: (...a: unknown[]) => mockResolveProvider(...(a as [])),
 }));
 
+// generateText: the summariser's one provider call. Mocked because these
+// tests must never reach a model; asserted on because its options ARE the
+// contract that broke (a 404 from the wrong client, an unproven effort value).
+const mockGenerateText = vi.fn(async () => ({
+  text: "FACTS: from the seam.",
+  usage: { inputTokens: 120, outputTokens: 34 },
+}));
+vi.mock("ai", async () => {
+  const actual = await vi.importActual<typeof import("ai")>("ai");
+  return { ...actual, generateText: (...a: unknown[]) => mockGenerateText(...(a as [])) };
+});
+
 const mockReportHistorySummaryTokens = vi.fn(async () => undefined);
 vi.mock("@/features/common/services/chat-metrics-service", () => ({
   reportHistorySummaryTokens: (...a: unknown[]) =>
@@ -700,6 +712,62 @@ describe("chat-page.unit.history-summary-service.007 — the summariser is not b
     // and it DOES go through the seam the chat route uses
     expect(code).toContain("resolveProvider");
     expect(code).toContain("generateText");
+  });
+
+  it("asks the seam for a proven option set, and no thinking panel", async () => {
+    // The default summariser is the one path these tests do not inject, so
+    // the seam call is where its options are checked. "low", not "none": the
+    // picker never offers "none", so no live call has ever sent it to these
+    // deployments — and an unproven provider combination is what 404'd here
+    // in the first place.
+    mockResolveProvider.mockReturnValueOnce({
+      model: {} as never,
+      builtInTools: {},
+      providerOptions: {
+        openai: {
+          promptCacheKey: "summary:t1",
+          store: false,
+          reasoningEffort: "low",
+          reasoningSummary: "auto",
+          include: ["reasoning.encrypted_content"],
+        },
+      },
+    } as never);
+
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+    await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      selectedModel: "gpt-5.6-terra",
+      // no `summarise`: the real callSummariserModel runs, against the mocks
+    });
+
+    const seamArgs = mockResolveProvider.mock.calls[0][0] as unknown as {
+      modelId: string;
+      promptCacheKey: string;
+      reasoning: { effort: string };
+      toggles: Record<string, boolean>;
+    };
+    expect(seamArgs.modelId).toBe("gpt-5.6-terra");
+    expect(seamArgs.reasoning.effort).toBe("low");
+    // Its own cache namespace, derived from the thread and never an email.
+    expect(seamArgs.promptCacheKey).toBe("summary:t1");
+    expect(Object.values(seamArgs.toggles).every((on) => on === false)).toBe(true);
+
+    const callOptions = mockGenerateText.mock.calls[0][0] as unknown as {
+      maxOutputTokens?: number;
+      providerOptions?: { openai?: Record<string, unknown> };
+    };
+    expect(callOptions.maxOutputTokens).toBe(2000);
+    expect(callOptions.providerOptions?.openai).toMatchObject({
+      promptCacheKey: "summary:t1",
+      store: false,
+    });
+    // Dropped: nobody renders a summariser's thinking.
+    expect(callOptions.providerOptions?.openai).not.toHaveProperty("reasoningSummary");
+    expect(callOptions.providerOptions?.openai).not.toHaveProperty("include");
   });
 
   it("reports the summariser's tokens as their own metric", async () => {

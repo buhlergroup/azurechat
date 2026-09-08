@@ -423,10 +423,18 @@ export type SummariserFn = (input: {
  * - `maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS` (2,000) — the prompt asks for
  *   brevity, this enforces it. The summary is replayed in every later prompt
  *   of the thread, so its size is rent rather than a one-off.
- * - reasoning effort "none" where the model takes it, else "low". Reasoning
- *   tokens come out of the SAME 2,000, so a thinking summariser would spend
- *   the budget deliberating and get truncated mid-summary. There is nothing to
- *   reason about here: compress the transcript in front of you.
+ * - reasoning effort "low", and NOT "none". There is nothing to reason about
+ *   here — compress the transcript in front of you — and reasoning tokens come
+ *   out of the same 2,000, so a thinking summariser can deliberate its way
+ *   into a truncated summary. "none" would be better still, and the 5.6 family
+ *   declares it. But the picker only ever offers minimal/low/medium/high, so
+ *   NO live call has ever sent "none" to these deployments: it is exactly the
+ *   kind of unproven provider combination that produced the 404 above. "low"
+ *   is what every 5.6 turn already sends. Revisit with a live check.
+ * - `reasoningSummary` and `include: ["reasoning.encrypted_content"]` are
+ *   dropped from the seam's options. They exist so the chat UI can render a
+ *   thinking panel; nobody reads a summariser's reasoning, and asking for an
+ *   encrypted reasoning blob we throw away is payload for nothing.
  * - `promptCacheKey: summary:<threadId>` — its own namespace. The summariser
  *   prefix (its instructions) has nothing in common with the thread's prompt
  *   prefix, so sharing the thread's key would only pollute it. Derived from
@@ -442,7 +450,6 @@ async function callSummariserModel(input: {
   signal?: AbortSignal;
 }): Promise<SummariserResult> {
   const config = MODEL_CONFIGS[input.modelId];
-  const takesNone = config?.supportedReasoningEfforts?.includes("none") ?? false;
   const resolved = resolveProvider({
     modelId: input.modelId,
     thread: { id: input.threadId, codeInterpreterContainerId: undefined },
@@ -450,17 +457,26 @@ async function callSummariserModel(input: {
     toggles: { codeInterpreter: false, imageGeneration: false, webSearch: false },
     reasoning: {
       supported: config?.supportsReasoning ?? false,
-      effort: takesNone ? "none" : "low",
+      effort: "low",
     },
     promptCacheKey: `summary:${input.threadId}`,
   });
+
+  // Keep the cache key, `store: false` and the cache options; drop the two
+  // fields that only feed a thinking panel this call has no UI for.
+  const providerOptions = { ...resolved.providerOptions };
+  if (providerOptions.openai) {
+    const { reasoningSummary: _summary, include: _include, ...rest } =
+      providerOptions.openai;
+    providerOptions.openai = rest;
+  }
 
   const result = await generateText({
     model: resolved.model,
     system: input.systemPrompt,
     messages: [{ role: "user", content: input.userPrompt }],
     maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
-    providerOptions: resolved.providerOptions,
+    providerOptions,
     abortSignal: input.signal,
   });
 
