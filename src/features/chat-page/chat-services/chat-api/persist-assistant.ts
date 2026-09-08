@@ -370,6 +370,8 @@ export async function persistThread({
       outputTokens,
       cachedTokens,
       costUsd,
+      // Persisted too, so the header's cache row is whole after a reload.
+      cacheWriteTokens,
     );
     if (usageRes.status !== "OK") {
       logWarn("UpdateChatThreadUsage returned non-OK", {

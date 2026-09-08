@@ -17,11 +17,11 @@ import {
 
 describe("chat-page.unit.compaction-part.001 — the part shape", () => {
   it("gives both phases the same id, so the second write replaces the first", () => {
-    const running = compactionRunningPart({ turnsToTrim: 4, tokensBefore: 300_000 });
+    const running = compactionRunningPart({ turnsToTrim: 4 });
     const done = compactionDonePart({
       trimmedTurns: 4,
-      tokensBefore: 300_000,
-      tokensAfter: 150_000,
+      estimatedTokensBefore: 300_000,
+      estimatedTokensAfter: 150_000,
       summaryOutcome: "ok",
       durationMs: 900,
     });
@@ -31,11 +31,11 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
     expect(done.id).toBe(running.id);
   });
 
-  it("omits the summary fields rather than sending undefined", () => {
+  it("omits every field it has no value for, rather than sending undefined", () => {
     const done = compactionDonePart({
       trimmedTurns: 2,
-      tokensBefore: 90_000,
-      tokensAfter: 50_000,
+      estimatedTokensBefore: 90_000,
+      estimatedTokensAfter: 50_000,
       summaryOutcome: "off",
       durationMs: 11,
       coversThroughMessageId: "m9",
@@ -43,8 +43,6 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
     expect(done.data).toEqual({
       status: "done",
       trimmedTurns: 2,
-      tokensBefore: 90_000,
-      tokensAfter: 50_000,
       summaryOutcome: "off",
       durationMs: 11,
     });
@@ -52,13 +50,54 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
     expect("summaryModel" in done.data).toBe(false);
     // The watermark is for the persisted divider, not for the wire.
     expect("coversThroughMessageId" in done.data).toBe(false);
+    // And NO token counts on the first write: they are the provider's real
+    // numbers, and the request they describe has not finished yet. The
+    // ESTIMATES the plan carries are deliberately not shown to anyone.
+    expect("tokensBefore" in done.data).toBe(false);
+    expect("tokensAfter" in done.data).toBe(false);
+  });
+
+  it("takes the real numbers on the second write, under the same id", () => {
+    const outcome = {
+      trimmedTurns: 2,
+      estimatedTokensBefore: 90_000,
+      estimatedTokensAfter: 50_000,
+      summaryOutcome: "ok" as const,
+      durationMs: 11,
+    };
+    const first = compactionDonePart(outcome);
+    const second = compactionDonePart(outcome, {
+      tokensBefore: 34_012,
+      tokensAfter: 17_565,
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.data).toMatchObject({
+      tokensBefore: 34_012,
+      tokensAfter: 17_565,
+    });
+  });
+
+  it("carries only the after count on a thread's first turn", () => {
+    const done = compactionDonePart(
+      {
+        trimmedTurns: 1,
+        estimatedTokensBefore: 90_000,
+        estimatedTokensAfter: 50_000,
+        summaryOutcome: "ok",
+        durationMs: 11,
+      },
+      { tokensAfter: 17_565 },
+    );
+    expect(done.data).toMatchObject({ tokensAfter: 17_565 });
+    expect("tokensBefore" in done.data).toBe(false);
   });
 
   it("carries the summary inline when there is one", () => {
     const done = compactionDonePart({
       trimmedTurns: 12,
-      tokensBefore: 184_000,
-      tokensAfter: 96_000,
+      estimatedTokensBefore: 184_000,
+      estimatedTokensAfter: 96_000,
       summaryOutcome: "ok",
       summaryModel: "gpt-5.6-terra",
       durationMs: 4210,
@@ -80,12 +119,14 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
 });
 
 describe("chat-page.unit.compaction-part.002 — the copy", () => {
-  it("rounds tokens to a short label", () => {
-    expect(formatTokenCount(184_000)).toBe("184k");
-    expect(formatTokenCount(95_600)).toBe("96k");
+  it("prints token counts in full, with separators", () => {
+    // Not "18k": these are the provider's own numbers, and a reader comparing
+    // the notice against the usage panel needs the digits to match.
+    expect(formatTokenCount(17_565)).toBe("17,565");
+    expect(formatTokenCount(184_000)).toBe("184,000");
     expect(formatTokenCount(999)).toBe("999");
     expect(formatTokenCount(0)).toBe("0");
-    // A junk value must not put "NaNk" on screen.
+    // A junk value must not put "NaN" on screen.
     expect(formatTokenCount(Number.NaN)).toBe("0");
     expect(formatTokenCount(-5)).toBe("0");
   });
@@ -95,19 +136,38 @@ describe("chat-page.unit.compaction-part.002 — the copy", () => {
     // operator turned it off" from "the summariser 404'd", and the live defect
     // that prompted these codes was invisible for exactly that reason.
     expect(
-      compactionNoticeText({ status: "running", turnsToTrim: 3, tokensBefore: 1 }),
+      compactionNoticeText({ status: "running", turnsToTrim: 3 }),
     ).toBe("Compacting older messages…");
 
     const done = {
       status: "done" as const,
       trimmedTurns: 12,
-      tokensBefore: 184_000,
-      tokensAfter: 96_000,
+      tokensBefore: 34_012,
+      tokensAfter: 17_565,
       durationMs: 1,
     };
     expect(compactionNoticeText({ ...done, summaryOutcome: "ok" })).toBe(
-      "Compacted 12 older turns into a summary (184k → 96k tokens)",
+      "Compacted 12 older turns into a summary (34,012 → 17,565 tokens)",
     );
+    // Before the numbers arrive, the same line without the clause.
+    expect(
+      compactionNoticeText({
+        status: "done",
+        trimmedTurns: 12,
+        summaryOutcome: "ok",
+        durationMs: 1,
+      }),
+    ).toBe("Compacted 12 older turns into a summary");
+    // First turn of a thread: no previous request to compare against.
+    expect(
+      compactionNoticeText({
+        status: "done",
+        trimmedTurns: 12,
+        tokensAfter: 17_565,
+        summaryOutcome: "ok",
+        durationMs: 1,
+      }),
+    ).toBe("Compacted 12 older turns into a summary (17,565 tokens)");
     expect(compactionNoticeText({ ...done, summaryOutcome: "off" })).toBe(
       "Trimmed 12 older turns (no summary, feature off)",
     );
@@ -135,6 +195,14 @@ describe("chat-page.unit.compaction-part.002 — the copy", () => {
     ).toContain("1 older turn into");
     expect(compactionMarkerText(1)).toBe("Conversation compacted here · 1 older turn");
     expect(compactionMarkerText(9)).toBe("Conversation compacted here · 9 older turns");
+    // The persisted divider carries the same real numbers when the row has
+    // them, and stays plain when it does not.
+    expect(
+      compactionMarkerText(2, { tokensBefore: 34_012, tokensAfter: 17_565 }),
+    ).toBe("Conversation compacted here · 2 older turns · 34,012 → 17,565 tokens");
+    expect(compactionMarkerText(2, { tokensAfter: 17_565 })).toBe(
+      "Conversation compacted here · 2 older turns · 17,565 tokens",
+    );
   });
 });
 
@@ -145,11 +213,32 @@ describe("chat-page.unit.compaction-part.003 — the persisted marker", () => {
         coversThroughMessageId: "m42",
         content: "  FACTS: metric units.  ",
         model: "terra-dep",
+        realTokensBefore: 34_012,
+        realTokensAfter: 17_565,
       }),
     ).toEqual({
       coversThroughMessageId: "m42",
       summaryText: "FACTS: metric units.",
       summaryModel: "terra-dep",
+      realTokensBefore: 34_012,
+      realTokensAfter: 17_565,
+    });
+  });
+
+  it("drops token counts a row never recorded (negative)", () => {
+    // Rows written before the real numbers existed, and the first turn of a
+    // thread, both simply have no clause on the divider.
+    expect(
+      threadCompactionMarker({
+        coversThroughMessageId: "m42",
+        content: "text",
+        model: "m",
+        realTokensBefore: 0,
+      }),
+    ).toEqual({
+      coversThroughMessageId: "m42",
+      summaryText: "text",
+      summaryModel: "m",
     });
   });
 

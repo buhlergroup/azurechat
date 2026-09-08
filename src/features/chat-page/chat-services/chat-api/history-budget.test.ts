@@ -13,6 +13,7 @@ import {
   estimateTextTokens,
   planHistoryTrim,
   resolveHistoryBudget,
+  resolveHistoryProtectedTurns,
   resolveHistoryLongContextReserve,
   resolveHistoryTokenBudget,
   resolveHistoryTrimTargetRatio,
@@ -318,50 +319,158 @@ describe("chat-page.unit.history-budget.005 — hysteresis: a trim is followed b
   });
 });
 
-describe("chat-page.unit.history-budget.006 — the newest turns are never trimmed", () => {
-  it("keeps at least MIN_KEPT_TURNS turns even when they alone blow the budget", () => {
-    const rows = turns(6, 50_000); // 300,000 tokens
-    const plan = planHistoryTrim(rows, { budget: 1_000 });
-    expect(plan.keptTurnCount).toBeGreaterThanOrEqual(MIN_KEPT_TURNS);
-    expect(splitIntoTurns(plan.kept).length).toBeGreaterThanOrEqual(MIN_KEPT_TURNS);
+describe("chat-page.unit.history-budget.006 — no persisted turn is protected by default", () => {
+  it("protects nothing by default, so even the newest persisted turn can go", () => {
+    // The current user message is NOT in these rows (the chat path writes it
+    // after reading history), so "0 protected" still leaves the question
+    // being answered intact. What it stops is a cost cut that spares the
+    // expensive turn.
+    expect(MIN_KEPT_TURNS).toBe(0);
+    expect(resolveHistoryProtectedTurns()).toBe(0);
+
+    const rows: BudgetMessage[] = [...turn(100), ...turn(100), ...turn(15_000)];
+    const plan = planHistoryTrim(rows, { budget: 12_000 });
+
+    expect(plan.trimmed).toBe(true);
+    // The 15k turn is the newest AND the reason the thread is over budget.
+    // Protecting it was the defect: the trimmer dropped the two small turns
+    // instead, added a summary, and the prompt grew.
+    expect(plan.kept).toEqual([]);
+    expect(plan.droppedTurnCount).toBe(3);
+    expect(plan.estimatedTokensAfter).toBeLessThan(plan.estimatedTokensBefore);
   });
 
-  it("keeps the two newest turns' rows verbatim", () => {
+  it("restores the old shape when HISTORY_PROTECTED_TURNS asks for it", () => {
+    expect(resolveHistoryProtectedTurns({ envProtectedTurns: "2" })).toBe(2);
+    // Junk, negatives and fractions fall back to the default rather than
+    // protecting a strange number of turns.
+    for (const envProtectedTurns of ["", "  ", "abc", "-1", "1.5", "NaN"]) {
+      expect(resolveHistoryProtectedTurns({ envProtectedTurns })).toBe(0);
+    }
+    // An explicit zero is honoured, not treated as "unset".
+    expect(resolveHistoryProtectedTurns({ envProtectedTurns: "0" })).toBe(0);
+
     const rows = turns(30, 1_000);
     const lastFourIds = rows.slice(-4).map((m) => m.id); // 2 turns x 2 rows
-    const plan = planHistoryTrim(rows, { budget: 2_000 });
+    const plan = planHistoryTrim(rows, { budget: 2_000, minKeptTurns: 2 });
     expect(plan.kept.map((m) => m.id).slice(-4)).toEqual(lastFourIds);
     expect(plan.dropped.map((m) => m.id)).not.toContain(lastFourIds[0]);
   });
 
-  it("trims nothing at all when the thread has only the protected turns", () => {
-    const rows = turns(MIN_KEPT_TURNS, 90_000);
-    const plan = planHistoryTrim(rows, { budget: 1_000 });
+  it("honours an explicit minKeptTurns when they fit under the target", () => {
+    // 20 turns x 1,000 tokens = 20,000. Budget 12,000 -> target 7,200, and
+    // five protected turns are 5,000, so the cut can reach the target with
+    // them intact.
+    const rows = turns(20, 1_000);
+    const newestFiveTurnIds = rows.slice(-10).map((m) => m.id);
+    const plan = planHistoryTrim(rows, { budget: 12_000, minKeptTurns: 5 });
+
+    expect(plan.trimmed).toBe(true);
+    expect(splitIntoTurns(plan.kept).length).toBeGreaterThanOrEqual(5);
+    // The protected turns are all still there, verbatim.
+    expect(plan.kept.map((m) => m.id).slice(-10)).toEqual(newestFiveTurnIds);
+    for (const id of newestFiveTurnIds) {
+      expect(plan.dropped.map((m) => m.id)).not.toContain(id);
+    }
+  });
+});
+
+describe("chat-page.unit.history-budget.012 — a trim that cannot help is not taken", () => {
+  it("declines when the floor a trim cannot remove is already over target", () => {
+    // Protected turns + the replacement summary's allowance + the static
+    // prefix. If that is over target, the best possible cut still leaves the
+    // thread over budget, so trimming would delete context and spend a model
+    // call for nothing. This is the guard the "compacted 17k -> 19k" loop
+    // needed.
+    const rows: BudgetMessage[] = [...turn(100), ...turn(100), ...turn(15_000)];
+    const plan = planHistoryTrim(rows, {
+      budget: 12_000,
+      minKeptTurns: 2,
+      summaryReserveTokens: 2_000,
+    });
+
     expect(plan.trimmed).toBe(false);
     expect(plan.dropped).toEqual([]);
-    // Flagged so the caller can log it: over budget, nothing droppable.
+    expect(plan.skipReason).toBe("cannot-reach-target");
     expect(plan.targetUnreachable).toBe(true);
+    // Nothing was dropped, so the caller must not spend a summariser call.
+    expect(plan.droppedTurnCount).toBe(0);
   });
 
-  it("flags targetUnreachable when the protected turns keep it over target", () => {
-    // Turn sizes ramp up, so the newest (protected) turns are the expensive
-    // ones and no legal cut can reach the target.
-    const rows: BudgetMessage[] = [
-      ...turn(100),
-      ...turn(100),
-      ...turn(50_000),
-      ...turn(50_000),
-    ];
-    const plan = planHistoryTrim(rows, { budget: 10_000 });
+  it("declines when the summary would cost as much as the turns it replaces", () => {
+    // The shape from the live defect: the PROVIDER says the last prompt was
+    // 5,000 tokens (over the 700 budget, so a trim is triggered), but the
+    // history this module can actually drop is only 400 estimated tokens —
+    // less than the 400-token summary that would replace it. Dropping both
+    // turns would delete context and leave the prompt the same size.
+    const rows = turns(2, 200); // 2 turns x 200 tokens = 400 estimated
+    const plan = planHistoryTrim(rows, {
+      budget: 700, // target 420
+      summaryReserveTokens: 400,
+      measuredTokensBefore: 5_000,
+    });
+
+    expect(plan.trimmed).toBe(false);
+    expect(plan.skipReason).toBe("no-reduction");
+    expect(plan.dropped).toEqual([]);
+  });
+
+  it("never reports a post-trim estimate above the pre-trim one", () => {
+    // The invariant the notice claims on screen. Swept across shapes and
+    // budgets, including the ones that used to grow the prompt.
+    for (const summaryReserveTokens of [0, 500, 1_500, 2_000]) {
+      for (const budget of [500, 2_000, 12_000, 80_000]) {
+        for (const rows of [
+          turns(4, 400),
+          turns(30, 1_000),
+          [...turn(100), ...turn(100), ...turn(15_000)],
+          [...turn(60_000), ...turn(100)],
+        ]) {
+          const plan = planHistoryTrim(rows, {
+            budget,
+            summaryReserveTokens,
+          });
+          if (!plan.trimmed) continue;
+          expect(plan.estimatedTokensAfter).toBeLessThan(
+            plan.estimatedTokensBefore,
+          );
+        }
+      }
+    }
+  });
+});
+
+describe("chat-page.unit.history-budget.013 — the real prompt size decides whether to trim", () => {
+  it("prefers the provider's number over the estimate", () => {
+    // 10 turns x 1,000 = 10,000 estimated tokens, i.e. UNDER the 12,000
+    // budget. The estimate alone would not trim; the provider's 17,565 does.
+    const rows = turns(10, 1_000);
+    const plan = planHistoryTrim(rows, {
+      budget: 12_000,
+      measuredTokensBefore: 17_565,
+    });
+    // The estimate says "fits"; the provider says the last prompt was 17.5k.
+    // The provider wins: what costs money is the real prompt.
+    expect(plan.triggerSource).toBe("measured");
+    expect(plan.triggerTokens).toBe(17_565);
     expect(plan.trimmed).toBe(true);
-    expect(plan.targetUnreachable).toBe(true);
-    expect(splitIntoTurns(plan.kept)).toHaveLength(MIN_KEPT_TURNS);
   });
 
-  it("honours an explicit minKeptTurns", () => {
-    const rows = turns(20, 5_000);
-    const plan = planHistoryTrim(rows, { budget: 1_000, minKeptTurns: 5 });
-    expect(splitIntoTurns(plan.kept)).toHaveLength(5);
+  it("falls back to the estimate for a thread with no usage yet", () => {
+    const rows = turns(80, 1_000); // 20,000 estimated tokens, over budget
+    const plan = planHistoryTrim(rows, { budget: 12_000 });
+    expect(plan.triggerSource).toBe("estimated");
+    expect(plan.triggerTokens).toBe(plan.estimatedTokensBefore);
+    expect(plan.trimmed).toBe(true);
+  });
+
+  it("ignores an unusable measured value (negative)", () => {
+    const rows = turns(4, 400);
+    for (const measuredTokensBefore of [0, -1, Number.NaN]) {
+      const plan = planHistoryTrim(rows, { budget: 12_000, measuredTokensBefore });
+      expect(plan.triggerSource).toBe("estimated");
+      expect(plan.trimmed).toBe(false);
+    }
   });
 });
 

@@ -724,6 +724,13 @@ export interface ThreadUsage {
   lastInputTokens?: number;
   lastOutputTokens?: number;
   lastCachedTokens?: number;
+  /**
+   * Cache WRITE tokens of the most recent turn. Persisted alongside the reads
+   * so the header's cache row survives a reload: without it a reloaded thread
+   * showed reads and a "plain" figure that silently included the writes, which
+   * are the expensive ones (1.25x uncached input on GPT-5.6 and Claude).
+   */
+  lastCacheWriteTokens?: number;
 }
 
 export interface DefaultTools {

@@ -606,6 +606,41 @@ export async function recordHistoryCompaction(
 }
 
 /**
+ * Stamp the trimming turn's REAL token numbers onto the compaction row.
+ *
+ * A second pass, because `realTokensAfter` — the trimming request's own
+ * `inputTokens` — does not exist until that request finishes, and the row is
+ * written before the model is called. One extra upsert, on trimming turns
+ * only, so the divider a reloaded page draws can carry the same provider
+ * numbers the live notice ended on instead of falling back to nothing.
+ *
+ * Fails soft: the numbers are a nicety on a row whose real job (the watermark)
+ * is already done, and this runs after the user has their answer.
+ */
+export async function recordHistoryCompactionRealUsage(input: {
+  threadId: string;
+  realTokensBefore?: number;
+  realTokensAfter: number;
+}): Promise<void> {
+  try {
+    const existing = await FindChatHistorySummary(input.threadId);
+    if (!existing) return;
+    await UpsertChatHistorySummary({
+      ...existing,
+      ...(typeof input.realTokensBefore === "number" && input.realTokensBefore > 0
+        ? { realTokensBefore: input.realTokensBefore }
+        : {}),
+      realTokensAfter: input.realTokensAfter,
+    });
+  } catch (e) {
+    logWarn("history-summary: could not record the trim's real token counts", {
+      threadId: input.threadId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
  * Run the summariser over one dropped block.
  *
  * Reports WHY rather than just whether: a missing deployment, a throwing call,

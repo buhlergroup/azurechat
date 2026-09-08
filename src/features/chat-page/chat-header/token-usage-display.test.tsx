@@ -114,6 +114,73 @@ describe("chat-page.unit.components — TokenUsageDisplay", () => {
     expect(screen.getByRole("button").innerHTML).toContain("text-primary/60");
   });
 
+  describe("the panel body — real numbers only", () => {
+    // The panel quotes the provider for the last COMPLETED request. Nothing is
+    // estimated and nothing is marked "~": a number that later disagrees with
+    // the provider's own accounting is worse than one that is a turn old.
+    async function openPanel(usage: Record<string, unknown>) {
+      const userEvent = (await import("@testing-library/user-event")).default;
+      useChat.mockReturnValue({ lastUsageData: makeUsage(usage) });
+      render(<TokenUsageDisplay />);
+      await userEvent.setup().click(screen.getByRole("button"));
+    }
+
+    it("labels the cumulative row as thread usage, not as a context size", async () => {
+      // It used to say "Total tokens", which read like a context size and
+      // invited a comparison with the context row — two different quantities.
+      await openPanel({ threadTotalTokens: 120_573 });
+      expect(screen.getByText("Thread usage so far")).toBeInTheDocument();
+      expect(screen.getByText("120,573")).toBeInTheDocument();
+      expect(screen.queryByText("Total tokens")).not.toBeInTheDocument();
+    });
+
+    it("splits the last request's input into reads, writes and plain", async () => {
+      await openPanel({
+        inputTokens: 17_527,
+        cachedTokens: 12_400,
+        cacheWriteTokens: 5_100,
+      });
+      // plain = 17,527 - 12,400 - 5,100 = 27
+      expect(screen.getByTestId("cache-row").textContent).toContain(
+        "reads 12,400 · writes 5,100 · plain 27",
+      );
+    });
+
+    it("omits the writes segment when the persisted row never recorded it", async () => {
+      // Rows written before cache writes were persisted: claiming "writes 0"
+      // would be a fact we do not have.
+      await openPanel({ inputTokens: 1_000, cachedTokens: 400 });
+      const row = screen.getByTestId("cache-row").textContent ?? "";
+      expect(row).toContain("reads 400");
+      expect(row).not.toContain("writes");
+      expect(row).toContain("plain 600");
+    });
+
+    it("shows the last prompt's real size against the window, with no '~'", async () => {
+      await openPanel({
+        inputTokens: 17_527,
+        contextWindowSize: 1_050_000,
+        contextUsagePercent: 1.669,
+      });
+      const row = screen.getByTestId("context-row").textContent ?? "";
+      expect(row).toContain("Context (last prompt)");
+      expect(row).toContain("17,527 of 1.1M");
+      expect(row).toContain("1.7 %");
+      expect(row).not.toContain("~");
+    });
+
+    it("never floors the plain bucket below zero (negative)", async () => {
+      // A provider that reported overlapping buckets would otherwise put a
+      // negative number on screen.
+      await openPanel({
+        inputTokens: 100,
+        cachedTokens: 90,
+        cacheWriteTokens: 90,
+      });
+      expect(screen.getByTestId("cache-row").textContent).toContain("plain 0");
+    });
+  });
+
   it("formats cost < 0.01 as '< $0.01'", () => {
     useChat.mockReturnValue({
       lastUsageData: makeUsage({ threadTotalCostUsd: 0.001 }),

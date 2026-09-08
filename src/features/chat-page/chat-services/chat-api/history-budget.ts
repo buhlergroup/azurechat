@@ -128,17 +128,32 @@ export const CHARS_PER_TOKEN = 4;
 export const IMAGE_TOKEN_ESTIMATE = 1_000;
 
 /**
- * Turns that are never trimmed, counted from the newest end of the rows that
- * were loaded. The immediate context of the current question has to survive
- * regardless of budget, otherwise a single enormous turn could trim away the
- * question it is answering.
+ * Persisted turns that are never trimmed, counted from the newest end of the
+ * rows that were loaded. DEFAULT 0.
  *
- * NOTE on the "current turn": the chat path writes the user's new message to
- * Cosmos AFTER reading history, so the row list this module sees does NOT
- * contain the current turn. Keeping the last two loaded turns therefore keeps
- * the current turn plus the two before it.
+ * ## Why zero
+ *
+ * The current user message is safe whatever this is: the chat path writes it
+ * to Cosmos AFTER reading history, so the row list this module sees does not
+ * contain it. "0 protected turns" therefore still means "the question being
+ * answered survives" — it means every PERSISTED turn is eligible.
+ *
+ * It used to be 2, and that produced a trim that made the prompt BIGGER.
+ * Measured on dev: a thread whose newest turn was a 15k-token paste went over
+ * budget; the two newest turns were protected, so the trimmer dropped a small
+ * older turn (~2k), added a ~2k summary, and the next prompt came out at 17.5k
+ * against 17k before. The user had just been told the conversation was
+ * compacted and the prompt grew. Protecting turns from a COST cut is a
+ * contradiction: the expensive turn is exactly the one that has to go.
+ *
+ * What replaces the protection is honesty about reachability — see
+ * `planHistoryTrim`, which now declines to trim at all when the cut cannot get
+ * under the target, instead of trimming something and pretending.
+ *
+ * Overridable via `HISTORY_PROTECTED_TURNS` for an environment that wants the
+ * old shape back; see `resolveHistoryProtectedTurns`.
  */
-export const MIN_KEPT_TURNS = 2;
+export const MIN_KEPT_TURNS = 0;
 
 /**
  * Token allowance reserved for the replayed summary. Also the size the
@@ -185,8 +200,31 @@ export interface TrimPlanOptions {
   budget?: number;
   /** Trim target as a fraction of `budget`. */
   targetRatio?: number;
-  /** Newest turns that are never trimmed. */
+  /** Newest PERSISTED turns that are never trimmed. Default 0. */
   minKeptTurns?: number;
+  /**
+   * Estimated tokens the prompt spends on things this module cannot drop: the
+   * developer message and the tool definitions. Counted into the reachability
+   * check, so a trim is not attempted when even an empty history would stay
+   * over target. Zero when the caller does not know it.
+   */
+  staticPrefixTokens?: number;
+  /**
+   * The provider's REAL `inputTokens` for this thread's previous request, when
+   * one has been recorded.
+   *
+   * This decides WHETHER to trim, in place of the estimate. The estimator is a
+   * chars/4 heuristic; the real number is what the prompt actually cost, and
+   * on a thread with a big pasted turn the two can differ enough to matter.
+   * The estimate still decides HOW MUCH to drop, because only it can be
+   * apportioned across turns.
+   *
+   * Note the deliberate asymmetry of units: the real figure covers the whole
+   * prompt (developer message, summary and history), while the budget nominally
+   * bounds the history alone. That makes the trigger slightly eager, which is
+   * the intent — what costs money is the whole prompt.
+   */
+  measuredTokensBefore?: number;
   /**
    * Tokens the summary already persisted for this thread occupies in today's
    * prompt. Counted towards the budget because it is really there.
@@ -208,6 +246,10 @@ export interface TrimPlan<T extends BudgetMessage = BudgetMessage> {
   dropped: T[];
   /** `existingSummaryTokens` + every row in the input. */
   estimatedTokensBefore: number;
+  /** Which number answered "is this thread over budget?". */
+  triggerSource: "measured" | "estimated";
+  /** The figure that was compared against `budget`. */
+  triggerTokens: number;
   /** What the prompt's history section is expected to cost after the trim. */
   estimatedTokensAfter: number;
   budget: number;
@@ -221,13 +263,26 @@ export interface TrimPlan<T extends BudgetMessage = BudgetMessage> {
    */
   coversThroughMessageId?: string;
   /**
-   * Set when the history still exceeds `target` after dropping every turn it
-   * was allowed to drop, i.e. the surviving turns alone are over target. The
-   * caller should log it; there is no correct automatic response beyond
-   * trusting the model's context window, since the alternative is deleting the
-   * question being answered.
+   * Set when the target cannot be reached: what may not be dropped (protected
+   * turns, the replacement summary's allowance, the static prefix) already
+   * exceeds it. The caller should log it; there is no correct automatic
+   * response beyond trusting the model's context window.
    */
   targetUnreachable: boolean;
+  /**
+   * Why an over-budget thread was left alone. Undefined when the thread fitted
+   * or when it was trimmed.
+   *
+   *   "cannot-reach-target"  the cut could not get under target, so nothing was
+   *                          dropped and no summariser call was spent.
+   *   "no-reduction"         the cut WOULD have landed under target, but the
+   *                          replacement summary costs as much as the turns it
+   *                          replaces, so the prompt would not have shrunk.
+   *
+   * Both are silent for the user: there is nothing to show, because nothing
+   * happened.
+   */
+  skipReason?: "cannot-reach-target" | "no-reduction";
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +590,27 @@ export function resolveHistoryTokenBudget(input?: {
 }
 
 /**
+ * Resolve how many of the newest PERSISTED turns are protected from a trim.
+ * `HISTORY_PROTECTED_TURNS` overrides the module default of 0.
+ *
+ * Zero is a legitimate value and must be honoured, so this cannot use the
+ * "falsy means unset" shortcut the other resolvers use. Anything unparseable,
+ * negative or fractional falls back to the default rather than silently
+ * protecting a strange number of turns.
+ */
+export function resolveHistoryProtectedTurns(input?: {
+  envProtectedTurns?: string;
+}): number {
+  const raw = input?.envProtectedTurns;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return MIN_KEPT_TURNS;
+  }
+  const parsed = Number(raw);
+  if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+  return MIN_KEPT_TURNS;
+}
+
+/**
  * Resolve the trim target as a fraction of the budget. `HISTORY_TRIM_TARGET_RATIO`
  * overrides the module default.
  *
@@ -566,7 +642,11 @@ export function resolveHistoryTrimTargetRatio(input?: {
  *   how far to cut?        down to `target` (= budget x targetRatio), minus
  *                          whatever the replacement summary will occupy
  *   where can we cut?      only at a turn boundary, and never into the newest
- *                          `minKeptTurns` turns
+ *                          `minKeptTurns` PERSISTED turns (default 0 — the
+ *                          current user message is not in these rows, so it
+ *                          survives regardless)
+ *   is it worth it?        only if the target is reachable at all, and only if
+ *                          the result is actually smaller than the input
  *
  * Turns are dropped oldest-first, stopping as soon as the remainder is at or
  * under target, so exactly one contiguous block leaves at the front.
@@ -580,14 +660,24 @@ export function planHistoryTrim<T extends BudgetMessage>(
   const minKeptTurns = options.minKeptTurns ?? MIN_KEPT_TURNS;
   const existingSummaryTokens = options.existingSummaryTokens ?? 0;
   const summaryReserveTokens = options.summaryReserveTokens ?? 0;
+  const staticPrefixTokens = options.staticPrefixTokens ?? 0;
 
   const historyTokens = estimateHistoryTokens(messages);
   const estimatedTokensBefore = historyTokens + existingSummaryTokens;
   const target = Math.floor(budget * targetRatio);
 
+  // Real if we have it, estimated otherwise. See `measuredTokensBefore`.
+  const measured = options.measuredTokensBefore;
+  const hasMeasured =
+    typeof measured === "number" && Number.isFinite(measured) && measured > 0;
+  const triggerSource: TrimPlan<T>["triggerSource"] = hasMeasured
+    ? "measured"
+    : "estimated";
+  const triggerTokens = hasMeasured ? Math.floor(measured) : estimatedTokensBefore;
+
   const turns = splitIntoTurns(messages);
 
-  if (estimatedTokensBefore <= budget) {
+  if (triggerTokens <= budget) {
     return {
       trimmed: false,
       kept: [...messages],
@@ -599,6 +689,8 @@ export function planHistoryTrim<T extends BudgetMessage>(
       droppedTurnCount: 0,
       keptTurnCount: turns.length,
       targetUnreachable: false,
+      triggerSource,
+      triggerTokens,
     };
   }
 
@@ -606,6 +698,43 @@ export function planHistoryTrim<T extends BudgetMessage>(
   // cut of the target.
   const historyTarget = Math.max(0, target - summaryReserveTokens);
   const maxDroppableTurns = Math.max(0, turns.length - minKeptTurns);
+
+  const skipped = (
+    skipReason: NonNullable<TrimPlan<T>["skipReason"]>,
+  ): TrimPlan<T> => ({
+    trimmed: false,
+    kept: [...messages],
+    dropped: [],
+    estimatedTokensBefore,
+    estimatedTokensAfter: estimatedTokensBefore,
+    budget,
+    target,
+    droppedTurnCount: 0,
+    keptTurnCount: turns.length,
+    targetUnreachable: true,
+    skipReason,
+    triggerSource,
+    triggerTokens,
+  });
+
+  // ── Reachability, BEFORE dropping anything ──────────────────────────────
+  //
+  // What a trim cannot remove: the protected turns, the allowance for the
+  // summary that replaces the dropped block, and the static prefix. If that
+  // floor is already above target, the best possible cut still leaves the
+  // thread over budget — so trimming would delete context, spend a summariser
+  // call, and change nothing that matters.
+  //
+  // This is the guard the "compacted 17k → 19k" loop needed. With two
+  // protected turns holding a 15k paste, every single turn dropped the newest
+  // small turn, wrote a fresh summary, and came out BIGGER — over and over,
+  // because the watermark advanced but the floor never moved.
+  const protectedTokens = turns
+    .slice(Math.max(0, turns.length - minKeptTurns))
+    .reduce((sum, turn) => sum + turn.estimatedTokens, 0);
+  const minimumReachable =
+    protectedTokens + summaryReserveTokens + staticPrefixTokens;
+  if (minimumReachable > target) return skipped("cannot-reach-target");
 
   let droppedTurnCount = 0;
   let remainingHistoryTokens = historyTokens;
@@ -617,25 +746,28 @@ export function planHistoryTrim<T extends BudgetMessage>(
     droppedTurnCount++;
   }
 
-  if (droppedTurnCount === 0) {
-    // Over budget, but every turn is protected by minKeptTurns. Report it as
-    // an un-trimmed plan so the caller does not spend a summariser call on an
-    // empty block.
-    return {
-      trimmed: false,
-      kept: [...messages],
-      dropped: [],
-      estimatedTokensBefore,
-      estimatedTokensAfter: estimatedTokensBefore,
-      budget,
-      target,
-      droppedTurnCount: 0,
-      keptTurnCount: turns.length,
-      targetUnreachable: true,
-    };
+  // Nothing droppable at all (every turn protected). Same answer as an
+  // unreachable target, and the caller must not spend a summariser call on an
+  // empty block.
+  if (droppedTurnCount === 0) return skipped("cannot-reach-target");
+
+  const estimatedTokensAfter = remainingHistoryTokens + summaryReserveTokens;
+
+  // ── The prompt must actually get smaller ────────────────────────────────
+  //
+  // A trim swaps turns for a summary, and the summary is not free. Dropping
+  // 1,800 tokens of turns to add a 2,000-token summary is a net loss that also
+  // costs a model call and some of the user's context. The invariant the rest
+  // of the system relies on — and what the notice claims on screen — is that
+  // tokensAfter is lower than tokensBefore.
+  if (estimatedTokensAfter >= estimatedTokensBefore) {
+    return skipped("no-reduction");
   }
 
-  const cutIndex = turns[droppedTurnCount].startIndex;
+  const cutIndex =
+    droppedTurnCount < turns.length
+      ? turns[droppedTurnCount].startIndex
+      : messages.length;
   const dropped = messages.slice(0, cutIndex);
   const kept = messages.slice(cutIndex);
 
@@ -644,12 +776,14 @@ export function planHistoryTrim<T extends BudgetMessage>(
     kept: [...kept],
     dropped: [...dropped],
     estimatedTokensBefore,
-    estimatedTokensAfter: remainingHistoryTokens + summaryReserveTokens,
+    estimatedTokensAfter,
     budget,
     target,
     droppedTurnCount,
     keptTurnCount: turns.length - droppedTurnCount,
     coversThroughMessageId: dropped[dropped.length - 1]?.id,
     targetUnreachable: remainingHistoryTokens > historyTarget,
+    triggerSource,
+    triggerTokens,
   };
 }

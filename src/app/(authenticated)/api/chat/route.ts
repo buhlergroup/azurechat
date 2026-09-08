@@ -24,6 +24,7 @@ import {
 } from "@/features/chat-page/chat-services/chat-api/validate-input";
 import { resolveModelAndLimits } from "@/features/chat-page/chat-services/chat-api/model-selection";
 import { compactionDonePart } from "@/features/chat-page/chat-services/chat-api/compaction-part";
+import { recordHistoryCompactionRealUsage } from "@/features/chat-page/chat-services/chat-api/history-summary-service";
 import {
   loadThreadContext,
   applyDocumentHintPlacement,
@@ -932,14 +933,23 @@ export async function POST(req: Request) {
       originalMessages: ctx.history,
       generateId: createIdGenerator({ prefix: "msg", size: 16 }),
       onError: (err) => (err instanceof Error ? err.message : String(err)),
-      execute: ({ writer }) => {
-        // The history trim happened in loadThreadContext, BEFORE this response
-        // existed: the summariser is a model call on the request path and its
-        // output goes into the prompt this turn replays. So the notice is
-        // written once, already complete, rather than as running -> done. The
-        // part carries a stable id either way, so a future move of the trim
-        // inside this callback can write "running" first and let the SDK
-        // reconcile the two by id without touching the client.
+      execute: async ({ writer }) => {
+        // The compaction notice is written TWICE under one part id, and the
+        // SDK reconciles data parts by (type, id) so the row updates in place.
+        //
+        //   now          "Compacted 2 older turns into a summary" — the trim
+        //                already happened in loadThreadContext (the summariser
+        //                is a model call on the request path, and its output
+        //                goes into the prompt this very turn replays), so the
+        //                fact is known immediately. The token counts are not.
+        //   at the end   the same line with the provider's REAL numbers:
+        //                "(34,012 → 17,565 tokens)". `tokensAfter` IS this
+        //                request's inputTokens, which does not exist until the
+        //                request finishes.
+        //
+        // No estimate is ever shown. A number in the header that later
+        // disagrees with the provider's own accounting is worse than no number
+        // for a few seconds.
         if (ctx.compaction) {
           writer.write(compactionDonePart(ctx.compaction));
           logInfo("/api/chat wrote compaction notice", {
@@ -951,6 +961,52 @@ export async function POST(req: Request) {
           });
         }
         writer.merge(modelStream);
+
+        if (!ctx.compaction) return;
+        // Awaiting AFTER the merge is what keeps the stream open long enough
+        // to write again: createUIMessageStream closes when this callback's
+        // promise settles and the merged stream is done. `totalUsage` resolves
+        // at the model's finish event.
+        try {
+          const usage = await result.totalUsage;
+          const tokensAfter = usage?.inputTokens ?? 0;
+          if (tokensAfter <= 0) return;
+          writer.write(
+            compactionDonePart(ctx.compaction, {
+              // The previous request's real prompt size, read at load time
+              // before this turn overwrote it. Absent on a thread's first
+              // turn, in which case the notice shows only what it is now.
+              ...(typeof ctx.previousRequestInputTokens === "number" &&
+              ctx.previousRequestInputTokens > 0
+                ? { tokensBefore: ctx.previousRequestInputTokens }
+                : {}),
+              tokensAfter,
+            }),
+          );
+          logInfo("/api/chat completed the compaction notice", {
+            threadId: ctx.thread.id,
+            turnId: ctx.turnId,
+            realTokensBefore: ctx.previousRequestInputTokens,
+            realTokensAfter: tokensAfter,
+          });
+          // Same numbers onto the compaction row, so the divider a reloaded
+          // page draws says what the live notice said. Fails soft inside.
+          await recordHistoryCompactionRealUsage({
+            threadId: ctx.thread.id,
+            ...(typeof ctx.previousRequestInputTokens === "number"
+              ? { realTokensBefore: ctx.previousRequestInputTokens }
+              : {}),
+            realTokensAfter: tokensAfter,
+          });
+        } catch (err) {
+          // A usage read that fails must not fail the turn: the user already
+          // has their answer, and the notice simply keeps its shorter form.
+          logWarn("/api/chat could not complete the compaction notice", {
+            threadId: ctx.thread.id,
+            turnId: ctx.turnId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       },
     }),
   });

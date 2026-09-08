@@ -39,8 +39,6 @@ export interface CompactionRunningData {
   status: "running";
   /** Turns the plan will drop. */
   turnsToTrim: number;
-  /** Estimated history tokens before the trim. */
-  tokensBefore: number;
 }
 
 /**
@@ -64,12 +62,33 @@ export type SummaryOutcome =
   /** No candidate deployment resolved to a model this app can call. */
   | "no-deployment";
 
-/** Written once the trim (and the summary, if enabled) is complete. */
+/**
+ * Written once the trim (and the summary, if enabled) is complete.
+ *
+ * ## Why the token counts are optional
+ *
+ * They are REAL provider numbers, not estimates, and the real number for this
+ * turn does not exist until the turn finishes: `tokensAfter` is this request's
+ * `usage.inputTokens`. So the part is written twice under one id — first
+ * without counts ("Compacted 2 older turns into a summary"), then again at
+ * stream end with them ("… (34,012 → 17,565 tokens)"). The AI SDK reconciles
+ * data parts by `(type, id)`, so the line fills in rather than duplicating.
+ *
+ * An estimate would have been available immediately, and was deliberately
+ * rejected: a number in the header that later disagrees with the provider's
+ * own accounting is worse than no number for a few seconds.
+ *
+ * `tokensBefore` is the PREVIOUS request's real `inputTokens` for this thread.
+ * On the first turn there is no previous request, so it stays absent and the
+ * line shows only what the prompt is now.
+ */
 export interface CompactionDoneData {
   status: "done";
   trimmedTurns: number;
-  tokensBefore: number;
-  tokensAfter: number;
+  /** Previous request's real `inputTokens`. Absent on a thread's first turn. */
+  tokensBefore?: number;
+  /** This request's real `inputTokens`. Absent until the turn finishes. */
+  tokensAfter?: number;
   /**
    * Whether anything stands in for the dropped turns, and if not, why. The
    * turns are dropped either way.
@@ -103,8 +122,12 @@ export interface CompactionDataPart {
  */
 export interface HistoryCompactionOutcome {
   trimmedTurns: number;
-  tokensBefore: number;
-  tokensAfter: number;
+  /**
+   * The trim decision's own estimates. Logged and used for the trim maths;
+   * NEVER shown to the user, who sees the provider's real numbers instead.
+   */
+  estimatedTokensBefore: number;
+  estimatedTokensAfter: number;
   summaryOutcome: SummaryOutcome;
   summaryModel?: string;
   durationMs: number;
@@ -115,27 +138,26 @@ export interface HistoryCompactionOutcome {
 
 export function compactionRunningPart(input: {
   turnsToTrim: number;
-  tokensBefore: number;
 }): CompactionDataPart {
   return {
     type: COMPACTION_DATA_PART_TYPE,
     id: COMPACTION_PART_ID,
-    data: {
-      status: "running",
-      turnsToTrim: input.turnsToTrim,
-      tokensBefore: input.tokensBefore,
-    },
+    data: { status: "running", turnsToTrim: input.turnsToTrim },
   };
 }
 
+/**
+ * The completed notice. `realTokens` is absent on the first write (the turn has
+ * not finished, so the provider has not said what the prompt cost) and present
+ * on the second, which reuses the same part id.
+ */
 export function compactionDonePart(
   outcome: HistoryCompactionOutcome,
+  realTokens?: { tokensBefore?: number; tokensAfter?: number },
 ): CompactionDataPart {
   const data: CompactionDoneData = {
     status: "done",
     trimmedTurns: outcome.trimmedTurns,
-    tokensBefore: outcome.tokensBefore,
-    tokensAfter: outcome.tokensAfter,
     summaryOutcome: outcome.summaryOutcome,
     durationMs: outcome.durationMs,
   };
@@ -143,6 +165,12 @@ export function compactionDonePart(
   // absent field reads the same on both sides.
   if (outcome.summaryModel) data.summaryModel = outcome.summaryModel;
   if (outcome.summaryText) data.summaryText = outcome.summaryText;
+  if (typeof realTokens?.tokensBefore === "number") {
+    data.tokensBefore = realTokens.tokensBefore;
+  }
+  if (typeof realTokens?.tokensAfter === "number") {
+    data.tokensAfter = realTokens.tokensAfter;
+  }
   return { type: COMPACTION_DATA_PART_TYPE, id: COMPACTION_PART_ID, data };
 }
 
@@ -158,6 +186,10 @@ export interface ThreadCompactionMarker {
   coversThroughMessageId: string;
   summaryText?: string;
   summaryModel?: string;
+  /** Real `inputTokens` of the request before the trim, if it was recorded. */
+  realTokensBefore?: number;
+  /** Real `inputTokens` of the request after the trim. */
+  realTokensAfter?: number;
 }
 
 /**
@@ -172,6 +204,8 @@ export function threadCompactionMarker(
         coversThroughMessageId?: string | null;
         content?: string | null;
         model?: string | null;
+        realTokensBefore?: number | null;
+        realTokensAfter?: number | null;
       }
     | null
     | undefined,
@@ -180,11 +214,20 @@ export function threadCompactionMarker(
   if (!watermark) return null;
   const summaryText = row?.content?.trim() || undefined;
   const summaryModel = row?.model?.trim() || undefined;
+  const before = row?.realTokensBefore;
+  const after = row?.realTokensAfter;
   return {
     coversThroughMessageId: watermark,
     ...(summaryText ? { summaryText } : {}),
     // A model name without a summary would be a label on nothing.
     ...(summaryText && summaryModel ? { summaryModel } : {}),
+    // Real provider numbers from the turn that trimmed, so the divider after a
+    // reload says the same thing the live notice said. Rows written before
+    // these existed simply have no clause.
+    ...(typeof before === "number" && before > 0
+      ? { realTokensBefore: before }
+      : {}),
+    ...(typeof after === "number" && after > 0 ? { realTokensAfter: after } : {}),
   };
 }
 
@@ -231,17 +274,15 @@ export function isCompactionDataPart(part: {
 // ---------------------------------------------------------------------------
 
 /**
- * Round tokens to a short label: 96 000 -> "96k". Under 1,000 the exact number
- * is shown, because "0k" is not a fact anyone wants.
+ * Format a token count in full, with thousands separators: 17565 -> "17,565".
  *
- * Rounds rather than floors so 95 600 reads as "96k". The number is an
- * estimate to begin with (see history-budget.ts), so precision here would be a
- * false promise.
+ * NOT rounded to "18k". These are the provider's own numbers now, and a reader
+ * comparing the notice against the usage panel or an invoice needs the digits
+ * to match. The rounding that used to happen here belonged to an estimate.
  */
 export function formatTokenCount(tokens: number): string {
   if (!Number.isFinite(tokens) || tokens < 0) return "0";
-  if (tokens < 1000) return String(Math.round(tokens));
-  return `${Math.round(tokens / 1000)}k`;
+  return Math.round(tokens).toLocaleString("en-US");
 }
 
 /** "12 older turns" / "1 older turn". */
@@ -253,14 +294,32 @@ function turnLabel(count: number): string {
  * The one line the divider shows. Plain English, short sentences, and it says
  * what happened rather than what the feature is called.
  */
+/**
+ * The token clause, or nothing.
+ *
+ * Three shapes, because the numbers arrive late and the first turn has no
+ * "before":
+ *   both     "(34,012 → 17,565 tokens)"
+ *   after    "(17,565 tokens)"       — first turn of a thread
+ *   neither  ""                      — the turn has not finished yet
+ */
+function tokenClause(data: CompactionDoneData): string {
+  const after = data.tokensAfter;
+  if (typeof after !== "number") return "";
+  if (typeof data.tokensBefore === "number") {
+    return ` (${formatTokenCount(data.tokensBefore)} → ${formatTokenCount(
+      after,
+    )} tokens)`;
+  }
+  return ` (${formatTokenCount(after)} tokens)`;
+}
+
 export function compactionNoticeText(data: CompactionData): string {
   if (data.status === "running") return "Compacting older messages…";
-  const tokens = `(${formatTokenCount(data.tokensBefore)} → ${formatTokenCount(
-    data.tokensAfter,
-  )} tokens)`;
+  const tokens = tokenClause(data);
   switch (data.summaryOutcome) {
     case "ok":
-      return `Compacted ${turnLabel(data.trimmedTurns)} into a summary ${tokens}`;
+      return `Compacted ${turnLabel(data.trimmedTurns)} into a summary${tokens}`;
     case "off":
       return `Trimmed ${turnLabel(data.trimmedTurns)} (no summary, feature off)`;
     case "failed":
@@ -276,7 +335,21 @@ export function compactionNoticeText(data: CompactionData): string {
   }
 }
 
-/** The persisted marker's line, shown after a reload. */
-export function compactionMarkerText(trimmedTurns: number): string {
-  return `Conversation compacted here · ${turnLabel(trimmedTurns)}`;
+/**
+ * The persisted marker's line, shown after a reload. Carries the same real
+ * numbers the live notice ended on, when the row recorded them.
+ */
+export function compactionMarkerText(
+  trimmedTurns: number,
+  realTokens?: { tokensBefore?: number; tokensAfter?: number },
+): string {
+  const base = `Conversation compacted here · ${turnLabel(trimmedTurns)}`;
+  const after = realTokens?.tokensAfter;
+  if (typeof after !== "number") return base;
+  if (typeof realTokens?.tokensBefore === "number") {
+    return `${base} · ${formatTokenCount(
+      realTokens.tokensBefore,
+    )} → ${formatTokenCount(after)} tokens`;
+  }
+  return `${base} · ${formatTokenCount(after)} tokens`;
 }

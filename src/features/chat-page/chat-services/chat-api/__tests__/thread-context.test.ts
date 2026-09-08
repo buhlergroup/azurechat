@@ -104,6 +104,7 @@ beforeEach(() => {
   summaryRow = null;
   summaryEnabled = false;
   delete process.env.HISTORY_TOKEN_BUDGET;
+  delete process.env.HISTORY_PROTECTED_TURNS;
   mockFindSummary.mockClear();
   mockRecordCompaction.mockClear();
 });
@@ -346,7 +347,7 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
 
     expect(ctx.compaction).toBeDefined();
     expect(ctx.compaction!.trimmedTurns).toBeGreaterThan(0);
-    expect(ctx.compaction!.tokensAfter).toBeLessThan(ctx.compaction!.tokensBefore);
+    expect(ctx.compaction!.estimatedTokensAfter).toBeLessThan(ctx.compaction!.estimatedTokensBefore);
     expect(ctx.compaction!.summaryOutcome).toBe("ok");
     expect(ctx.compaction!.summaryText).toContain("the earlier turns said things");
     expect(ctx.compaction!.summaryModel).toBe("gpt-5.6-terra");
@@ -413,39 +414,51 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
     expect(ctx.compaction!.summaryModel).toBeUndefined();
   });
 
-  it("logs an untrimmable thread at INFO on a small configured budget, WARN on the default", async () => {
-    // With a deliberately small budget the two protected turns exceed the
-    // target routinely, and warning on every turn would train people to
-    // ignore the log. On the shipped default it means one turn is enormous,
-    // which is worth a warning.
-    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
-    // Two turns only, both protected by minKeptTurns, well over 1k tokens.
-    mockFindHistory.mockResolvedValue({ status: "OK", response: makeTurns(2, 4000) });
-
-    process.env.HISTORY_TOKEN_BUDGET = "1000";
-    await loadThreadContext(makeUserPrompt());
-    const notTrimmable = (calls: typeof logInfo.mock.calls) =>
+  it("logs an unreachable target at INFO on a small configured budget, WARN on the default", async () => {
+    // "Cannot reach target" now means the floor a trim cannot remove — the
+    // protected turns plus the summary's own allowance — is already above the
+    // target. With a deliberately small budget that happens routinely, and
+    // warning on every turn would train people to ignore the log. On the
+    // shipped default it means a genuine misconfiguration, worth a warning.
+    const unreachable = (calls: typeof logInfo.mock.calls) =>
       calls.filter((c) =>
-        String(c[0]).includes("over budget but nothing trimmable"),
+        String(c[0]).includes("trim cannot reach target"),
       );
-    expect(notTrimmable(logInfo.mock.calls)).toHaveLength(1);
-    expect(notTrimmable(logWarn.mock.calls)).toHaveLength(0);
-    expect(notTrimmable(logInfo.mock.calls)[0][1]).toMatchObject({
-      budgetSource: "env",
-    });
 
-    // Same thread, budget straight from the code default: now it is a warning.
+    // Budget 1000 -> target 600, while the replacement summary alone is
+    // allowed 1500. No cut can get under it.
+    summaryEnabled = true;
+    process.env.HISTORY_TOKEN_BUDGET = "1000";
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: makeTurns(6, 800) });
+
+    await loadThreadContext(makeUserPrompt());
+
+    expect(unreachable(logInfo.mock.calls)).toHaveLength(1);
+    expect(unreachable(logWarn.mock.calls)).toHaveLength(0);
+    expect(unreachable(logInfo.mock.calls)[0][1]).toMatchObject({
+      budgetSource: "env",
+      skipReason: "cannot-reach-target",
+    });
+    // And no summariser call was spent on a trim that could not help.
+    expect(mockRecordCompaction).not.toHaveBeenCalled();
+
+    // The shipped default budget, with turns protected by configuration: the
+    // protected turns alone are over target, and that is a warning.
     logInfo.mockClear();
     logWarn.mockClear();
     delete process.env.HISTORY_TOKEN_BUDGET;
+    process.env.HISTORY_PROTECTED_TURNS = "2";
     mockFindHistory.mockResolvedValue({
       status: "OK",
       response: makeTurns(2, 2_000_000),
     });
+
     await loadThreadContext(makeUserPrompt());
-    expect(notTrimmable(logWarn.mock.calls)).toHaveLength(1);
-    expect(notTrimmable(logInfo.mock.calls)).toHaveLength(0);
-    expect(notTrimmable(logWarn.mock.calls)[0][1]).toMatchObject({
+
+    expect(unreachable(logWarn.mock.calls)).toHaveLength(1);
+    expect(unreachable(logInfo.mock.calls)).toHaveLength(0);
+    expect(unreachable(logWarn.mock.calls)[0][1]).toMatchObject({
       budgetSource: "default",
     });
   });
@@ -501,6 +514,122 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
 
     expect(mockRecordCompaction).not.toHaveBeenCalled();
     expect(ctx.history).toHaveLength(41); // 40 rows + current turn
+  });
+});
+
+describe("chat-page.unit.thread-context.007 — one compaction, not a loop", () => {
+  // The live defect, as a test. A thread whose newest turn was a 15k paste
+  // went over a 12k budget; the two newest turns were protected, so every
+  // single turn dropped the newest SMALL turn, wrote a fresh summary, and came
+  // out bigger: "Compacted 1 older turn into a summary (17k → 19k tokens)",
+  // again and again, with a new summariser call each time.
+
+  /** One 15k-token turn followed by several small ones, as the user had. */
+  function pasteThread() {
+    return [...makeTurns(1, 15_000), ...makeTurns(4, 100)];
+  }
+
+  it("compacts exactly ONCE across five consecutive loads", async () => {
+    process.env.HISTORY_TOKEN_BUDGET = "12000";
+    summaryEnabled = true;
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+
+    const rows = pasteThread();
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const first = await loadThreadContext(makeUserPrompt());
+    expect(first.compaction).toBeDefined();
+    expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
+    // The point of protecting nothing: the expensive turn is the one that goes.
+    expect(first.compaction!.estimatedTokensAfter).toBeLessThanOrEqual(
+      Math.floor(12_000 * 0.6),
+    );
+
+    // Four more turns. A trim deletes nothing from Cosmos, so the same rows
+    // come back every time plus a new small turn; the watermark is what has to
+    // absorb them.
+    let grown = rows;
+    for (let i = 0; i < 4; i++) {
+      grown = [...grown, ...makeTurns(1, 100)];
+      mockFindHistory.mockResolvedValue({ status: "OK", response: grown });
+      const ctx = await loadThreadContext(makeUserPrompt());
+      expect(ctx.compaction).toBeUndefined();
+    }
+
+    // ONE summariser call across five loads, and one notice.
+    expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the summary against the budget, so small turns do not re-trigger", async () => {
+    // Hysteresis has to include the replayed summary: it is really in the
+    // prompt, so a thread that is just under budget with it must not tip over
+    // on the next small turn and trim again.
+    process.env.HISTORY_TOKEN_BUDGET = "12000";
+    summaryEnabled = true;
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+
+    let rows = pasteThread();
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+    await loadThreadContext(makeUserPrompt());
+    expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
+
+    // Ten small turns on top: still under budget WITH the summary counted.
+    for (let i = 0; i < 10; i++) {
+      rows = [...rows, ...makeTurns(1, 100)];
+      mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+      const ctx = await loadThreadContext(makeUserPrompt());
+      expect(ctx.compaction).toBeUndefined();
+    }
+    expect(mockRecordCompaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing at all, five times over, when the target is unreachable", async () => {
+    // Turns protected by configuration, and they alone are over target. The
+    // old code trimmed something anyway on every single turn. Now: no trim, no
+    // summariser call, no notice — and no log spam pretending otherwise.
+    process.env.HISTORY_TOKEN_BUDGET = "12000";
+    process.env.HISTORY_PROTECTED_TURNS = "2";
+    summaryEnabled = true;
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+
+    // The same rows come back on every load — which is exactly what happened
+    // live, because the user's new message is not in history yet and a trim
+    // deletes nothing. The newest two turns hold the 15k paste, so no legal
+    // cut can reach the target, on this load or any of the next four.
+    const rows = [...makeTurns(1, 100), ...makeTurns(1, 15_000)];
+    for (let i = 0; i < 5; i++) {
+      mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+      const ctx = await loadThreadContext(makeUserPrompt());
+      expect(ctx.compaction).toBeUndefined();
+    }
+
+    expect(mockRecordCompaction).not.toHaveBeenCalled();
+    // (Once enough small turns arrive that the paste is no longer among the
+    // protected two, it becomes droppable and ONE compaction happens — the
+    // first test in this suite covers that.)
+  });
+
+  it("never shows the summariser the message being answered", async () => {
+    // The current user turn is written to Cosmos AFTER history is read, so it
+    // cannot be in the dropped block — but that is an invariant of the read
+    // order, and the read order is the kind of thing that gets refactored.
+    process.env.HISTORY_TOKEN_BUDGET = "12000";
+    summaryEnabled = true;
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: pasteThread(),
+    });
+
+    await loadThreadContext(makeUserPrompt());
+
+    const call = mockRecordCompaction.mock.calls[0][0] as unknown as {
+      droppedMessages: { content?: string }[];
+    };
+    expect(call.droppedMessages.length).toBeGreaterThan(0);
+    for (const message of call.droppedMessages) {
+      expect(message.content ?? "").not.toContain("Hello world");
+    }
   });
 });
 

@@ -116,6 +116,12 @@ export function createChatStore(options: CreateChatStoreOptions) {
       inputTokens: lastInput,
       outputTokens: lastOutput,
       cachedTokens: u.lastCachedTokens ?? 0,
+      // Real numbers from the last completed request, so a reloaded thread
+      // shows the same context size and cache split it showed live — the
+      // header never estimates.
+      ...(typeof u.lastCacheWriteTokens === "number"
+        ? { cacheWriteTokens: u.lastCacheWriteTokens }
+        : {}),
       totalTokens: lastInput + lastOutput,
       costUsd: 0,
       threadTotalCostUsd: u.totalCostUsd,

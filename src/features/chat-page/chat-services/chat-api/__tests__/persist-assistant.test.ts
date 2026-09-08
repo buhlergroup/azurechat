@@ -158,7 +158,10 @@ describe("persistThread — usage counters", () => {
       1000,
       500,
       200,
-      expectedCost
+      expectedCost,
+      // Cache writes are persisted too, so the header's cache row survives a
+      // reload instead of folding the writes into "plain".
+      0,
     );
   });
 });
@@ -197,6 +200,7 @@ describe("persistThread — cache-write tokens", () => {
       500,
       6_000,
       expectedCost,
+      3_000,
     );
   });
 
@@ -230,6 +234,7 @@ describe("persistThread — cache-write tokens", () => {
       500,
       6_000,
       expectedCost,
+      3_000,
     );
   });
 

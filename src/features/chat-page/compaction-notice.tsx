@@ -115,10 +115,20 @@ export function CompactionMarker(props: {
   trimmedTurns: number;
   summaryText?: string;
   summaryModel?: string;
+  /** Real provider numbers from the turn that trimmed, when the row has them. */
+  realTokensBefore?: number;
+  realTokensAfter?: number;
 }) {
   return (
     <CompactionRow
-      text={compactionMarkerText(props.trimmedTurns)}
+      text={compactionMarkerText(props.trimmedTurns, {
+        ...(typeof props.realTokensBefore === "number"
+          ? { tokensBefore: props.realTokensBefore }
+          : {}),
+        ...(typeof props.realTokensAfter === "number"
+          ? { tokensAfter: props.realTokensAfter }
+          : {}),
+      })}
       {...(props.summaryText ? { summaryText: props.summaryText } : {})}
       {...(props.summaryModel ? { summaryModel: props.summaryModel } : {})}
     />

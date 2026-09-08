@@ -44,6 +44,14 @@ vi.mock("@/features/chat-page/chat-services/chat-api/persist-assistant", () => (
 vi.mock("@/features/chat-page/chat-services/models/provider", () => ({
   resolveAzureModel: (...a: unknown[]) => mockResolveAzureModel(...a),
 }));
+const mockRecordRealUsage = vi.fn(async () => undefined);
+vi.mock(
+  "@/features/chat-page/chat-services/chat-api/history-summary-service",
+  () => ({
+    recordHistoryCompactionRealUsage: (...a: unknown[]) =>
+      mockRecordRealUsage(...(a as [])),
+  }),
+);
 vi.mock("@/features/chat-page/chat-services/models/provider-seam", () => ({
   resolveProvider: (...a: unknown[]) => mockResolveProvider(...a),
   getFileIdsSignature: (ids: string[] | undefined) =>
@@ -534,8 +542,8 @@ describe("/api/chat route (AI SDK v6)", () => {
     // contract with the component that renders it.
     const COMPACTION = {
       trimmedTurns: 12,
-      tokensBefore: 184_000,
-      tokensAfter: 96_000,
+      estimatedTokensBefore: 184_000,
+      estimatedTokensAfter: 96_000,
       summaryOutcome: "ok",
       summaryModel: "gpt-5.6-terra",
       durationMs: 4210,
@@ -543,39 +551,76 @@ describe("/api/chat route (AI SDK v6)", () => {
       coversThroughMessageId: "m42",
     };
 
-    async function postAndReadStream(compaction?: unknown): Promise<string> {
+    async function postAndReadStream(
+      compaction?: unknown,
+      extraCtx: Record<string, unknown> = {},
+    ): Promise<string> {
       mockLoadThreadContext.mockResolvedValue({
         ...structuredClone(CTX),
         ...(compaction ? { compaction } : {}),
+        ...extraCtx,
       });
       const res = await POST(makeRequest({ message: "hello", id: "t1" }));
       expect(res.status).toBe(200);
       return await res.text();
     }
 
-    it("writes one data-compaction part, complete, when the turn trimmed", async () => {
-      const body = await postAndReadStream(COMPACTION);
-      const frames = body
+    function compactionFrames(body: string): any[] {
+      return body
         .split("\n")
         .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
-        .map((line) => JSON.parse(line.slice("data: ".length)));
-      const parts = frames.filter((f) => f.type === "data-compaction");
-      expect(parts).toHaveLength(1);
-      // Stable id: a later write for the same turn replaces this part rather
-      // than adding a second divider.
+        .map((line) => JSON.parse(line.slice("data: ".length)))
+        .filter((f) => f.type === "data-compaction");
+    }
+
+    it("writes the notice twice under one id: no numbers, then the real ones", async () => {
+      // The mocked streamText reports inputTokens 10 as this request's usage,
+      // and the context carries 34,012 as the previous request's.
+      const body = await postAndReadStream(COMPACTION, {
+        previousRequestInputTokens: 34_012,
+      });
+      const parts = compactionFrames(body);
+
+      expect(parts).toHaveLength(2);
+      // One id, so the SDK updates the row in place instead of drawing a
+      // second divider.
       expect(parts[0].id).toBe("compaction");
+      expect(parts[1].id).toBe("compaction");
+
+      // First write: the fact, with NO token counts — they are the provider's
+      // real numbers and this request has not finished. No estimate stands in.
       expect(parts[0].data).toEqual({
         status: "done",
         trimmedTurns: 12,
-        tokensBefore: 184_000,
-        tokensAfter: 96_000,
         summaryOutcome: "ok",
         summaryModel: "gpt-5.6-terra",
         durationMs: 4210,
         summaryText: "FACTS: the user prefers metric units.",
       });
-      // The watermark is for the persisted divider, not for the wire.
-      expect(parts[0].data.coversThroughMessageId).toBeUndefined();
+      // The plan's own estimates never reach the wire.
+      expect(body).not.toContain("184000");
+      expect(body).not.toContain("96000");
+
+      // Second write: the real numbers.
+      expect(parts[1].data).toMatchObject({
+        tokensBefore: 34_012,
+        tokensAfter: 10,
+      });
+      // And the same pair is stamped on the compaction row, for the divider a
+      // reloaded page draws.
+      expect(mockRecordRealUsage).toHaveBeenCalledWith({
+        threadId: "t1",
+        realTokensBefore: 34_012,
+        realTokensAfter: 10,
+      });
+    });
+
+    it("omits the before-count on a thread's first turn", async () => {
+      const body = await postAndReadStream(COMPACTION);
+      const parts = compactionFrames(body);
+      expect(parts).toHaveLength(2);
+      expect(parts[1].data.tokensAfter).toBe(10);
+      expect(parts[1].data.tokensBefore).toBeUndefined();
     });
 
     it("writes nothing when the turn did not trim (negative)", async () => {
@@ -588,16 +633,12 @@ describe("/api/chat route (AI SDK v6)", () => {
       // summariser that was called and broke.
       const body = await postAndReadStream({
         trimmedTurns: 3,
-        tokensBefore: 90_000,
-        tokensAfter: 50_000,
+        estimatedTokensBefore: 90_000,
+        estimatedTokensAfter: 50_000,
         summaryOutcome: "failed",
         durationMs: 12,
       });
-      const frame = body
-        .split("\n")
-        .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
-        .map((line) => JSON.parse(line.slice("data: ".length)))
-        .find((f) => f.type === "data-compaction");
+      const frame = compactionFrames(body)[0];
       expect(frame.data.summaryOutcome).toBe("failed");
       expect(frame.data.summaryText).toBeUndefined();
       expect(frame.data.summaryModel).toBeUndefined();

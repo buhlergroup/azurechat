@@ -1,4 +1,26 @@
 "use client";
+/**
+ * The header's usage panel.
+ *
+ * ## Every number here is the provider's, not ours
+ *
+ * The panel shows the last COMPLETED request: its real `inputTokens`, its real
+ * cache split, its real cost. Nothing is estimated, and nothing is marked "~".
+ *
+ * That is a deliberate constraint. The obvious alternative — forecast the next
+ * prompt from the transcript on every keystroke — was built and rejected: an
+ * estimate that later disagrees with the provider's own accounting (and with
+ * the invoice) is worse than a number that is a turn old. While a response is
+ * in flight the panel simply keeps showing the previous real values.
+ *
+ * The context row therefore answers "what did the last prompt actually cost in
+ * context", and the compaction notice in the transcript is what tells the user
+ * a trim happened. The two now agree, because both quote the same provider
+ * numbers — and both print them through the SAME pinned formatter
+ * (`formatTokenCount`). A bare `toLocaleString()` renders 17565 as "17’565" on
+ * a Swiss machine and "17,565" on a US one, so the panel and the notice could
+ * disagree about a number they both took from the same field.
+ */
 import { FC } from "react";
 import {
   DropdownMenu,
@@ -8,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { useChatStore } from "../chat-store-context";
+import { formatTokenCount } from "../chat-services/chat-api/compaction-part";
 
 export const TokenUsageDisplay: FC = () => {
   const lastUsageData = useChatStore((s) => s.lastUsageData);
@@ -25,6 +48,19 @@ export const TokenUsageDisplay: FC = () => {
     if (cost < 0.01) return "< $0.01";
     return `$${cost.toFixed(2)}`;
   };
+
+  // Cache split of the last request. `plain` is what was neither read from
+  // the cache nor written into it — the tokens billed at the full uncached
+  // rate. Floored at zero: the provider reports the buckets as subsets of
+  // inputTokens, and a negative remainder would mean we had misread them.
+  const cacheReads = lastUsageData.cachedTokens ?? 0;
+  const cacheWrites = lastUsageData.cacheWriteTokens ?? 0;
+  const knowsWrites = typeof lastUsageData.cacheWriteTokens === "number";
+  const plainInput = Math.max(
+    lastUsageData.inputTokens - cacheReads - cacheWrites,
+    0,
+  );
+  const hasCacheRow = lastUsageData.inputTokens > 0;
 
   // Context ring data
   const hasContext = lastUsageData.contextWindowSize > 0 && lastUsageData.inputTokens > 0;
@@ -65,30 +101,36 @@ export const TokenUsageDisplay: FC = () => {
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="start" className="w-56">
         <DropdownMenuLabel className="font-normal pb-2">
-          <p className="text-sm font-semibold tracking-tight mb-2">Thread Usage <span className="text-[10px] font-normal text-muted-foreground">(estimated)</span></p>
+          <p className="text-sm font-semibold tracking-tight mb-2">Thread Usage <span className="text-[10px] font-normal text-muted-foreground">(last request)</span></p>
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Total tokens</span>
-              <span className="tabular-nums">{lastUsageData.threadTotalTokens.toLocaleString()}</span>
+              {/* Cumulative input + output across every request of this
+                  thread. It used to be labelled "Total tokens", which read
+                  like a context size and invited the comparison with the
+                  context row below — two different quantities. */}
+              <span className="text-muted-foreground">Thread usage so far</span>
+              <span className="tabular-nums">{formatTokenCount(lastUsageData.threadTotalTokens)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Last input</span>
-              <span className="tabular-nums">{lastUsageData.inputTokens.toLocaleString()}</span>
+              <span className="tabular-nums">{formatTokenCount(lastUsageData.inputTokens)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Last output</span>
-              <span className="tabular-nums">{lastUsageData.outputTokens.toLocaleString()}</span>
+              <span className="tabular-nums">{formatTokenCount(lastUsageData.outputTokens)}</span>
             </div>
-            {lastUsageData.cachedTokens > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Cached</span>
-                <span className="tabular-nums">{lastUsageData.cachedTokens.toLocaleString()}</span>
-              </div>
-            )}
-            {(lastUsageData.cacheWriteTokens ?? 0) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Cache write</span>
-                <span className="tabular-nums">{(lastUsageData.cacheWriteTokens ?? 0).toLocaleString()}</span>
+            {hasCacheRow && (
+              <div className="flex justify-between gap-2" data-testid="cache-row">
+                {/* The three buckets of the last request's input, in one row.
+                    Reads are billed at ~0.1x, writes at 1.25x, plain at 1x —
+                    so this row is where the prompt-cache work shows up. */}
+                <span className="text-muted-foreground">Cache</span>
+                <span className="tabular-nums text-right">
+                  reads {formatTokenCount(cacheReads)}
+                  {knowsWrites && <> · writes {formatTokenCount(cacheWrites)}</>}
+                  {" · plain "}
+                  {formatTokenCount(plainInput)}
+                </span>
               </div>
             )}
           </div>
@@ -110,9 +152,12 @@ export const TokenUsageDisplay: FC = () => {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="font-normal pt-2">
-              <div className="text-xs">
+              <div className="text-xs" data-testid="context-row">
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-muted-foreground">Context window</span>
+                  {/* "last prompt", not "context window": this is the real
+                      input size of the request that just completed, which is
+                      exactly the context the model was sent. */}
+                  <span className="text-muted-foreground">Context (last prompt)</span>
                   <span className="tabular-nums">{percent.toFixed(1)}%</span>
                 </div>
                 <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -123,9 +168,10 @@ export const TokenUsageDisplay: FC = () => {
                     style={{ width: `${Math.max(percent, 1)}%` }}
                   />
                 </div>
-                <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
-                  <span>{formatTokens(lastUsageData.inputTokens)}</span>
-                  <span>{formatTokens(lastUsageData.contextWindowSize)}</span>
+                <div className="mt-1 text-[10px] text-muted-foreground tabular-nums">
+                  {formatTokenCount(lastUsageData.inputTokens)} of{" "}
+                  {formatTokens(lastUsageData.contextWindowSize)} ·{" "}
+                  {percent.toFixed(1)} %
                 </div>
               </div>
             </DropdownMenuLabel>
@@ -133,7 +179,10 @@ export const TokenUsageDisplay: FC = () => {
         )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="font-normal py-1.5">
-          <p className="text-[10px] text-muted-foreground/60 leading-tight">Costs are estimates only. No charges are applied.</p>
+          <p className="text-[10px] text-muted-foreground/60 leading-tight">
+            Token counts are the provider&apos;s, for the last completed
+            request. Costs are estimates only. No charges are applied.
+          </p>
         </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>

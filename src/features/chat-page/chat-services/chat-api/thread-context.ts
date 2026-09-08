@@ -45,6 +45,7 @@ import {
   applyHistoryWatermark,
   planHistoryTrim,
   resolveHistoryBudget,
+  resolveHistoryProtectedTurns,
   resolveHistoryTrimTargetRatio,
   SUMMARY_TOKEN_RESERVE,
 } from "./history-budget";
@@ -233,6 +234,8 @@ async function compactHistory(input: {
   threadId: string;
   selectedModel: ChatThreadModel["selectedModel"];
   rows: ChatMessageModel[];
+  /** Real `inputTokens` of the thread's previous request, if recorded. */
+  threadUsageLastInputTokens?: number;
 }): Promise<{
   rows: ChatMessageModel[];
   summary: ChatHistorySummaryModel | null;
@@ -280,16 +283,46 @@ async function compactHistory(input: {
     cappedByGuard: budgetDecision.cappedByGuard,
   });
 
+  // The provider's real prompt size for this thread's PREVIOUS request, when
+  // one was recorded. It decides whether we are over budget; the estimator
+  // still decides how many turns to drop. See TrimPlanOptions.
+  const measuredTokensBefore = input.threadUsageLastInputTokens;
+
   const plan = planHistoryTrim(retained, {
     budget,
     targetRatio: resolveHistoryTrimTargetRatio({
       envRatio: process.env.HISTORY_TRIM_TARGET_RATIO,
     }),
+    minKeptTurns: resolveHistoryProtectedTurns({
+      envProtectedTurns: process.env.HISTORY_PROTECTED_TURNS,
+    }),
     existingSummaryTokens: existingSummary?.estimatedTokens ?? 0,
     summaryReserveTokens: summaryEnabled ? SUMMARY_TOKEN_RESERVE : 0,
+    ...(typeof measuredTokensBefore === "number"
+      ? { measuredTokensBefore }
+      : {}),
   });
 
   if (!plan.trimmed) {
+    if (plan.skipReason === "no-reduction") {
+      // The cut would have landed under target, but the replacement summary
+      // costs as much as the turns it replaces. Trimming would have deleted
+      // context, spent a model call, and left the prompt the same size — this
+      // is the guard against the "compacted 17k -> 19k" loop.
+      logInfo("thread-context: skipped a trim that would not shrink the prompt", {
+        threadId: input.threadId,
+        triggerSource: plan.triggerSource,
+        triggerTokens: plan.triggerTokens,
+        estimatedTokens: plan.estimatedTokensBefore,
+        budget: plan.budget,
+        target: plan.target,
+      });
+      return {
+        rows: plan.kept,
+        summary: summaryWithContent(existingSummary),
+        compaction: undefined,
+      };
+    }
     if (plan.targetUnreachable) {
       // Over budget with nothing left that may be dropped: the surviving turns
       // alone exceed the target. Nothing to do but let it through — the
@@ -302,12 +335,17 @@ async function compactHistory(input: {
       // people to ignore the log.
       const budgetIsDefault = budgetDecision.baseSource === "default";
       const log = budgetIsDefault ? logWarn : logInfo;
-      log("thread-context: history over budget but nothing trimmable", {
+      log("thread-context: history over budget, trim cannot reach target", {
         threadId: input.threadId,
+        triggerSource: plan.triggerSource,
+        triggerTokens: plan.triggerTokens,
         estimatedTokens: plan.estimatedTokensBefore,
         budget: plan.budget,
+        target: plan.target,
         budgetSource: budgetDecision.baseSource,
         turnCount: plan.keptTurnCount,
+        // No summariser call is spent and no notice is shown: nothing happened.
+        skipReason: plan.skipReason,
       });
     }
     return {
@@ -321,6 +359,8 @@ async function compactHistory(input: {
     threadId: input.threadId,
     budget: plan.budget,
     target: plan.target,
+    triggerSource: plan.triggerSource,
+    triggerTokens: plan.triggerTokens,
     estimatedTokensBefore: plan.estimatedTokensBefore,
     estimatedTokensAfter: plan.estimatedTokensAfter,
     droppedTurnCount: plan.droppedTurnCount,
@@ -356,8 +396,10 @@ async function compactHistory(input: {
   const summarised = summaryOutcome === "ok" && summaryContent.length > 0;
   const compaction: HistoryCompactionOutcome = {
     trimmedTurns: plan.droppedTurnCount,
-    tokensBefore: plan.estimatedTokensBefore,
-    tokensAfter: plan.estimatedTokensAfter,
+    // Estimates, for the log and the trim maths. What the user sees are the
+    // provider's real numbers, written by the route once the turn finishes.
+    estimatedTokensBefore: plan.estimatedTokensBefore,
+    estimatedTokensAfter: plan.estimatedTokensAfter,
     summaryOutcome,
     durationMs,
     ...(summarised && recorded?.model ? { summaryModel: recorded.model } : {}),
@@ -553,6 +595,13 @@ export interface ThreadContext {
    * longer quote turns they can still scroll to.
    */
   compaction: HistoryCompactionOutcome | undefined;
+  /**
+   * The provider's real `inputTokens` for this thread's PREVIOUS request, read
+   * before this turn overwrites it. The route pairs it with this request's own
+   * `inputTokens` so the compaction notice can state what the prompt actually
+   * went from and to. Undefined on a thread's first turn.
+   */
+  previousRequestInputTokens: number | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +665,12 @@ export async function loadThreadContext(
     threadId: thread.id,
     selectedModel: thread.selectedModel,
     rows: allRows,
+    // Recorded by UpdateChatThreadUsage at the end of the previous turn, so
+    // this is that request's real prompt size — read here BEFORE this turn
+    // overwrites it.
+    ...(typeof thread.usage?.lastInputTokens === "number"
+      ? { threadUsageLastInputTokens: thread.usage.lastInputTokens }
+      : {}),
   });
 
   const history = await resolveHistoryFileRefs(
@@ -789,5 +844,6 @@ export async function loadThreadContext(
     attachedFiles: thread.attachedFiles ?? [],
     turnId,
     compaction,
+    previousRequestInputTokens: thread.usage?.lastInputTokens,
   };
 }

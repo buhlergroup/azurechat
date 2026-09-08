@@ -105,6 +105,17 @@ export interface ChatHistorySummaryModel {
    */
   summaryOutcome?: SummaryOutcome;
   /**
+   * The provider's REAL `inputTokens` either side of the last trim: the
+   * previous request's prompt and the trimming request's prompt.
+   *
+   * Written in a second pass, after the trimming turn finishes — the "after"
+   * number does not exist until then. Absent on the first turn of a thread
+   * (no previous request) and on rows written before this existed, so the
+   * reload divider simply shows no token clause.
+   */
+  realTokensBefore?: number;
+  realTokensAfter?: number;
+  /**
    * Deployment that produced `content`, so a regression can be traced to a
    * model. Empty string when nothing was summarised.
    */
@@ -302,6 +313,8 @@ export function buildHistorySummaryRow(input: {
   model: string;
   estimatedTokens: number;
   summaryOutcome?: SummaryOutcome;
+  realTokensBefore?: number;
+  realTokensAfter?: number;
   createdAt?: Date;
 }): ChatHistorySummaryModel {
   return {
@@ -319,6 +332,12 @@ export function buildHistorySummaryRow(input: {
     model: input.model,
     estimatedTokens: input.estimatedTokens,
     ...(input.summaryOutcome ? { summaryOutcome: input.summaryOutcome } : {}),
+    ...(typeof input.realTokensBefore === "number"
+      ? { realTokensBefore: input.realTokensBefore }
+      : {}),
+    ...(typeof input.realTokensAfter === "number"
+      ? { realTokensAfter: input.realTokensAfter }
+      : {}),
   };
 }
 

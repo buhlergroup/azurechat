@@ -354,6 +354,12 @@ const ChatMessages = memo(function ChatMessages({
                     {...(compactionMarker?.summaryModel
                       ? { summaryModel: compactionMarker.summaryModel }
                       : {})}
+                    {...(typeof compactionMarker?.realTokensBefore === "number"
+                      ? { realTokensBefore: compactionMarker.realTokensBefore }
+                      : {})}
+                    {...(typeof compactionMarker?.realTokensAfter === "number"
+                      ? { realTokensAfter: compactionMarker.realTokensAfter }
+                      : {})}
                   />
                 )}
               </div>

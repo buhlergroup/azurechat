@@ -632,7 +632,8 @@ export const UpdateChatThreadUsage = async (
   inputTokens: number,
   outputTokens: number,
   cachedTokens: number,
-  costUsd: number
+  costUsd: number,
+  cacheWriteTokens: number = 0
 ): Promise<ServerActionResponse<ChatThreadModel>> => {
   try {
     const response = await FindChatThreadForCurrentUser(chatThreadId);
@@ -654,6 +655,7 @@ export const UpdateChatThreadUsage = async (
         lastInputTokens: inputTokens,
         lastOutputTokens: outputTokens,
         lastCachedTokens: cachedTokens,
+        lastCacheWriteTokens: cacheWriteTokens,
       };
       return await UpsertChatThread(chatThread);
     }

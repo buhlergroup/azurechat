@@ -334,7 +334,8 @@ This is the largest feature folder with complex state management and streaming.
   - `applyHistoryWatermark(messages, coversThroughMessageId)` — Makes a trim stick instead of sliding forward a turn per turn
   - `planHistoryTrim(messages, options)` — The trim decision
   - `resolveHistoryBudget(input)` — The whole budget decision, with the source of every number for logging: base budget (env `HISTORY_TOKEN_BUDGET` > per-model `historyTokenBudget` > 256 000 default) bounded by the model guard (`longContextThresholdTokens − reserve`, else 60 % of `contextWindow`, else none)
-  - `resolveHistoryTokenBudget` / `resolveHistoryTrimTargetRatio` / `resolveHistoryLongContextReserve` — The effective budget only, the trim ratio (`HISTORY_TRIM_TARGET_RATIO`, default 0.6), and the reserve (`HISTORY_LONG_CONTEXT_RESERVE`, default 16 000)
+  - `resolveHistoryTokenBudget` / `resolveHistoryTrimTargetRatio` / `resolveHistoryLongContextReserve` / `resolveHistoryProtectedTurns` — The effective budget only, the trim ratio (`HISTORY_TRIM_TARGET_RATIO`, default 0.6), the reserve (`HISTORY_LONG_CONTEXT_RESERVE`, default 16 000), and the protected-turn count (`HISTORY_PROTECTED_TURNS`, **default 0** — every persisted turn is eligible; the current user message is not in these rows at all)
+  - `planHistoryTrim` also declines a trim it cannot make worthwhile: `skipReason` `"cannot-reach-target"` (the floor it cannot remove is over target) or `"no-reduction"` (the replacement summary costs as much as the turns), and takes the trim decision from the provider's real `inputTokens` when the thread has one (`triggerSource`)
   - **Tests:** `chat-services/chat-api/history-budget.test.ts` (Vitest)
 - `chat-services/chat-api/history-summary.ts` — Pure. Row shape, summariser prompt, replay text
   - **Tests:** `chat-services/chat-api/history-summary.test.ts` (Vitest)
