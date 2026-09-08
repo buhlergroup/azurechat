@@ -326,6 +326,10 @@ describe("/api/chat route (AI SDK v6)", () => {
   });
 
   describe("prompt cache key + explicit breakpoint", () => {
+    // The breakpoint is a provider-neutral concept: the flag says "pin one at
+    // the end of the static developer/system prefix on whichever provider
+    // serves the turn". Only the wire field differs per seam, and on Anthropic
+    // the breakpoint is unconditional, so the flag cannot change anything.
     it("passes the thread id as the cache key under the default strategy", async () => {
       await POST(makeRequest({ message: "hello", id: "t1" }));
       expect(mockResolveProvider).toHaveBeenCalledWith(
@@ -459,6 +463,53 @@ describe("/api/chat route (AI SDK v6)", () => {
         else process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = saved;
       }
     });
+
+    it.each([
+      ["off", undefined],
+      ["on", "true"],
+    ])(
+      "always pins the system-prefix breakpoint on Anthropic — the flag is a no-op there (flag %s)",
+      async (_label, flagValue) => {
+        const { streamText } = await import("ai");
+        const saved = process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+        if (flagValue === undefined) delete process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+        else process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = flagValue;
+        mockResolveModelAndLimits.mockResolvedValue({
+          ...MODEL_RESULT,
+          modelConfig: {
+            ...MODEL_RESULT.modelConfig,
+            id: "claude-sonnet-5",
+            provider: "anthropic",
+            supportsResponsesAPI: false,
+          },
+          selectedModel: "claude-sonnet-5",
+        });
+        try {
+          await POST(makeRequest({ message: "hello", id: "t1" }));
+          const options = (streamText as unknown as { mock: { calls: unknown[][] } })
+            .mock.calls[0][0] as {
+            system?: { role?: string; providerOptions?: Record<string, unknown> };
+          };
+          expect(options.system?.role).toBe("system");
+          // Anthropic's wire form of the same breakpoint.
+          expect(
+            (options.system?.providerOptions as {
+              anthropic?: Record<string, unknown>;
+            })?.anthropic?.cacheControl,
+          ).toEqual({ type: "ephemeral" });
+          // and NOT the Responses-seam field.
+          expect(
+            (options.system?.providerOptions as {
+              openai?: Record<string, unknown>;
+            })?.openai,
+          ).toBeUndefined();
+        } finally {
+          if (saved === undefined)
+            delete process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
+          else process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = saved;
+        }
+      },
+    );
 
     it("does not mark a breakpoint on a pre-5.6 model even with the flag on (negative)", async () => {
       const { streamText } = await import("ai");

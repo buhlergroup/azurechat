@@ -1,6 +1,15 @@
-// Pure helpers for assembling the cache-relevant parts of an Azure OpenAI
-// Responses request. Kept side-effect free so the byte-for-byte stability of
-// the prompt prefix can be locked down by tests in prompt-builder.test.ts.
+// Pure helpers for assembling the cache-relevant parts of a chat request.
+//
+// A prompt-cache BREAKPOINT is not an OpenAI concept: every provider we serve
+// caches a prompt PREFIX, and each one wants the end of the reusable prefix
+// marked. Only the wire field differs — Azure OpenAI Responses reads
+// `providerOptions.openai.promptCacheBreakpoint`, Anthropic's Messages API
+// reads `providerOptions.anthropic.cacheControl` (`cache_control` on the wire)
+// — so that detail stays inside the two helpers below and callers speak in
+// terms of breakpoints.
+//
+// Kept side-effect free so the byte-for-byte stability of the prompt prefix
+// can be locked down by tests in prompt-builder.test.ts.
 
 import type { ModelMessage, SystemModelMessage } from "ai";
 import { compareByCodepoint } from "../tools/stabilize-toolset";
@@ -95,6 +104,11 @@ function anthropicCacheControl(): { anthropic: { cacheControl: { type: "ephemera
  *      string so it can carry `providerOptions`. In Anthropic's render order
  *      (tools → system → messages) a breakpoint on the system block caches the
  *      tool definitions AND the system prompt as a single reusable prefix.
+ *      This is the SAME breakpoint `withPromptCacheBreakpoint` pins on the
+ *      Responses seam, and it is set UNCONDITIONALLY here: Anthropic caches
+ *      nothing without one, so there is no version of this path worth gating
+ *      behind a flag. PROMPT_CACHE_PERSONA_BREAKPOINT is therefore a no-op for
+ *      Claude — the breakpoint it asks for is always already there.
  *   2. **Latest turn** — a message-level breakpoint on the last message. The AI
  *      SDK applies it to that message's final content part, so each turn writes
  *      a cache entry covering the whole conversation-so-far; the next turn
@@ -141,13 +155,18 @@ export function withAnthropicPromptCache(
 }
 
 /**
- * Marks an explicit prompt-cache breakpoint on the developer/system message
- * for the OpenAI Responses seam. @ai-sdk/openai reads
- * `providerOptions.openai.promptCacheBreakpoint` per MESSAGE (confirmed in
- * responses/convert-to-openai-responses-input.ts, which emits it on both the
- * "system" and the "developer" system-message modes), and the wire value it
- * expects is `{ mode: "explicit" }` — hence the SystemModelMessage: the bare
- * `system` string has nowhere to carry providerOptions.
+ * Pin a prompt-cache breakpoint at the end of the static developer/system
+ * prefix, for a model served over the OpenAI-compatible Responses seam (Azure
+ * OpenAI). Same provider-neutral intent as `withAnthropicPromptCache`'s first
+ * breakpoint — "the reusable prefix ends here" — expressed in the wire field
+ * this seam reads.
+ *
+ * @ai-sdk/openai reads `providerOptions.openai.promptCacheBreakpoint` per
+ * MESSAGE (confirmed in responses/convert-to-openai-responses-input.ts, which
+ * emits it on both the "system" and the "developer" system-message modes), and
+ * the wire value it expects is `{ mode: "explicit" }` — hence the
+ * SystemModelMessage: the bare `system` string has nowhere to carry
+ * providerOptions.
  *
  * The breakpoint says "the prefix up to and including the developer message is
  * a cache unit", which is exactly the block shared by every thread of an
@@ -155,12 +174,14 @@ export function withAnthropicPromptCache(
  * automatic prefix matching keeps working; the breakpoint only pins where the
  * shared unit ends.
  *
- * CAVEAT: the breakpoint object's own field is literally `mode: "explicit"`,
- * so pairing it with implicit request-level caching is a combination we have
- * NOT been able to verify against Azure (that needs a live call). This is why
- * the caller keeps it behind PROMPT_CACHE_PERSONA_BREAKPOINT, default off.
+ * CAVEAT — and the only reason PROMPT_CACHE_PERSONA_BREAKPOINT exists as a
+ * flag at all: the breakpoint object's own field is literally
+ * `mode: "explicit"`, so pairing it with implicit request-level caching is a
+ * combination we have NOT been able to verify against Azure (that needs a live
+ * call). Hence default off on this seam. The Anthropic seam needs no flag; see
+ * `withAnthropicPromptCache`.
  */
-export function withOpenAIPromptCacheBreakpoint(
+export function withPromptCacheBreakpoint(
   system: string,
   messages: readonly ModelMessage[],
 ): { system: SystemModelMessage; messages: ModelMessage[] } {

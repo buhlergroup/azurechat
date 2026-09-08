@@ -314,7 +314,8 @@ This is the largest feature folder with complex state management and streaming.
   - `buildSystemMessage(inputs)` — Assembles the cache-stable developer message: `staticSystemPrompt → personaMessage → trailingStaticBlock → documentHint`
   - `isoDate(now)` — ISO-8601 date formatting (locale-independent)
   - `sortFunctionTools(tools)` — Sorts tools by name for cache key stability
-  - `withAnthropicPromptCache(system, messages)` — Two `cache_control` breakpoints for the Azure /anthropic Messages API
+  - `withAnthropicPromptCache(system, messages)` — Two `cache_control` breakpoints (system prefix + latest turn) for the Azure /anthropic Messages API; always applied, since Claude caches nothing without one
+  - `withPromptCacheBreakpoint(system, messages)` — The same provider-neutral "the reusable prefix ends here" breakpoint in the Responses-seam wire form (`providerOptions.openai.promptCacheBreakpoint {mode:"explicit"}`); gated by `PROMPT_CACHE_PERSONA_BREAKPOINT`, which is a no-op on Anthropic
   - **Tests:** `chat-services/chat-api/prompt-builder.test.ts` (Vitest)
 
 **History Budget & Summarisation (with tests):**

@@ -4,7 +4,7 @@ import {
   buildSystemMessage,
   sortFunctionTools,
   withAnthropicPromptCache,
-  withOpenAIPromptCacheBreakpoint,
+  withPromptCacheBreakpoint,
 } from "./prompt-builder";
 
 // These tests lock down byte-for-byte stability of the parts of the request
@@ -280,7 +280,10 @@ describe("byte-for-byte invariant (the cache contract)", () => {
   });
 });
 
-describe("withOpenAIPromptCacheBreakpoint", () => {
+// Provider-neutral concept, Responses-seam wire form. The Anthropic wire form
+// of the same breakpoint is covered by the withAnthropicPromptCache describe
+// above (breakpoint #1, on the system message).
+describe("withPromptCacheBreakpoint", () => {
   const msgs: ModelMessage[] = [
     { role: "user", content: "first question" },
     { role: "assistant", content: "first answer" },
@@ -288,7 +291,7 @@ describe("withOpenAIPromptCacheBreakpoint", () => {
   ];
 
   it("returns the system prompt as a SystemModelMessage carrying the breakpoint", () => {
-    const { system } = withOpenAIPromptCacheBreakpoint("SYSTEM PROMPT", msgs);
+    const { system } = withPromptCacheBreakpoint("SYSTEM PROMPT", msgs);
     expect(system.role).toBe("system");
     expect(system.content).toBe("SYSTEM PROMPT");
     // The wire shape @ai-sdk/openai emits as prompt_cache_breakpoint.
@@ -298,7 +301,7 @@ describe("withOpenAIPromptCacheBreakpoint", () => {
   });
 
   it("leaves the conversation messages untouched", () => {
-    const { messages } = withOpenAIPromptCacheBreakpoint("SYSTEM", msgs);
+    const { messages } = withPromptCacheBreakpoint("SYSTEM", msgs);
     expect(messages).toEqual(msgs);
     // A copy, so a later mutation cannot reach the caller's array.
     expect(messages).not.toBe(msgs);
@@ -307,7 +310,7 @@ describe("withOpenAIPromptCacheBreakpoint", () => {
 
   it("is byte-stable across calls (the prefix must not drift)", () => {
     expect(
-      JSON.stringify(withOpenAIPromptCacheBreakpoint("SYSTEM", msgs)),
-    ).toBe(JSON.stringify(withOpenAIPromptCacheBreakpoint("SYSTEM", msgs)));
+      JSON.stringify(withPromptCacheBreakpoint("SYSTEM", msgs)),
+    ).toBe(JSON.stringify(withPromptCacheBreakpoint("SYSTEM", msgs)));
   });
 });

@@ -49,7 +49,7 @@ import { enforceSameOriginRequest } from "@/features/chat-page/chat-services/cha
 import {
   buildSystemMessage,
   withAnthropicPromptCache,
-  withOpenAIPromptCacheBreakpoint,
+  withPromptCacheBreakpoint,
 } from "@/features/chat-page/chat-services/chat-api/prompt-builder";
 import { resolvePromptCacheKey } from "@/features/chat-page/chat-services/models/prompt-cache-key";
 import { CHAT_DEFAULT_SYSTEM_PROMPT } from "@/features/theme/theme-config";
@@ -516,22 +516,32 @@ export async function POST(req: Request) {
   // keeps replaying for the next subscriber).
   const { abortController, publish } = startPublisher(ctx.thread.id);
 
-  // Anthropic (Claude via the Azure /anthropic Messages API) caches only the
-  // prefixes you mark with explicit cache_control breakpoints — there's no
-  // top-level auto-cache like the OpenAI promptCacheKey the Azure seam uses.
-  // For Claude, fold the system prompt into a cached SystemModelMessage and mark
-  // the latest turn so the tools+system+history prefix is replayed (cache-read)
-  // across turns of a thread instead of re-billed every turn. Other providers
-  // pass the plain system string unchanged.
+  // Every provider caches a prompt PREFIX and wants the end of the reusable
+  // prefix marked with a breakpoint; only the wire field differs, and that
+  // detail lives in prompt-builder.ts. What differs per seam is whether a
+  // breakpoint is REQUIRED:
+  //
+  //   anthropic (Claude via the Azure /anthropic Messages API) — required.
+  //     Nothing is cached without an explicit cache_control breakpoint, so the
+  //     system prompt is always folded into a cached SystemModelMessage and the
+  //     latest turn is always marked; the tools+system+history prefix is then
+  //     replayed (cache-read) across turns instead of re-billed every turn.
+  //   openai / Azure Responses — optional. The seam already gets automatic
+  //     prefix caching from promptCacheKey, so the breakpoint only PINS where
+  //     the shared unit ends and stays behind a flag (see below).
   // ctx.modelHistory, not ctx.history: it is the same conversation plus the
   // prompt scaffolding (replayed summary, document hint) already in the order
   // the model must see it. ctx.history stays the real conversation for the
   // title check and for originalMessages below.
   const modelMessages = await convertToModelMessages(ctx.modelHistory);
-  // Opt-in: pin an explicit cache breakpoint at the end of the developer
-  // message on GPT-5.6, so the shared system+tools prefix is one cache unit.
-  // Off by default — see withOpenAIPromptCacheBreakpoint for why.
-  const useOpenAIBreakpoint =
+  // PROMPT_CACHE_PERSONA_BREAKPOINT: pin a cache breakpoint at the end of the
+  // static developer/system prefix on whichever provider serves the turn, so
+  // the system+tools block shared by every thread of an agent is one cache
+  // unit. It is a NO-OP on Anthropic — that seam always pins the same
+  // breakpoint, flag or not — so the flag only gates the Responses seam, where
+  // the mode:"explicit" wire value is still unverified against Azure (see
+  // withPromptCacheBreakpoint) and the default is therefore off.
+  const usePersonaBreakpoint =
     process.env.PROMPT_CACHE_PERSONA_BREAKPOINT === "true" &&
     modelConfig.provider !== "anthropic" &&
     modelConfig.provider !== "foundry" &&
@@ -539,8 +549,8 @@ export async function POST(req: Request) {
   const streamPrompt =
     modelConfig.provider === "anthropic"
       ? withAnthropicPromptCache(system, modelMessages)
-      : useOpenAIBreakpoint
-        ? withOpenAIPromptCacheBreakpoint(system, modelMessages)
+      : usePersonaBreakpoint
+        ? withPromptCacheBreakpoint(system, modelMessages)
         : { system, messages: modelMessages };
 
   const result = streamText({
