@@ -82,6 +82,35 @@ describe("plain conversation (user + assistant)", () => {
     const back = chatMessagesFromUIMessages(msgs, CTX);
     expect(back.map(stripVolatile)).toEqual(rows.map(stripVolatile));
   });
+
+  it("drops a data-compaction part instead of persisting it", () => {
+    // The compaction notice is something the app told the user, not something
+    // anyone said. It must not become a row, because a row would come back as
+    // history on the next turn and end up in the model's prompt. The adapter
+    // selects parts by type, so this holds by construction — pinned here
+    // because the cost of it silently changing is a polluted prompt.
+    const msgs = uiMessagesFromChatMessages(rows);
+    const withNotice = msgs.map((m, i) =>
+      i === 1
+        ? {
+            ...m,
+            parts: [
+              {
+                type: "data-compaction",
+                id: "compaction",
+                data: { status: "done", trimmedTurns: 3 },
+              } as never,
+              ...m.parts,
+            ],
+          }
+        : m,
+    );
+
+    const back = chatMessagesFromUIMessages(withNotice, CTX);
+
+    expect(back.map(stripVolatile)).toEqual(rows.map(stripVolatile));
+    expect(JSON.stringify(back)).not.toContain("compaction");
+  });
 });
 
 // ---------------------------------------------------------------------------
