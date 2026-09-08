@@ -44,6 +44,7 @@
  * row is written on every trim and `content` is allowed to be empty.
  */
 
+import type { SummaryOutcome } from "./compaction-part";
 import { SUMMARY_TOKEN_RESERVE, type BudgetMessage } from "./history-budget";
 
 /**
@@ -97,6 +98,12 @@ export interface ChatHistorySummaryModel {
   coversThroughMessageId: string;
   /** Cumulative rows compacted across every trim so far. Diagnostics only. */
   coversMessageCount: number;
+  /**
+   * Why the LAST trim on this thread has, or has not, a summary. Absent on a
+   * row written before outcomes existed, which reads as "unknown" rather than
+   * as any particular failure.
+   */
+  summaryOutcome?: SummaryOutcome;
   /**
    * Deployment that produced `content`, so a regression can be traced to a
    * model. Empty string when nothing was summarised.
@@ -294,6 +301,7 @@ export function buildHistorySummaryRow(input: {
   coversMessageCount: number;
   model: string;
   estimatedTokens: number;
+  summaryOutcome?: SummaryOutcome;
   createdAt?: Date;
 }): ChatHistorySummaryModel {
   return {
@@ -310,6 +318,7 @@ export function buildHistorySummaryRow(input: {
     coversMessageCount: input.coversMessageCount,
     model: input.model,
     estimatedTokens: input.estimatedTokens,
+    ...(input.summaryOutcome ? { summaryOutcome: input.summaryOutcome } : {}),
   };
 }
 

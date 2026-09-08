@@ -338,7 +338,7 @@ This is the largest feature folder with complex state management and streaming.
   - **Tests:** `chat-services/chat-api/history-budget.test.ts` (Vitest)
 - `chat-services/chat-api/history-summary.ts` — Pure. Row shape, summariser prompt, replay text
   - **Tests:** `chat-services/chat-api/history-summary.test.ts` (Vitest)
-- `chat-services/chat-api/history-summary-service.ts` — Cosmos read/write of the compaction row plus the summariser call (injectable; unit tests never reach a model). Gated by `HISTORY_SUMMARY_ENABLED`; deployment from `HISTORY_SUMMARY_DEPLOYMENT_NAME`, else terra, else luna, else mini
+- `chat-services/chat-api/history-summary-service.ts` — Cosmos read/write of the compaction row plus the summariser call (injectable; unit tests never reach a model). Gated by `HISTORY_SUMMARY_ENABLED`. `resolveHistorySummaryModel` picks a MODEL (`HISTORY_SUMMARY_DEPLOYMENT_NAME` > the thread's own model > terra > luna > titles) and the call goes through `resolveProvider` + `generateText` — the same seam as the chat route, because the legacy Azure chat-completions client 404s on the 5.6 deployments. Reports `historySummaryTokens`; never touches the user's cost cap. Every failure is a reason code (`ok`/`off`/`failed`/`timeout`/`no-deployment`) on the row and on the UI part
   - `FindChatHistorySummary` / `UpsertChatHistorySummary` / `SoftDeleteChatHistorySummary`
   - `recordHistoryCompaction(input)` — Advances the watermark; summarises when enabled
   - **Tests:** `chat-services/chat-api/history-summary-service.test.ts` (Vitest)

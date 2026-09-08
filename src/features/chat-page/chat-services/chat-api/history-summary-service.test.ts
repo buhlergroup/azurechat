@@ -35,34 +35,55 @@ vi.mock("@/features/common/services/logger", () => ({
 
 // ── Model table ───────────────────────────────────────────────────────────────
 // MODEL_CONFIGS reads the deployment-name env vars at MODULE LOAD, which in a
-// test means before any `process.env` assignment in a test body. A small fixed
-// table keeps the deployment resolution deterministic and states which seam
-// each model is on, which is the part that matters here.
-vi.mock("../models", () => ({
-  MODEL_CONFIGS: {
-    "gpt-5.6-sol": { id: "gpt-5.6-sol", deploymentName: "sol-dep" },
-    "gpt-5.6-luna": { id: "gpt-5.6-luna", deploymentName: "luna-dep" },
-    "claude-sonnet-5": {
-      id: "claude-sonnet-5",
-      provider: "anthropic",
-      deploymentName: "claude-dep",
-    },
-    "DeepSeek-V4-Pro": {
-      id: "DeepSeek-V4-Pro",
-      provider: "foundry",
-      deploymentName: "deepseek-dep",
-    },
+// test means before any `process.env` assignment in a test body. A small table
+// keeps the resolution deterministic and states which seam each model is on.
+//
+// Mutable, and reset per test: one case needs "this environment has nothing
+// callable", which no combination of env vars can produce now that the table —
+// not the env — owns the deployment names.
+const { modelTable } = vi.hoisted(() => ({
+  modelTable: {} as Record<string, Record<string, unknown>>,
+}));
+vi.mock("../models", () => ({ MODEL_CONFIGS: modelTable }));
+
+const DEFAULT_MODEL_TABLE: Record<string, Record<string, unknown>> = {
+  "gpt-5.6-sol": { id: "gpt-5.6-sol", deploymentName: "sol-dep" },
+  "gpt-5.6-terra": { id: "gpt-5.6-terra", deploymentName: "terra-dep" },
+  "gpt-5.6-luna": { id: "gpt-5.6-luna", deploymentName: "luna-dep" },
+  // In the table, but not deployed in this environment.
+  "gpt-5.5": { id: "gpt-5.5" },
+  "claude-sonnet-5": {
+    id: "claude-sonnet-5",
+    provider: "anthropic",
+    deploymentName: "claude-dep",
   },
+  "DeepSeek-V4-Pro": {
+    id: "DeepSeek-V4-Pro",
+    provider: "foundry",
+    deploymentName: "deepseek-dep",
+  },
+};
+
+function resetModelTable(entries = DEFAULT_MODEL_TABLE) {
+  for (const key of Object.keys(modelTable)) delete modelTable[key];
+  for (const [key, value] of Object.entries(entries)) modelTable[key] = value;
+}
+
+// ── Provider seam + metric ────────────────────────────────────────────────────
+// The summariser reaches a model ONLY through the seam now (the legacy
+// chat-completions client 404'd on the 5.6 deployments). Tests inject their own
+// summariser, so the seam must never actually be asked for a client.
+const mockResolveProvider = vi.fn(() => {
+  throw new Error("no live model calls in unit tests");
+});
+vi.mock("../models/provider-seam", () => ({
+  resolveProvider: (...a: unknown[]) => mockResolveProvider(...(a as [])),
 }));
 
-// ── OpenAI clients (never called; the summariser is always injected) ─────────
-vi.mock("@/features/common/services/openai", () => ({
-  OpenAIV1Instance: () => {
-    throw new Error("no live model calls in unit tests");
-  },
-  OpenAIMiniInstance: () => {
-    throw new Error("no live model calls in unit tests");
-  },
+const mockReportHistorySummaryTokens = vi.fn(async () => undefined);
+vi.mock("@/features/common/services/chat-metrics-service", () => ({
+  reportHistorySummaryTokens: (...a: unknown[]) =>
+    mockReportHistorySummaryTokens(...(a as [])),
 }));
 
 import {
@@ -71,7 +92,7 @@ import {
   SoftDeleteChatHistorySummary,
   isHistorySummaryEnabled,
   recordHistoryCompaction,
-  resolveHistorySummaryDeployment,
+  resolveHistorySummaryModel,
   resolveHistorySummaryTimeoutMs,
 } from "./history-summary-service";
 import { HISTORY_SUMMARY_ATTRIBUTE } from "./history-summary";
@@ -98,6 +119,7 @@ beforeEach(() => {
   }
   process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME = "terra-dep";
   process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME = "luna-dep";
+  resetModelTable();
 });
 
 afterEach(() => {
@@ -113,7 +135,7 @@ const dropped: BudgetMessage[] = [
 ];
 
 function summariserReturning(text: string) {
-  return vi.fn(async () => text);
+  return vi.fn(async () => ({ text, inputTokens: 120, outputTokens: 34 }));
 }
 
 // ---------------------------------------------------------------------------
@@ -129,54 +151,86 @@ describe("chat-page.unit.history-summary-service.001 — configuration", () => {
     expect(isHistorySummaryEnabled()).toBe(true);
   });
 
-  it("summarises on the thread's own model", () => {
+  it("resolves a MODEL ID, not a bare deployment name", () => {
+    // The seam builds the client from a model id. Returning a deployment
+    // string is what let the summariser end up on the legacy
+    // chat-completions surface, which answers 404 for the 5.6 deployments.
+    expect(resolveHistorySummaryModel({ selectedModel: "gpt-5.6-sol" })).toEqual(
+      expect.objectContaining({
+        modelId: "gpt-5.6-sol",
+        deploymentName: "sol-dep",
+        source: "thread",
+      }),
+    );
+  });
+
+  it("summarises on the thread's own model, whichever provider it is on", () => {
     // The dropped block is the block that model just had in context. Sending
-    // it to another deployment pays for every one of those tokens again,
-    // cold, on a deployment that has never seen them.
-    process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME = "sol-dep";
+    // it elsewhere pays for every one of those tokens again, cold. The seam
+    // covers all three providers, so Claude threads no longer have to move.
     expect(
-      resolveHistorySummaryDeployment({ selectedModel: "gpt-5.6-sol" }),
-    ).toBe("sol-dep");
+      resolveHistorySummaryModel({ selectedModel: "claude-sonnet-5" })?.modelId,
+    ).toBe("claude-sonnet-5");
     expect(
-      resolveHistorySummaryDeployment({ selectedModel: "gpt-5.6-luna" }),
-    ).toBe("luna-dep");
+      resolveHistorySummaryModel({ selectedModel: "DeepSeek-V4-Pro" })?.modelId,
+    ).toBe("DeepSeek-V4-Pro");
   });
 
   it("lets the explicit override beat even the thread's model", () => {
-    process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME = "explicit-dep";
+    process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME = "luna-dep";
     expect(
-      resolveHistorySummaryDeployment({ selectedModel: "gpt-5.6-luna" }),
-    ).toBe("explicit-dep");
+      resolveHistorySummaryModel({ selectedModel: "gpt-5.6-sol" }),
+    ).toEqual(
+      expect.objectContaining({ modelId: "gpt-5.6-luna", source: "env" }),
+    );
   });
 
-  it("falls back to terra for a model this client cannot call", () => {
-    // callSummariserModel speaks Azure OpenAI Chat Completions. A Claude or
-    // Foundry thread has a deployment name it cannot call, and a 404 on every
-    // trim would be worse than summarising elsewhere.
-    for (const selectedModel of ["claude-sonnet-5", "DeepSeek-V4-Pro"]) {
-      expect(resolveHistorySummaryDeployment({ selectedModel })).toBe(
-        "terra-dep",
-      );
-    }
-    // Same for an id that is not in the table at all.
-    expect(resolveHistorySummaryDeployment({ selectedModel: "gpt-9000" })).toBe(
-      "terra-dep",
+  it("skips a configured deployment no model config owns, and logs it", () => {
+    // Nothing could build a client for it, so honouring it would 404 on every
+    // trim — which is the defect this resolution replaced.
+    process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME = "a-deployment-nobody-owns";
+    const chosen = resolveHistorySummaryModel();
+    expect(chosen).toEqual(
+      expect.objectContaining({ modelId: "gpt-5.6-terra", source: "terra" }),
+    );
+    expect(
+      logWarn.mock.calls.map((c) => String(c[0])).join(" "),
+    ).toContain("has no model config");
+  });
+
+  it("skips a thread model that is not in the table, or not deployed here", () => {
+    // gpt-9000 does not exist; gpt-5.5 exists but this environment has no
+    // deployment for it. Both mean "cannot call it".
+    expect(resolveHistorySummaryModel({ selectedModel: "gpt-9000" })?.source).toBe(
+      "terra",
+    );
+    expect(resolveHistorySummaryModel({ selectedModel: "gpt-5.5" })?.source).toBe(
+      "terra",
     );
   });
 
   it("defaults to terra, then luna, then the titles deployment", () => {
-    expect(resolveHistorySummaryDeployment()).toBe("terra-dep");
-    delete process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME;
-    expect(resolveHistorySummaryDeployment()).toBe("luna-dep");
-    delete process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME;
-    process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME = "mini-dep";
-    expect(resolveHistorySummaryDeployment()).toBe("mini-dep");
+    expect(resolveHistorySummaryModel()?.modelId).toBe("gpt-5.6-terra");
+
+    // Terra not deployed here.
+    resetModelTable({
+      "gpt-5.6-luna": DEFAULT_MODEL_TABLE["gpt-5.6-luna"],
+      "gpt-5.6-sol": DEFAULT_MODEL_TABLE["gpt-5.6-sol"],
+    });
+    expect(resolveHistorySummaryModel()?.modelId).toBe("gpt-5.6-luna");
+
+    // Neither terra nor luna: the titles deployment counts only if a model
+    // config owns it.
+    resetModelTable({ "gpt-5.6-sol": DEFAULT_MODEL_TABLE["gpt-5.6-sol"] });
+    process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME = "sol-dep";
+    expect(resolveHistorySummaryModel()).toEqual(
+      expect.objectContaining({ modelId: "gpt-5.6-sol", source: "titles" }),
+    );
   });
 
-  it("resolves to undefined when nothing is configured", () => {
-    delete process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME;
-    delete process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME;
-    expect(resolveHistorySummaryDeployment()).toBeUndefined();
+  it("resolves to undefined when nothing callable is configured", () => {
+    resetModelTable({});
+    expect(resolveHistorySummaryModel()).toBeUndefined();
   });
 });
 
@@ -199,7 +253,7 @@ describe("chat-page.unit.history-summary-service.002 — recordHistoryCompaction
     expect(row!.content).toBe("FACTS: metric units.");
     expect(row!.coversThroughMessageId).toBe("m2");
     expect(row!.coversMessageCount).toBe(2);
-    expect(row!.model).toBe("terra-dep");
+    expect(row!.model).toBe("gpt-5.6-terra");
     expect(row!.estimatedTokens).toBeGreaterThan(0);
     expect(upsert).toHaveBeenCalledTimes(1);
   });
@@ -306,7 +360,11 @@ describe("chat-page.unit.history-summary-service.003 — the previous summary is
       summarise: summariserReturning("FACTS: metric units."),
     });
 
-    const summarise = vi.fn(async () => "FACTS: metric units. DECISIONS: ship Friday.");
+    const summarise = vi.fn(async () => ({
+      text: "FACTS: metric units. DECISIONS: ship Friday.",
+      inputTokens: 200,
+      outputTokens: 60,
+    }));
     const second = await recordHistoryCompaction({
       threadId: "t1",
       userId: "user-hash",
@@ -322,6 +380,7 @@ describe("chat-page.unit.history-summary-service.003 — the previous summary is
     expect(call[0].userPrompt).toContain("<prior-summary>");
     expect(call[0].userPrompt).toContain("FACTS: metric units.");
     expect(call[0].deployment).toBe("terra-dep");
+    expect(call[0].modelId).toBe("gpt-5.6-terra");
     expect(second!.content).toContain("DECISIONS: ship Friday.");
   });
 
@@ -422,9 +481,9 @@ describe("chat-page.unit.history-summary-service.004 — fallback when the summa
 
   it("falls back when no deployment is configured", async () => {
     process.env.HISTORY_SUMMARY_ENABLED = "true";
-    // Every candidate gone: terra, luna and the titles deployment.
-    delete process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME;
-    delete process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME;
+    // Nothing callable at all: no env override, no thread model, and no model
+    // in the table carries a deployment.
+    resetModelTable({});
     const summarise = summariserReturning("body");
 
     const row = await recordHistoryCompaction({
@@ -587,36 +646,101 @@ describe("chat-page.unit.history-summary-service.006 — the summariser has a de
     });
 
     expect(row!.content).toBe("FACTS: metric units.");
-    expect(row!.model).toBe("terra-dep");
+    expect(row!.model).toBe("gpt-5.6-terra");
     const warned = logWarn.mock.calls.map((c) => String(c[0])).join(" | ");
     expect(warned).not.toContain("timed out");
   });
 });
 
-describe("chat-page.unit.history-summary-service.006 — the summariser is not billed to the user", () => {
-  it("reports no usage: no metrics service, no budget service", async () => {
-    // The user did not ask for this call; the budget did, to make their thread
-    // cheaper. Charging their daily cap or their visible usage figure for our
-    // own housekeeping would be wrong, so this module must not reach either
-    // service. Asserted on the source because the invariant is an ABSENCE —
-    // there is no call to spy on.
+describe("chat-page.unit.history-summary-service.007 — the summariser is not billed, but is measured", () => {
+  async function serviceSource(): Promise<string> {
     const [{ readFile }, path] = await Promise.all([
       import("node:fs/promises"),
       import("node:path"),
     ]);
-    const source = await readFile(
-      path.join(process.cwd(), "features/chat-page/chat-services/chat-api/history-summary-service.ts"),
+    return readFile(
+      path.join(
+        process.cwd(),
+        "features/chat-page/chat-services/chat-api/history-summary-service.ts",
+      ),
       "utf-8",
     );
-    expect(source).not.toContain("chat-metrics");
+  }
+
+  it("never touches the user's cap or the header's usage figure", async () => {
+    // The user did not ask for this call; the budget did, to make their thread
+    // cheaper. Charging their daily cap for our own housekeeping would be
+    // wrong. Asserted on the source because the invariant is an ABSENCE —
+    // there is no call to spy on.
+    const source = await serviceSource();
     expect(source).not.toContain("budget-service");
     expect(source).not.toContain("reportPromptTokens");
     expect(source).not.toContain("recordUsage");
+    expect(source).not.toContain("UpsertDailyUsage");
+  });
+
+  it("never constructs the legacy Azure chat-completions client", async () => {
+    // THE REGRESSION GUARD. That client talks to *.openai.azure.com with an
+    // api-version and answers 404 Resource not found for the 5.6 deployments,
+    // so every trim failed and the UI blamed the feature flag. One way to
+    // reach a model, and it is the seam the chat path uses on every turn.
+    //
+    // Comments are stripped first: this file's own doc comments name the old
+    // client precisely so the next reader knows why it is gone, and the guard
+    // is about the CODE.
+    const code = (await serviceSource())
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+    expect(code).not.toContain("OpenAIV1Instance");
+    expect(code).not.toContain("OpenAIMiniInstance");
+    expect(code).not.toContain("chat.completions");
+    expect(code).not.toContain("max_completion_tokens");
+    expect(code).not.toContain("common/services/openai");
+    // and it DOES go through the seam the chat route uses
+    expect(code).toContain("resolveProvider");
+    expect(code).toContain("generateText");
+  });
+
+  it("reports the summariser's tokens as their own metric", async () => {
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+
+    await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      summarise: summariserReturning("FACTS: metric units."),
+    });
+
+    expect(mockReportHistorySummaryTokens).toHaveBeenCalledWith({
+      inputTokens: 120,
+      outputTokens: 34,
+      chatModel: "gpt-5.6-terra",
+      threadId: "t1",
+    });
+  });
+
+  it("does not fail a good summary when the metric throws (negative)", async () => {
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+    mockReportHistorySummaryTokens.mockRejectedValueOnce(
+      new Error("meter exploded") as never,
+    );
+
+    const row = await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      summarise: summariserReturning("FACTS: metric units."),
+    });
+
+    expect(row!.content).toContain("FACTS: metric units.");
+    expect(row!.summaryOutcome).toBe("ok");
   });
 
   it("passes the thread's model through from the compaction record", async () => {
     process.env.HISTORY_SUMMARY_ENABLED = "true";
-    process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME = "sol-dep";
     const summarise = summariserReturning("FACTS: on the thread's model.");
 
     await recordHistoryCompaction({
@@ -632,5 +756,6 @@ describe("chat-page.unit.history-summary-service.006 — the summariser is not b
       [{ deployment: string }],
     ];
     expect(call[0].deployment).toBe("sol-dep");
+    expect(call[0].modelId).toBe("gpt-5.6-sol");
   });
 });

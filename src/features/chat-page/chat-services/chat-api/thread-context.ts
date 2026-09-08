@@ -40,7 +40,7 @@ import { uiMessagesFromChatMessages } from "./message-adapter";
 import { compareByCodepoint } from "../tools/stabilize-toolset";
 import { getBase64ImageReference } from "../chat-image-persistence-service";
 import { isImageReference } from "../chat-image-persistence-utils";
-import type { HistoryCompactionOutcome } from "./compaction-part";
+import type { HistoryCompactionOutcome, SummaryOutcome } from "./compaction-part";
 import {
   applyHistoryWatermark,
   planHistoryTrim,
@@ -293,12 +293,20 @@ async function compactHistory(input: {
     if (plan.targetUnreachable) {
       // Over budget with nothing left that may be dropped: the surviving turns
       // alone exceed the target. Nothing to do but let it through — the
-      // alternative is trimming the question being answered — but it is worth
-      // seeing in the logs, because it means one turn is very large.
-      logWarn("thread-context: history over budget but nothing trimmable", {
+      // alternative is trimming the question being answered.
+      //
+      // WARN only when the budget is the shipped default, where it means one
+      // turn is genuinely enormous. With a deliberately small budget (a test
+      // environment set to 10k, say) the two protected turns exceed the target
+      // routinely, and warning on every turn of every thread would train
+      // people to ignore the log.
+      const budgetIsDefault = budgetDecision.baseSource === "default";
+      const log = budgetIsDefault ? logWarn : logInfo;
+      log("thread-context: history over budget but nothing trimmable", {
         threadId: input.threadId,
         estimatedTokens: plan.estimatedTokensBefore,
         budget: plan.budget,
+        budgetSource: budgetDecision.baseSource,
         turnCount: plan.keptTurnCount,
       });
     }
@@ -338,17 +346,19 @@ async function compactHistory(input: {
   });
   const durationMs = Date.now() - startedAt;
 
-  // `summarised` answers "does anything stand in for the dropped turns?".
-  // With the feature off the answer is no, whatever the row holds — a row can
-  // still carry text from a trim taken while the feature was on, and claiming
-  // this block was summarised when it was not would be a lie on screen.
+  // The reason code comes from the writer, which is the only place that knows
+  // whether the summariser was off, absent, slow or broken. A row written
+  // before outcomes existed has none; treat that as "off" rather than invent a
+  // failure. Note a row can carry text from an EARLIER trim while this trim
+  // failed — so the text is only shown when this trim itself succeeded.
   const summaryContent = recorded?.content?.trim() ?? "";
-  const summarised = summaryEnabled && summaryContent.length > 0;
+  const summaryOutcome: SummaryOutcome = recorded?.summaryOutcome ?? "off";
+  const summarised = summaryOutcome === "ok" && summaryContent.length > 0;
   const compaction: HistoryCompactionOutcome = {
     trimmedTurns: plan.droppedTurnCount,
     tokensBefore: plan.estimatedTokensBefore,
     tokensAfter: plan.estimatedTokensAfter,
-    summarised,
+    summaryOutcome,
     durationMs,
     ...(summarised && recorded?.model ? { summaryModel: recorded.model } : {}),
     ...(summarised ? { summaryText: summaryContent } : {}),

@@ -536,8 +536,8 @@ describe("/api/chat route (AI SDK v6)", () => {
       trimmedTurns: 12,
       tokensBefore: 184_000,
       tokensAfter: 96_000,
-      summarised: true,
-      summaryModel: "terra-dep",
+      summaryOutcome: "ok",
+      summaryModel: "gpt-5.6-terra",
       durationMs: 4210,
       summaryText: "FACTS: the user prefers metric units.",
       coversThroughMessageId: "m42",
@@ -569,8 +569,8 @@ describe("/api/chat route (AI SDK v6)", () => {
         trimmedTurns: 12,
         tokensBefore: 184_000,
         tokensAfter: 96_000,
-        summarised: true,
-        summaryModel: "terra-dep",
+        summaryOutcome: "ok",
+        summaryModel: "gpt-5.6-terra",
         durationMs: 4210,
         summaryText: "FACTS: the user prefers metric units.",
       });
@@ -583,12 +583,14 @@ describe("/api/chat route (AI SDK v6)", () => {
       expect(body).not.toContain("data-compaction");
     });
 
-    it("says so when the turns were dropped without a summary", async () => {
+    it("carries the reason code when there is no summary", async () => {
+      // "failed", not "off": the UI must not blame the feature flag for a
+      // summariser that was called and broke.
       const body = await postAndReadStream({
         trimmedTurns: 3,
         tokensBefore: 90_000,
         tokensAfter: 50_000,
-        summarised: false,
+        summaryOutcome: "failed",
         durationMs: 12,
       });
       const frame = body
@@ -596,7 +598,7 @@ describe("/api/chat route (AI SDK v6)", () => {
         .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
         .map((line) => JSON.parse(line.slice("data: ".length)))
         .find((f) => f.type === "data-compaction");
-      expect(frame.data.summarised).toBe(false);
+      expect(frame.data.summaryOutcome).toBe("failed");
       expect(frame.data.summaryText).toBeUndefined();
       expect(frame.data.summaryModel).toBeUndefined();
     });

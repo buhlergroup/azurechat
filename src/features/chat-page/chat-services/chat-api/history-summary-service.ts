@@ -53,10 +53,13 @@ import "server-only";
 import { SqlQuerySpec } from "@azure/cosmos";
 import { userHashedId } from "@/features/auth-page/helpers";
 import { HistoryContainer } from "@/features/common/services/cosmos";
-import { OpenAIMiniInstance, OpenAIV1Instance } from "@/features/common/services/openai";
+import { generateText } from "ai";
+import { resolveProvider } from "../models/provider-seam";
+import { reportHistorySummaryTokens } from "@/features/common/services/chat-metrics-service";
 import { logError, logInfo, logWarn } from "@/features/common/services/logger";
 import { estimateTextTokens, type BudgetMessage } from "./history-budget";
-import { MODEL_CONFIGS, type ChatModel } from "../models";
+import { MODEL_CONFIGS, type ChatModel, type ModelConfig } from "../models";
+import type { SummaryOutcome } from "./compaction-part";
 import {
   HISTORY_SUMMARY_ATTRIBUTE,
   HISTORY_SUMMARY_SYSTEM_PROMPT,
@@ -74,58 +77,131 @@ export function isHistorySummaryEnabled(): boolean {
   return process.env.HISTORY_SUMMARY_ENABLED === "true";
 }
 
+/** Where the summariser model came from. Logged, so a surprise is traceable. */
+export type HistorySummaryModelSource =
+  | "env"
+  | "thread"
+  | "terra"
+  | "luna"
+  | "titles";
+
+export interface HistorySummaryModel {
+  /** A key of MODEL_CONFIGS — what the provider seam needs to build a client. */
+  modelId: ChatModel;
+  config: ModelConfig;
+  deploymentName: string;
+  source: HistorySummaryModelSource;
+}
+
+/** The model config that owns a deployment name, if any model does. */
+function modelOwningDeployment(
+  deploymentName: string,
+): { modelId: ChatModel; config: ModelConfig } | undefined {
+  for (const [modelId, config] of Object.entries(MODEL_CONFIGS)) {
+    if (config.deploymentName && config.deploymentName === deploymentName) {
+      return { modelId: modelId as ChatModel, config };
+    }
+  }
+  return undefined;
+}
+
 /**
- * Deployment used for summarising.
+ * The model that summarises, resolved to a MODEL rather than to a bare
+ * deployment name.
  *
- * Order: `HISTORY_SUMMARY_DEPLOYMENT_NAME` if set, otherwise THE THREAD'S OWN
- * MODEL, then Terra, then Luna, then the deployment already used for thread
- * titles.
+ * ## Why a model id and not a deployment string
+ *
+ * This used to return a deployment name and call it through the legacy Azure
+ * OpenAI chat-completions client (`*.openai.azure.com` + `api-version`). That
+ * client answers **404 Resource not found** for the GPT-5.6 deployments, which
+ * are served on the `/openai/v1` surface — so on dev every trim logged
+ * "summariser call failed: 404" and the UI reported "no summary, feature off"
+ * while the feature was on. The fix is to stop having a second way to reach a
+ * model: the summariser now goes through the SAME provider seam as the chat
+ * path and the sub-agent, and the seam needs a model id to build the client.
+ *
+ * A consequence worth naming: because the seam covers all three providers, a
+ * Claude or Foundry thread can now summarise on its own model too. The old
+ * "fall back to Terra for those" rule existed only because the legacy client
+ * could not call them.
+ *
+ * ## Order
+ *
+ * `HISTORY_SUMMARY_DEPLOYMENT_NAME` > the thread's own model > Terra > Luna >
+ * the deployment already used for thread titles. A candidate that names a
+ * deployment no model config owns is SKIPPED and logged — the seam could not
+ * build a client for it, and a silent 404 on every trim is what this whole
+ * change is fixing.
  *
  * ## Why the thread's own model
  *
  * The block being summarised is the block that model just had in its context.
- * Sending it to a different deployment means paying for every one of those
- * tokens again, cold, on a deployment that has never seen them — and the
- * summary is the only thing that stands in for the dropped turns, so it is
- * also the wrong place to save a few cents. Keeping the call on the thread's
- * model keeps the block on the deployment that already holds it, keeps the
- * summary at the quality the user chose for the thread, and keeps one thread's
- * traffic on one deployment.
+ * Sending it elsewhere pays for every one of those tokens again, cold, on a
+ * deployment that has never seen them — and the summary is the only thing that
+ * stands in for the dropped turns, so it is the wrong place to save a few
+ * cents.
  *
- * NOTE on caching: a cache READ still requires the request to share a byte
- * prefix with an earlier one. The summariser sends its own instructions
- * followed by the transcript, so today it matches nothing and is billed as
- * uncached input either way. Same deployment is what makes a prefix-sharing
- * summariser call POSSIBLE later; it is not on its own a discount.
- *
- * ## Why only some models
- *
- * `callSummariserModel` speaks Azure OpenAI Chat Completions. A thread on the
- * Anthropic or Foundry seam has a deployment name this client cannot call, so
- * those fall through to Terra rather than producing a 404 on every trim.
+ * NOTE on caching: a cache READ needs a shared byte prefix. The summariser
+ * sends its own instructions first, so it matches nothing today and is billed
+ * as uncached input either way. Same model is what makes a prefix-sharing
+ * summariser call possible later; it is not on its own a discount.
  */
-export function resolveHistorySummaryDeployment(input?: {
+export function resolveHistorySummaryModel(input?: {
   selectedModel?: ChatModel | string;
-}): string | undefined {
-  const explicit = process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME;
-  if (explicit) return explicit;
+}): HistorySummaryModel | undefined {
+  const candidates: Array<
+    | { source: HistorySummaryModelSource; deploymentName: string | undefined }
+    | { source: HistorySummaryModelSource; modelId: string | undefined }
+  > = [
+    { source: "env", deploymentName: process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME },
+    { source: "thread", modelId: input?.selectedModel },
+    { source: "terra", modelId: "gpt-5.6-terra" },
+    { source: "luna", modelId: "gpt-5.6-luna" },
+    {
+      source: "titles",
+      deploymentName: process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME,
+    },
+  ];
 
-  const selected = input?.selectedModel
-    ? MODEL_CONFIGS[input.selectedModel as ChatModel]
-    : undefined;
-  const selectedIsAzureOpenAI =
-    selected !== undefined &&
-    selected.provider !== "anthropic" &&
-    selected.provider !== "foundry";
-  if (selectedIsAzureOpenAI && selected.deploymentName) {
-    return selected.deploymentName;
+  for (const candidate of candidates) {
+    if ("deploymentName" in candidate) {
+      const name = candidate.deploymentName;
+      if (!name) continue;
+      const owner = modelOwningDeployment(name);
+      if (!owner) {
+        // Named a deployment, but no model config claims it — so the seam has
+        // no client to build. Skipping beats 404ing on every trim.
+        logWarn(
+          "history-summary: configured deployment has no model config; trying the next candidate",
+          { source: candidate.source, deploymentName: name },
+        );
+        continue;
+      }
+      return { ...owner, deploymentName: name, source: candidate.source };
+    }
+
+    const modelId = candidate.modelId;
+    if (!modelId) continue;
+    const config = MODEL_CONFIGS[modelId as ChatModel];
+    if (!config?.deploymentName) {
+      // Either an id that is not in the table, or a model this environment has
+      // not deployed. Both mean "cannot call it"; only the first is worth a log.
+      if (candidate.source === "thread" && !config) {
+        logWarn("history-summary: thread model is not in MODEL_CONFIGS", {
+          modelId,
+        });
+      }
+      continue;
+    }
+    return {
+      modelId: modelId as ChatModel,
+      config,
+      deploymentName: config.deploymentName,
+      source: candidate.source,
+    };
   }
 
-  return (
-    process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME ||
-    process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME ||
-    process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME
-  );
+  return undefined;
 }
 
 /**
@@ -301,6 +377,13 @@ export async function SoftDeleteChatHistorySummary(
 // The model call
 // ---------------------------------------------------------------------------
 
+/** What the summariser produced, plus what it cost. */
+export interface SummariserResult {
+  text: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 /**
  * Function that turns a prompt pair into summary text. Injected by
  * `recordHistoryCompaction` so unit tests never reach a model; the default is
@@ -309,68 +392,99 @@ export async function SoftDeleteChatHistorySummary(
 export type SummariserFn = (input: {
   systemPrompt: string;
   userPrompt: string;
+  /** The model to call — a MODEL_CONFIGS key, not a bare deployment name. */
+  modelId: ChatModel;
+  /** Kept for logs and for the row's `model` field. */
   deployment: string;
+  threadId: string;
   /**
-   * Trips when the summariser has outrun its deadline. Forwarded to the HTTP
-   * call so it is cancelled rather than abandoned. A fake in a test may
-   * ignore it — the deadline is enforced by the caller either way.
+   * Trips when the summariser has outrun its deadline. Forwarded to the
+   * provider call so it is cancelled rather than abandoned. A fake in a test
+   * may ignore it — the deadline is enforced by the caller either way.
    */
   signal?: AbortSignal;
-}) => Promise<string>;
+}) => Promise<SummariserResult>;
 
 /**
- * Default summariser: one non-streaming chat completion.
+ * Default summariser: one non-streaming `generateText` through the provider
+ * seam — the SAME path the chat route and the sub-agent take.
  *
- * Chat Completions rather than the Responses API on purpose. There is no
- * thread state, no tool and no reasoning to carry here — one prompt in, one
- * block of text out — and Chat Completions is the surface every candidate
- * deployment (terra, luna, and the mini already used for thread titles) is
- * guaranteed to expose.
+ * ## Why not the legacy client
+ *
+ * This used to call `OpenAIV1Instance().chat.completions.create` against
+ * `*.openai.azure.com` with an `api-version`. That surface answers **404
+ * Resource not found** for the GPT-5.6 deployments, which live on
+ * `/openai/v1`, so every trim failed and the UI blamed the feature flag. Two
+ * ways to reach a model meant one of them could rot unnoticed; now there is
+ * one, and it is the one the chat path exercises on every turn.
+ *
+ * ## The options, and why each is set
+ *
+ * - `maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS` (2,000) — the prompt asks for
+ *   brevity, this enforces it. The summary is replayed in every later prompt
+ *   of the thread, so its size is rent rather than a one-off.
+ * - reasoning effort "none" where the model takes it, else "low". Reasoning
+ *   tokens come out of the SAME 2,000, so a thinking summariser would spend
+ *   the budget deliberating and get truncated mid-summary. There is nothing to
+ *   reason about here: compress the transcript in front of you.
+ * - `promptCacheKey: summary:<threadId>` — its own namespace. The summariser
+ *   prefix (its instructions) has nothing in common with the thread's prompt
+ *   prefix, so sharing the thread's key would only pollute it. Derived from
+ *   the thread id, never from an email.
+ * - `store: false` comes from the seam, as on every other call.
  */
 async function callSummariserModel(input: {
   systemPrompt: string;
   userPrompt: string;
+  modelId: ChatModel;
   deployment: string;
+  threadId: string;
   signal?: AbortSignal;
-}): Promise<string> {
-  // The V1 client serves the 5.x deployments; the mini client is the one wired
-  // to the titles deployment. Pick by which env var the deployment name came
-  // from, so a HISTORY_SUMMARY_DEPLOYMENT_NAME — or a thread model — pointing
-  // at either still works.
-  const isMiniDeployment =
-    input.deployment === process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME;
-  const client = isMiniDeployment ? OpenAIMiniInstance() : OpenAIV1Instance();
-
-  const completion = await client.chat.completions.create(
-    {
-      model: input.deployment,
-      messages: [
-        { role: "system", content: input.systemPrompt },
-        { role: "user", content: input.userPrompt },
-      ],
-      // The prompt ASKS for brevity; this enforces it. The summary is
-      // replayed in every later prompt of the thread, so its size is rent
-      // rather than a one-off. `max_completion_tokens`, not `max_tokens`:
-      // the 5.x generation this runs on rejects the older field.
-      max_completion_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
+}): Promise<SummariserResult> {
+  const config = MODEL_CONFIGS[input.modelId];
+  const takesNone = config?.supportedReasoningEfforts?.includes("none") ?? false;
+  const resolved = resolveProvider({
+    modelId: input.modelId,
+    thread: { id: input.threadId, codeInterpreterContainerId: undefined },
+    // A summariser has no tools. It reads a transcript and writes prose.
+    toggles: { codeInterpreter: false, imageGeneration: false, webSearch: false },
+    reasoning: {
+      supported: config?.supportsReasoning ?? false,
+      effort: takesNone ? "none" : "low",
     },
-    { signal: input.signal },
-  );
+    promptCacheKey: `summary:${input.threadId}`,
+  });
 
-  return completion.choices[0]?.message?.content?.trim() ?? "";
+  const result = await generateText({
+    model: resolved.model,
+    system: input.systemPrompt,
+    messages: [{ role: "user", content: input.userPrompt }],
+    maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
+    providerOptions: resolved.providerOptions,
+    abortSignal: input.signal,
+  });
+
+  return {
+    text: result.text.trim(),
+    inputTokens: result.usage?.inputTokens ?? 0,
+    outputTokens: result.usage?.outputTokens ?? 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
 //
-// NOT BILLED TO THE USER, on purpose. This module reports no usage: it does
-// not call the metrics service and does not touch the budget service, so the
-// summariser's tokens land in neither the user's daily cost cap nor the usage
-// figure the chat header shows. The user did not ask for this call — the
-// budget did, to make their thread cheaper — so charging their quota for it
-// would be charging them for our own housekeeping. It stays visible in the
-// platform's own Azure bill, which is where it belongs.
+// NOT BILLED TO THE USER, on purpose, but MEASURED. The summariser's tokens
+// never reach the budget service, so they land in neither the user's daily
+// cost cap nor the usage figure the chat header shows: the user did not ask
+// for this call — the budget did, to make their thread cheaper — so charging
+// their quota for our own housekeeping would be wrong.
+//
+// They are still reported as the `historySummaryTokens` metric, because "not
+// billed to the user" must not mean "invisible". A feature that spends money
+// on the platform's behalf needs a number someone can look at, which is also
+// how the 404 that made every trim fail would have been noticed sooner.
 
 export interface RecordHistoryCompactionInput {
   threadId: string;
@@ -415,6 +529,9 @@ export async function recordHistoryCompaction(
 
   let content = "";
   let model = "";
+  // "off" until something is actually attempted. `droppedMessages` can be
+  // empty on a watermark-only advance, which is not a summariser failure.
+  let summaryOutcome: SummaryOutcome = "off";
 
   if (isHistorySummaryEnabled() && input.droppedMessages.length > 0) {
     const summarised = await summariseDroppedBlock({
@@ -424,14 +541,17 @@ export async function recordHistoryCompaction(
       ...(input.selectedModel ? { selectedModel: input.selectedModel } : {}),
       summarise: input.summarise,
     });
-    if (summarised) {
+    summaryOutcome = summarised.outcome;
+    if (summarised.outcome === "ok") {
       content = summarised.content;
       model = summarised.model;
     } else if (previousContent) {
-      // Summarisation failed but an earlier summary exists. It still correctly
-      // describes everything BEFORE this block, so carry it forward verbatim
-      // rather than discarding context we already paid for. The newly dropped
-      // block is the only thing lost.
+      // The summariser did not produce anything, but an earlier summary
+      // exists. It still correctly describes everything BEFORE this block, so
+      // carry it forward verbatim rather than discarding context we already
+      // paid for. The newly dropped block is the only thing lost — and the
+      // outcome stays the failure it was, so the UI does not present a stale
+      // summary as this block's.
       content = previousContent;
       model = input.previous?.model ?? "";
     }
@@ -450,6 +570,7 @@ export async function recordHistoryCompaction(
     coversMessageCount: previousCount + input.droppedMessages.length,
     model,
     estimatedTokens: estimateTextTokens(content),
+    summaryOutcome,
   });
 
   const persisted = await UpsertChatHistorySummary(row);
@@ -460,7 +581,7 @@ export async function recordHistoryCompaction(
     coversThroughMessageId: row.coversThroughMessageId,
     coversMessageCount: row.coversMessageCount,
     droppedThisTrim: input.droppedMessages.length,
-    summarised: content.length > 0,
+    summaryOutcome,
     model: row.model,
     estimatedTokens: row.estimatedTokens,
   });
@@ -469,16 +590,18 @@ export async function recordHistoryCompaction(
 }
 
 /**
- * Run the summariser over one dropped block. Returns null on any failure — a
- * missing deployment, a throwing call, a TIMEOUT, or an empty answer — each
- * logged as a warning so a silently degraded thread is still visible in the
- * logs.
+ * Run the summariser over one dropped block.
  *
- * Every one of those falls back to the same place: the plain trim. The
- * watermark is still written by the caller, so the trim still sticks and the
- * prompt is still cheap; what is lost is the summary text, which is exactly
- * what the feature flag being off costs anyway. That is why this returns null
- * rather than throwing — a summariser problem must never fail the turn.
+ * Reports WHY rather than just whether: a missing deployment, a throwing call,
+ * a timeout and an empty answer are four different problems, and a boolean
+ * made them all look like "the feature is off" on screen. That is exactly how
+ * a 404 on every trim went unnoticed.
+ *
+ * Every failure falls back to the same place: the plain trim. The watermark is
+ * still written by the caller, so the trim still sticks and the prompt is
+ * still cheap; what is lost is the summary text, which is what the feature
+ * flag being off costs anyway. Nothing here throws — a summariser problem must
+ * never fail the user's turn.
  */
 async function summariseDroppedBlock(input: {
   threadId: string;
@@ -486,17 +609,18 @@ async function summariseDroppedBlock(input: {
   previousSummary?: string;
   selectedModel?: ChatModel | string;
   summarise?: SummariserFn;
-}): Promise<{ content: string; model: string } | null> {
-  const deployment = resolveHistorySummaryDeployment(
+}): Promise<{ content: string; model: string; outcome: SummaryOutcome }> {
+  const chosen = resolveHistorySummaryModel(
     input.selectedModel ? { selectedModel: input.selectedModel } : undefined,
   );
-  if (!deployment) {
+  if (!chosen) {
     logWarn(
-      "history-summary: enabled but no deployment resolved; falling back to plain trimming",
+      "history-summary: enabled but no summariser model resolved; falling back to plain trimming",
       { threadId: input.threadId },
     );
-    return null;
+    return { content: "", model: "", outcome: "no-deployment" };
   }
+  const deployment = chosen.deploymentName;
 
   const fullPrompt = buildHistorySummaryPrompt({
     messages: input.droppedMessages,
@@ -510,7 +634,7 @@ async function summariseDroppedBlock(input: {
   const summarise = input.summarise ?? callSummariserModel;
   const timeoutMs = resolveHistorySummaryTimeoutMs();
 
-  let raw: string;
+  let raw: SummariserResult;
   try {
     // Bounded even for an injected fake: the deadline belongs to the request
     // path, not to whichever summariser happens to be wired in.
@@ -518,7 +642,9 @@ async function summariseDroppedBlock(input: {
       summarise({
         systemPrompt: HISTORY_SUMMARY_SYSTEM_PROMPT,
         userPrompt,
+        modelId: chosen.modelId,
         deployment,
+        threadId: input.threadId,
         signal,
       }),
     );
@@ -530,24 +656,77 @@ async function summariseDroppedBlock(input: {
         : "history-summary: summariser call failed; falling back to plain trimming",
       {
         threadId: input.threadId,
+        modelId: chosen.modelId,
         deployment,
+        modelSource: chosen.source,
         droppedMessageCount: input.droppedMessages.length,
         timedOut,
         timeoutMs,
         error: e instanceof Error ? e.message : String(e),
       },
     );
-    return null;
+    return {
+      content: "",
+      model: "",
+      outcome: timedOut ? "timeout" : "failed",
+    };
   }
 
-  const content = raw?.trim() ?? "";
+  // Reported whatever the answer looked like: a call that burned tokens and
+  // returned nothing still cost money, and that is the case most worth seeing.
+  await reportSummariserUsage({
+    threadId: input.threadId,
+    modelId: chosen.modelId,
+    inputTokens: raw.inputTokens ?? 0,
+    outputTokens: raw.outputTokens ?? 0,
+  });
+
+  const content = raw.text?.trim() ?? "";
   if (content.length === 0) {
     logWarn(
       "history-summary: summariser returned nothing; falling back to plain trimming",
-      { threadId: input.threadId, deployment },
+      { threadId: input.threadId, modelId: chosen.modelId, deployment },
     );
-    return null;
+    return { content: "", model: "", outcome: "failed" };
   }
 
-  return { content, model: deployment };
+  logInfo("history-summary: summarised the dropped block", {
+    threadId: input.threadId,
+    modelId: chosen.modelId,
+    deployment,
+    modelSource: chosen.source,
+    inputTokens: raw.inputTokens ?? 0,
+    outputTokens: raw.outputTokens ?? 0,
+    summaryChars: content.length,
+  });
+
+  return { content, model: chosen.modelId, outcome: "ok" };
+}
+
+/**
+ * Emit the summariser's token usage as its own metric.
+ *
+ * Deliberately NOT the budget service: see the note above the orchestration
+ * section. A metric failure must not turn a working summary into a failed one,
+ * so this swallows its own errors.
+ */
+async function reportSummariserUsage(input: {
+  threadId: string;
+  modelId: ChatModel;
+  inputTokens: number;
+  outputTokens: number;
+}): Promise<void> {
+  try {
+    await reportHistorySummaryTokens({
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      chatModel: input.modelId,
+      threadId: input.threadId,
+    });
+  } catch (e) {
+    logWarn("history-summary: reporting summariser usage failed", {
+      threadId: input.threadId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
 }

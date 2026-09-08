@@ -116,6 +116,52 @@ export async function reportCacheWriteTokens(tokenCount: number, model: string, 
     cacheWriteTokensUsed.record(tokenCount, combinedAttributes);
 }
 
+/**
+ * Token usage of a history-summariser call.
+ *
+ * Its own metric, and deliberately NOT part of the promptTokensUsed series:
+ * this is money the platform spends on its own housekeeping, not a turn the
+ * user asked for, and it is excluded from the user's daily cost cap. Mixed
+ * into the chat series it would inflate every per-user cost query; on its own
+ * it answers "what does compaction cost us?" — the question nobody could
+ * answer while the summariser was silently 404ing.
+ *
+ * Dimensions are the hashed user id, the model and the thread — no email and
+ * no name. New metric, so there is no existing series to stay bug-compatible
+ * with, and the PII the older chat metrics carry is already a follow-up.
+ */
+export async function reportHistorySummaryTokens(input: {
+    inputTokens: number;
+    outputTokens: number;
+    chatModel: string;
+    threadId: string;
+}) {
+
+    const meter = getChatMeter();
+
+    const historySummaryTokens = meter.createHistogram("historySummaryTokens", {
+        description: "Tokens spent by the history summariser (compaction). Not billed to the user's cap.",
+        unit: "tokens",
+    });
+
+    const attributes = {
+        userHashedId: await userHashedId(),
+        chatModel: input.chatModel,
+        threadId: input.threadId,
+    };
+
+    // One series, split by direction, so input and output can be summed
+    // together or apart without two metric names to keep in step.
+    historySummaryTokens.record(Math.max(0, Math.floor(input.inputTokens || 0)), {
+        ...attributes,
+        direction: "input",
+    });
+    historySummaryTokens.record(Math.max(0, Math.floor(input.outputTokens || 0)), {
+        ...attributes,
+        direction: "output",
+    });
+}
+
 export async function reportTruncatedTurn(model: string, attributes: any = {}) {
 
     const meter = getChatMeter();

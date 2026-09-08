@@ -22,7 +22,7 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
       trimmedTurns: 4,
       tokensBefore: 300_000,
       tokensAfter: 150_000,
-      summarised: true,
+      summaryOutcome: "ok",
       durationMs: 900,
     });
     expect(running.type).toBe(COMPACTION_DATA_PART_TYPE);
@@ -36,7 +36,7 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
       trimmedTurns: 2,
       tokensBefore: 90_000,
       tokensAfter: 50_000,
-      summarised: false,
+      summaryOutcome: "off",
       durationMs: 11,
       coversThroughMessageId: "m9",
     });
@@ -45,7 +45,7 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
       trimmedTurns: 2,
       tokensBefore: 90_000,
       tokensAfter: 50_000,
-      summarised: false,
+      summaryOutcome: "off",
       durationMs: 11,
     });
     expect("summaryText" in done.data).toBe(false);
@@ -59,14 +59,14 @@ describe("chat-page.unit.compaction-part.001 — the part shape", () => {
       trimmedTurns: 12,
       tokensBefore: 184_000,
       tokensAfter: 96_000,
-      summarised: true,
-      summaryModel: "terra-dep",
+      summaryOutcome: "ok",
+      summaryModel: "gpt-5.6-terra",
       durationMs: 4210,
       summaryText: "FACTS: metric units.",
     });
     expect(done.data).toMatchObject({
       summaryText: "FACTS: metric units.",
-      summaryModel: "terra-dep",
+      summaryModel: "gpt-5.6-terra",
     });
   });
 
@@ -90,30 +90,36 @@ describe("chat-page.unit.compaction-part.002 — the copy", () => {
     expect(formatTokenCount(-5)).toBe("0");
   });
 
-  it("says what happened, in each of the three states", () => {
+  it("says what happened, in each state", () => {
+    // Each reason code gets its own line. A boolean could not tell "the
+    // operator turned it off" from "the summariser 404'd", and the live defect
+    // that prompted these codes was invisible for exactly that reason.
     expect(
       compactionNoticeText({ status: "running", turnsToTrim: 3, tokensBefore: 1 }),
     ).toBe("Compacting older messages…");
+
+    const done = {
+      status: "done" as const,
+      trimmedTurns: 12,
+      tokensBefore: 184_000,
+      tokensAfter: 96_000,
+      durationMs: 1,
+    };
+    expect(compactionNoticeText({ ...done, summaryOutcome: "ok" })).toBe(
+      "Compacted 12 older turns into a summary (184k → 96k tokens)",
+    );
+    expect(compactionNoticeText({ ...done, summaryOutcome: "off" })).toBe(
+      "Trimmed 12 older turns (no summary, feature off)",
+    );
+    expect(compactionNoticeText({ ...done, summaryOutcome: "failed" })).toBe(
+      "Trimmed 12 older turns (summary failed, see server log)",
+    );
+    expect(compactionNoticeText({ ...done, summaryOutcome: "timeout" })).toBe(
+      "Trimmed 12 older turns (summary timed out)",
+    );
     expect(
-      compactionNoticeText({
-        status: "done",
-        trimmedTurns: 12,
-        tokensBefore: 184_000,
-        tokensAfter: 96_000,
-        summarised: true,
-        durationMs: 1,
-      }),
-    ).toBe("Compacted 12 older turns into a summary (184k → 96k tokens)");
-    expect(
-      compactionNoticeText({
-        status: "done",
-        trimmedTurns: 3,
-        tokensBefore: 90_000,
-        tokensAfter: 50_000,
-        summarised: false,
-        durationMs: 1,
-      }),
-    ).toBe("Trimmed 3 older turns (no summary, feature off)");
+      compactionNoticeText({ ...done, summaryOutcome: "no-deployment" }),
+    ).toBe("Trimmed 12 older turns (no summarizer deployment)");
   });
 
   it("keeps the singular singular", () => {
@@ -123,7 +129,7 @@ describe("chat-page.unit.compaction-part.002 — the copy", () => {
         trimmedTurns: 1,
         tokensBefore: 2_000,
         tokensAfter: 1_000,
-        summarised: true,
+        summaryOutcome: "ok",
         durationMs: 1,
       }),
     ).toContain("1 older turn into");

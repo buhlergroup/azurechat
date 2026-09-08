@@ -27,8 +27,8 @@ describe("chat-page.unit.compaction-notice.002 — when it is done", () => {
     trimmedTurns: 12,
     tokensBefore: 184_000,
     tokensAfter: 96_000,
-    summarised: true,
-    summaryModel: "terra-dep",
+    summaryOutcome: "ok" as const,
+    summaryModel: "gpt-5.6-terra",
     durationMs: 4210,
     summaryText: "FACTS: the user prefers metric units.",
   };
@@ -55,7 +55,7 @@ describe("chat-page.unit.compaction-notice.002 — when it is done", () => {
       screen.getByText("FACTS: the user prefers metric units."),
     ).toBeInTheDocument();
     // The model that wrote it is labelled, so a bad summary can be traced.
-    expect(screen.getByText("Summary by terra-dep")).toBeInTheDocument();
+    expect(screen.getByText("Summary by gpt-5.6-terra")).toBeInTheDocument();
 
     await user.click(screen.getByText("Hide summary"));
     expect(
@@ -65,7 +65,14 @@ describe("chat-page.unit.compaction-notice.002 — when it is done", () => {
 });
 
 describe("chat-page.unit.compaction-notice.003 — trimmed without a summary", () => {
-  it("says the turns are simply gone, and offers no toggle (negative)", () => {
+  // One line per reason code. "feature off" for a broken summariser is what
+  // hid a 404 on every trim behind a plausible-looking notice.
+  it.each([
+    ["off", "Trimmed 3 older turns (no summary, feature off)"],
+    ["failed", "Trimmed 3 older turns (summary failed, see server log)"],
+    ["timeout", "Trimmed 3 older turns (summary timed out)"],
+    ["no-deployment", "Trimmed 3 older turns (no summarizer deployment)"],
+  ] as const)("says why there is no summary (%s)", (summaryOutcome, expected) => {
     render(
       <CompactionNotice
         data={{
@@ -73,15 +80,14 @@ describe("chat-page.unit.compaction-notice.003 — trimmed without a summary", (
           trimmedTurns: 3,
           tokensBefore: 90_000,
           tokensAfter: 50_000,
-          summarised: false,
+          summaryOutcome,
           durationMs: 12,
         }}
       />,
     );
-    expect(
-      screen.getByText("Trimmed 3 older turns (no summary, feature off)"),
-    ).toBeInTheDocument();
+    expect(screen.getByText(expected)).toBeInTheDocument();
     expect(screen.queryByText("Show summary")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Loader")).not.toBeInTheDocument();
   });
 });
 

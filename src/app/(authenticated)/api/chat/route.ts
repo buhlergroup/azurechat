@@ -946,7 +946,7 @@ export async function POST(req: Request) {
             threadId: ctx.thread.id,
             turnId: ctx.turnId,
             trimmedTurns: ctx.compaction.trimmedTurns,
-            summarised: ctx.compaction.summarised,
+            summaryOutcome: ctx.compaction.summaryOutcome,
             durationMs: ctx.compaction.durationMs,
           });
         }

@@ -43,6 +43,27 @@ export interface CompactionRunningData {
   tokensBefore: number;
 }
 
+/**
+ * Why the dropped turns have, or have not, a summary standing in for them.
+ *
+ * A boolean could not tell "the operator turned it off" from "the summariser
+ * 404'd", and the difference is the whole diagnosis: the first is a
+ * configuration choice, the second is an incident. The live defect that
+ * prompted this was invisible for exactly that reason — the UI said "feature
+ * off" while the feature was on and the deployment was answering 404.
+ */
+export type SummaryOutcome =
+  /** A summary was written for this block. */
+  | "ok"
+  /** `HISTORY_SUMMARY_ENABLED` is not "true". */
+  | "off"
+  /** The summariser was called and errored. Details are in the server log. */
+  | "failed"
+  /** The summariser outran `HISTORY_SUMMARY_TIMEOUT_MS`. */
+  | "timeout"
+  /** No candidate deployment resolved to a model this app can call. */
+  | "no-deployment";
+
 /** Written once the trim (and the summary, if enabled) is complete. */
 export interface CompactionDoneData {
   status: "done";
@@ -50,12 +71,11 @@ export interface CompactionDoneData {
   tokensBefore: number;
   tokensAfter: number;
   /**
-   * False when `HISTORY_SUMMARY_ENABLED` is off, or when the summariser failed
-   * and left nothing to replay. The turns are dropped either way — this says
-   * whether anything stands in for them.
+   * Whether anything stands in for the dropped turns, and if not, why. The
+   * turns are dropped either way.
    */
-  summarised: boolean;
-  /** Deployment that wrote the summary. Absent when `summarised` is false. */
+  summaryOutcome: SummaryOutcome;
+  /** Model that wrote the summary. Absent unless the outcome is "ok". */
   summaryModel?: string;
   /** Wall-clock of the trim, including the summariser call. */
   durationMs: number;
@@ -85,7 +105,7 @@ export interface HistoryCompactionOutcome {
   trimmedTurns: number;
   tokensBefore: number;
   tokensAfter: number;
-  summarised: boolean;
+  summaryOutcome: SummaryOutcome;
   summaryModel?: string;
   durationMs: number;
   summaryText?: string;
@@ -116,7 +136,7 @@ export function compactionDonePart(
     trimmedTurns: outcome.trimmedTurns,
     tokensBefore: outcome.tokensBefore,
     tokensAfter: outcome.tokensAfter,
-    summarised: outcome.summarised,
+    summaryOutcome: outcome.summaryOutcome,
     durationMs: outcome.durationMs,
   };
   // Omit rather than send undefined: the part is JSON on the wire, and an
@@ -238,10 +258,22 @@ export function compactionNoticeText(data: CompactionData): string {
   const tokens = `(${formatTokenCount(data.tokensBefore)} → ${formatTokenCount(
     data.tokensAfter,
   )} tokens)`;
-  if (!data.summarised) {
-    return `Trimmed ${turnLabel(data.trimmedTurns)} (no summary, feature off)`;
+  switch (data.summaryOutcome) {
+    case "ok":
+      return `Compacted ${turnLabel(data.trimmedTurns)} into a summary ${tokens}`;
+    case "off":
+      return `Trimmed ${turnLabel(data.trimmedTurns)} (no summary, feature off)`;
+    case "failed":
+      return `Trimmed ${turnLabel(
+        data.trimmedTurns,
+      )} (summary failed, see server log)`;
+    case "timeout":
+      return `Trimmed ${turnLabel(data.trimmedTurns)} (summary timed out)`;
+    case "no-deployment":
+      return `Trimmed ${turnLabel(
+        data.trimmedTurns,
+      )} (no summarizer deployment)`;
   }
-  return `Compacted ${turnLabel(data.trimmedTurns)} into a summary ${tokens}`;
 }
 
 /** The persisted marker's line, shown after a reload. */

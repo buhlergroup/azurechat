@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Logger ────────────────────────────────────────────────────────────────────
+const logInfo = vi.fn();
+const logWarn = vi.fn();
 vi.mock("@/features/common/services/logger", () => ({
   logDebug: vi.fn(),
-  logInfo: vi.fn(),
+  logInfo: (...a: unknown[]) => logInfo(...(a as [])),
   logError: vi.fn(),
-  logWarn: vi.fn(),
+  logWarn: (...a: unknown[]) => logWarn(...(a as [])),
 }));
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -61,8 +63,11 @@ const mockRecordCompaction = vi.fn(
       coversThroughMessageId: input.coversThroughMessageId,
       coversMessageCount:
         (input.previous?.coversMessageCount ?? 0) + input.droppedMessages.length,
-      model: summaryEnabled ? "luna-dep" : "",
+      model: summaryEnabled ? "gpt-5.6-terra" : "",
       estimatedTokens: summaryEnabled ? 10 : 0,
+      // The writer owns the reason code — it is the only place that knows
+      // whether the summariser was off, absent, slow or broken.
+      summaryOutcome: summaryEnabled ? "ok" : "off",
     };
     return summaryRow;
   },
@@ -342,9 +347,9 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
     expect(ctx.compaction).toBeDefined();
     expect(ctx.compaction!.trimmedTurns).toBeGreaterThan(0);
     expect(ctx.compaction!.tokensAfter).toBeLessThan(ctx.compaction!.tokensBefore);
-    expect(ctx.compaction!.summarised).toBe(true);
+    expect(ctx.compaction!.summaryOutcome).toBe("ok");
     expect(ctx.compaction!.summaryText).toContain("the earlier turns said things");
-    expect(ctx.compaction!.summaryModel).toBe("luna-dep");
+    expect(ctx.compaction!.summaryModel).toBe("gpt-5.6-terra");
     expect(ctx.compaction!.durationMs).toBeGreaterThanOrEqual(0);
     // The anchor the persisted divider is drawn after.
     const call = mockRecordCompaction.mock.calls[0][0] as unknown as {
@@ -368,9 +373,81 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
     const ctx = await loadThreadContext(makeUserPrompt());
 
     expect(ctx.compaction).toBeDefined();
-    expect(ctx.compaction!.summarised).toBe(false);
+    expect(ctx.compaction!.summaryOutcome).toBe("off");
     expect(ctx.compaction!.summaryText).toBeUndefined();
     expect(ctx.compaction!.summaryModel).toBeUndefined();
+  });
+
+  it("does not present an earlier summary as this block's when the summariser failed", async () => {
+    // The defect this reason code exists for. The row can carry text from an
+    // EARLIER trim while THIS trim failed; showing it would tell the user the
+    // dropped turns are covered when they are not.
+    process.env.HISTORY_TOKEN_BUDGET = "10000";
+    summaryEnabled = true;
+    mockRecordCompaction.mockImplementationOnce(async (input: any) => ({
+      id: `summary-${input.threadId}`,
+      type: "CHAT_HISTORY_SUMMARY",
+      threadId: input.threadId,
+      userId: "user-hash",
+      isDeleted: false,
+      createdAt: new Date("2026-09-07"),
+      role: "system",
+      kind: "summary",
+      content: "FACTS: carried over from an earlier trim.",
+      coversThroughMessageId: input.coversThroughMessageId,
+      coversMessageCount: 6,
+      model: "gpt-5.6-terra",
+      estimatedTokens: 10,
+      summaryOutcome: "failed",
+    }));
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: makeTurns(40, 500),
+    });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(ctx.compaction!.summaryOutcome).toBe("failed");
+    expect(ctx.compaction!.summaryText).toBeUndefined();
+    expect(ctx.compaction!.summaryModel).toBeUndefined();
+  });
+
+  it("logs an untrimmable thread at INFO on a small configured budget, WARN on the default", async () => {
+    // With a deliberately small budget the two protected turns exceed the
+    // target routinely, and warning on every turn would train people to
+    // ignore the log. On the shipped default it means one turn is enormous,
+    // which is worth a warning.
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    // Two turns only, both protected by minKeptTurns, well over 1k tokens.
+    mockFindHistory.mockResolvedValue({ status: "OK", response: makeTurns(2, 4000) });
+
+    process.env.HISTORY_TOKEN_BUDGET = "1000";
+    await loadThreadContext(makeUserPrompt());
+    const notTrimmable = (calls: typeof logInfo.mock.calls) =>
+      calls.filter((c) =>
+        String(c[0]).includes("over budget but nothing trimmable"),
+      );
+    expect(notTrimmable(logInfo.mock.calls)).toHaveLength(1);
+    expect(notTrimmable(logWarn.mock.calls)).toHaveLength(0);
+    expect(notTrimmable(logInfo.mock.calls)[0][1]).toMatchObject({
+      budgetSource: "env",
+    });
+
+    // Same thread, budget straight from the code default: now it is a warning.
+    logInfo.mockClear();
+    logWarn.mockClear();
+    delete process.env.HISTORY_TOKEN_BUDGET;
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: makeTurns(2, 2_000_000),
+    });
+    await loadThreadContext(makeUserPrompt());
+    expect(notTrimmable(logWarn.mock.calls)).toHaveLength(1);
+    expect(notTrimmable(logInfo.mock.calls)).toHaveLength(0);
+    expect(notTrimmable(logWarn.mock.calls)[0][1]).toMatchObject({
+      budgetSource: "default",
+    });
   });
 
   it("reports nothing when the thread fitted (negative)", async () => {
