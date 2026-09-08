@@ -88,8 +88,20 @@ vi.mock(
 process.env.AZURECHAT_RATE_LIMIT_DISABLED = "1";
 
 // ── ai SDK mock: streamText captures onFinish so we can fire it inline ────────
+//
+// `createUIMessageStream` / `createUIMessageStreamResponse` are deliberately
+// NOT mocked: the route owns the stream now and writes its own parts into it
+// before merging the model's, so the real wrapper is what makes the emitted
+// SSE assertable. streamText's stream stands in as an empty one.
 const mockConsumeStream = vi.fn(async () => undefined);
-const mockToUIMessageStreamResponse = vi.fn();
+const mockToUIMessageStream = vi.fn(
+  () =>
+    new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    }),
+);
 let capturedOnFinish: ((event: unknown) => void | Promise<void>) | undefined;
 
 vi.mock("ai", async () => {
@@ -100,7 +112,7 @@ vi.mock("ai", async () => {
       capturedOnFinish = options.onFinish;
       return {
         consumeStream: mockConsumeStream,
-        toUIMessageStreamResponse: mockToUIMessageStreamResponse,
+        toUIMessageStream: mockToUIMessageStream,
         totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
       };
     }),
@@ -184,12 +196,6 @@ describe("/api/chat route (AI SDK v6)", () => {
       providerOptions: { openai: { promptCacheKey: "test", store: false } },
     });
     mockFindAllExtensions.mockResolvedValue({ status: "OK", response: [] });
-    mockToUIMessageStreamResponse.mockReturnValue(
-      new Response("stream", {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      }),
-    );
   });
 
   it("returns 200 text/event-stream and fires persistAssistantFromFinishEvent when streamText.onFinish fires", async () => {
@@ -359,13 +365,6 @@ describe("/api/chat route (AI SDK v6)", () => {
         // A DIFFERENT thread of the same agent must land on the same key —
         // that is the whole point: it reads the prefix thread 1 wrote.
         mockResolveProvider.mockClear();
-        // The shared mock Response body is consumed by the first POST.
-        mockToUIMessageStreamResponse.mockReturnValue(
-          new Response("stream", {
-            status: 200,
-            headers: { "content-type": "text/event-stream" },
-          }),
-        );
         mockLoadThreadContext.mockResolvedValue({
           ...structuredClone(CTX),
           thread: { ...CTX.thread, id: "t2", personaId: "agent-7" },
@@ -526,6 +525,80 @@ describe("/api/chat route (AI SDK v6)", () => {
           delete process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;
         else process.env.PROMPT_CACHE_PERSONA_BREAKPOINT = saved;
       }
+    });
+  });
+
+  describe("compaction notice", () => {
+    // A trim makes the model know less than the transcript on screen. The
+    // data part is the only thing that tells the user, so its shape is a
+    // contract with the component that renders it.
+    const COMPACTION = {
+      trimmedTurns: 12,
+      tokensBefore: 184_000,
+      tokensAfter: 96_000,
+      summarised: true,
+      summaryModel: "terra-dep",
+      durationMs: 4210,
+      summaryText: "FACTS: the user prefers metric units.",
+      coversThroughMessageId: "m42",
+    };
+
+    async function postAndReadStream(compaction?: unknown): Promise<string> {
+      mockLoadThreadContext.mockResolvedValue({
+        ...structuredClone(CTX),
+        ...(compaction ? { compaction } : {}),
+      });
+      const res = await POST(makeRequest({ message: "hello", id: "t1" }));
+      expect(res.status).toBe(200);
+      return await res.text();
+    }
+
+    it("writes one data-compaction part, complete, when the turn trimmed", async () => {
+      const body = await postAndReadStream(COMPACTION);
+      const frames = body
+        .split("\n")
+        .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
+        .map((line) => JSON.parse(line.slice("data: ".length)));
+      const parts = frames.filter((f) => f.type === "data-compaction");
+      expect(parts).toHaveLength(1);
+      // Stable id: a later write for the same turn replaces this part rather
+      // than adding a second divider.
+      expect(parts[0].id).toBe("compaction");
+      expect(parts[0].data).toEqual({
+        status: "done",
+        trimmedTurns: 12,
+        tokensBefore: 184_000,
+        tokensAfter: 96_000,
+        summarised: true,
+        summaryModel: "terra-dep",
+        durationMs: 4210,
+        summaryText: "FACTS: the user prefers metric units.",
+      });
+      // The watermark is for the persisted divider, not for the wire.
+      expect(parts[0].data.coversThroughMessageId).toBeUndefined();
+    });
+
+    it("writes nothing when the turn did not trim (negative)", async () => {
+      const body = await postAndReadStream();
+      expect(body).not.toContain("data-compaction");
+    });
+
+    it("says so when the turns were dropped without a summary", async () => {
+      const body = await postAndReadStream({
+        trimmedTurns: 3,
+        tokensBefore: 90_000,
+        tokensAfter: 50_000,
+        summarised: false,
+        durationMs: 12,
+      });
+      const frame = body
+        .split("\n")
+        .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
+        .map((line) => JSON.parse(line.slice("data: ".length)))
+        .find((f) => f.type === "data-compaction");
+      expect(frame.data.summarised).toBe(false);
+      expect(frame.data.summaryText).toBeUndefined();
+      expect(frame.data.summaryModel).toBeUndefined();
     });
   });
 

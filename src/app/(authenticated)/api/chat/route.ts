@@ -14,6 +14,8 @@ import {
   convertToModelMessages,
   stepCountIs,
   createIdGenerator,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
 } from "ai";
 import type { StepResult, ToolSet } from "ai";
 import {
@@ -21,6 +23,7 @@ import {
   validateMultimodalInput,
 } from "@/features/chat-page/chat-services/chat-api/validate-input";
 import { resolveModelAndLimits } from "@/features/chat-page/chat-services/chat-api/model-selection";
+import { compactionDonePart } from "@/features/chat-page/chat-services/chat-api/compaction-part";
 import {
   loadThreadContext,
   applyDocumentHintPlacement,
@@ -895,10 +898,13 @@ export async function POST(req: Request) {
   // buffered prefix and forward live chunks. tee() backpressures both
   // consumers on the slower one — the publisher drains eagerly so the
   // POST stream isn't held back when no GET is attached.
-  const framedResponse = result.toUIMessageStreamResponse({
-    originalMessages: ctx.history,
-    generateMessageId: createIdGenerator({ prefix: "msg", size: 16 }),
-    onError: (err) => (err instanceof Error ? err.message : String(err)),
+  //
+  // The stream is OURS, not streamText's: it is created with a writer so the
+  // route can put its own parts on the assistant message before the model's
+  // chunks, and the model stream is merged into it. Today that is the
+  // compaction notice; anything else the turn needs to tell the user goes the
+  // same way.
+  const modelStream = result.toUIMessageStream({
     // Ship the turn's token usage on the assistant message metadata so the
     // header's live usage display updates every turn (the chat session's
     // onFinish reads this). Provider-agnostic: the SDK normalises usage to
@@ -917,6 +923,36 @@ export async function POST(req: Request) {
         }),
       };
     },
+  });
+  const framedResponse = createUIMessageStreamResponse({
+    stream: createUIMessageStream({
+      // Persistence mode: the assistant message keeps the id the SDK would
+      // have given it through toUIMessageStreamResponse, so nothing
+      // downstream (client reconciliation, resume) changes shape.
+      originalMessages: ctx.history,
+      generateId: createIdGenerator({ prefix: "msg", size: 16 }),
+      onError: (err) => (err instanceof Error ? err.message : String(err)),
+      execute: ({ writer }) => {
+        // The history trim happened in loadThreadContext, BEFORE this response
+        // existed: the summariser is a model call on the request path and its
+        // output goes into the prompt this turn replays. So the notice is
+        // written once, already complete, rather than as running -> done. The
+        // part carries a stable id either way, so a future move of the trim
+        // inside this callback can write "running" first and let the SDK
+        // reconcile the two by id without touching the client.
+        if (ctx.compaction) {
+          writer.write(compactionDonePart(ctx.compaction));
+          logInfo("/api/chat wrote compaction notice", {
+            threadId: ctx.thread.id,
+            turnId: ctx.turnId,
+            trimmedTurns: ctx.compaction.trimmedTurns,
+            summarised: ctx.compaction.summarised,
+            durationMs: ctx.compaction.durationMs,
+          });
+        }
+        writer.merge(modelStream);
+      },
+    }),
   });
   if (!framedResponse.body) {
     unregisterPublisher(ctx.thread.id);

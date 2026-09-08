@@ -33,6 +33,28 @@ vi.mock("@/features/common/services/logger", () => ({
   logError: (...a: unknown[]) => logError(...a),
 }));
 
+// ── Model table ───────────────────────────────────────────────────────────────
+// MODEL_CONFIGS reads the deployment-name env vars at MODULE LOAD, which in a
+// test means before any `process.env` assignment in a test body. A small fixed
+// table keeps the deployment resolution deterministic and states which seam
+// each model is on, which is the part that matters here.
+vi.mock("../models", () => ({
+  MODEL_CONFIGS: {
+    "gpt-5.6-sol": { id: "gpt-5.6-sol", deploymentName: "sol-dep" },
+    "gpt-5.6-luna": { id: "gpt-5.6-luna", deploymentName: "luna-dep" },
+    "claude-sonnet-5": {
+      id: "claude-sonnet-5",
+      provider: "anthropic",
+      deploymentName: "claude-dep",
+    },
+    "DeepSeek-V4-Pro": {
+      id: "DeepSeek-V4-Pro",
+      provider: "foundry",
+      deploymentName: "deepseek-dep",
+    },
+  },
+}));
+
 // ── OpenAI clients (never called; the summariser is always injected) ─────────
 vi.mock("@/features/common/services/openai", () => ({
   OpenAIV1Instance: () => {
@@ -59,7 +81,9 @@ const ENV_KEYS = [
   "HISTORY_SUMMARY_ENABLED",
   "HISTORY_SUMMARY_DEPLOYMENT_NAME",
   "HISTORY_SUMMARY_TIMEOUT_MS",
+  "AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME",
   "AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME",
+  "AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME",
   "AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME",
 ] as const;
 let savedEnv: Record<string, string | undefined> = {};
@@ -72,6 +96,7 @@ beforeEach(() => {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
+  process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME = "terra-dep";
   process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME = "luna-dep";
 });
 
@@ -104,19 +129,52 @@ describe("chat-page.unit.history-summary-service.001 — configuration", () => {
     expect(isHistorySummaryEnabled()).toBe(true);
   });
 
-  it("defaults the deployment to luna and lets the override win", () => {
-    expect(resolveHistorySummaryDeployment()).toBe("luna-dep");
-    process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME = "explicit-dep";
-    expect(resolveHistorySummaryDeployment()).toBe("explicit-dep");
+  it("summarises on the thread's own model", () => {
+    // The dropped block is the block that model just had in context. Sending
+    // it to another deployment pays for every one of those tokens again,
+    // cold, on a deployment that has never seen them.
+    process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME = "sol-dep";
+    expect(
+      resolveHistorySummaryDeployment({ selectedModel: "gpt-5.6-sol" }),
+    ).toBe("sol-dep");
+    expect(
+      resolveHistorySummaryDeployment({ selectedModel: "gpt-5.6-luna" }),
+    ).toBe("luna-dep");
   });
 
-  it("falls back to the titles deployment when luna is not configured", () => {
+  it("lets the explicit override beat even the thread's model", () => {
+    process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME = "explicit-dep";
+    expect(
+      resolveHistorySummaryDeployment({ selectedModel: "gpt-5.6-luna" }),
+    ).toBe("explicit-dep");
+  });
+
+  it("falls back to terra for a model this client cannot call", () => {
+    // callSummariserModel speaks Azure OpenAI Chat Completions. A Claude or
+    // Foundry thread has a deployment name it cannot call, and a 404 on every
+    // trim would be worse than summarising elsewhere.
+    for (const selectedModel of ["claude-sonnet-5", "DeepSeek-V4-Pro"]) {
+      expect(resolveHistorySummaryDeployment({ selectedModel })).toBe(
+        "terra-dep",
+      );
+    }
+    // Same for an id that is not in the table at all.
+    expect(resolveHistorySummaryDeployment({ selectedModel: "gpt-9000" })).toBe(
+      "terra-dep",
+    );
+  });
+
+  it("defaults to terra, then luna, then the titles deployment", () => {
+    expect(resolveHistorySummaryDeployment()).toBe("terra-dep");
+    delete process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME;
+    expect(resolveHistorySummaryDeployment()).toBe("luna-dep");
     delete process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME;
     process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME = "mini-dep";
     expect(resolveHistorySummaryDeployment()).toBe("mini-dep");
   });
 
   it("resolves to undefined when nothing is configured", () => {
+    delete process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME;
     delete process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME;
     expect(resolveHistorySummaryDeployment()).toBeUndefined();
   });
@@ -141,7 +199,7 @@ describe("chat-page.unit.history-summary-service.002 — recordHistoryCompaction
     expect(row!.content).toBe("FACTS: metric units.");
     expect(row!.coversThroughMessageId).toBe("m2");
     expect(row!.coversMessageCount).toBe(2);
-    expect(row!.model).toBe("luna-dep");
+    expect(row!.model).toBe("terra-dep");
     expect(row!.estimatedTokens).toBeGreaterThan(0);
     expect(upsert).toHaveBeenCalledTimes(1);
   });
@@ -261,9 +319,9 @@ describe("chat-page.unit.history-summary-service.003 — the previous summary is
     const [call] = summarise.mock.calls as unknown as [
       [{ userPrompt: string; systemPrompt: string; deployment: string }],
     ];
-    expect(call[0].userPrompt).toContain("PREVIOUS SUMMARY");
+    expect(call[0].userPrompt).toContain("<prior-summary>");
     expect(call[0].userPrompt).toContain("FACTS: metric units.");
-    expect(call[0].deployment).toBe("luna-dep");
+    expect(call[0].deployment).toBe("terra-dep");
     expect(second!.content).toContain("DECISIONS: ship Friday.");
   });
 
@@ -364,6 +422,8 @@ describe("chat-page.unit.history-summary-service.004 — fallback when the summa
 
   it("falls back when no deployment is configured", async () => {
     process.env.HISTORY_SUMMARY_ENABLED = "true";
+    // Every candidate gone: terra, luna and the titles deployment.
+    delete process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME;
     delete process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME;
     const summarise = summariserReturning("body");
 
@@ -527,8 +587,50 @@ describe("chat-page.unit.history-summary-service.006 — the summariser has a de
     });
 
     expect(row!.content).toBe("FACTS: metric units.");
-    expect(row!.model).toBe("luna-dep");
+    expect(row!.model).toBe("terra-dep");
     const warned = logWarn.mock.calls.map((c) => String(c[0])).join(" | ");
     expect(warned).not.toContain("timed out");
+  });
+});
+
+describe("chat-page.unit.history-summary-service.006 — the summariser is not billed to the user", () => {
+  it("reports no usage: no metrics service, no budget service", async () => {
+    // The user did not ask for this call; the budget did, to make their thread
+    // cheaper. Charging their daily cap or their visible usage figure for our
+    // own housekeeping would be wrong, so this module must not reach either
+    // service. Asserted on the source because the invariant is an ABSENCE —
+    // there is no call to spy on.
+    const [{ readFile }, path] = await Promise.all([
+      import("node:fs/promises"),
+      import("node:path"),
+    ]);
+    const source = await readFile(
+      path.join(process.cwd(), "features/chat-page/chat-services/chat-api/history-summary-service.ts"),
+      "utf-8",
+    );
+    expect(source).not.toContain("chat-metrics");
+    expect(source).not.toContain("budget-service");
+    expect(source).not.toContain("reportPromptTokens");
+    expect(source).not.toContain("recordUsage");
+  });
+
+  it("passes the thread's model through from the compaction record", async () => {
+    process.env.HISTORY_SUMMARY_ENABLED = "true";
+    process.env.AZURE_OPENAI_API_GPT56_SOL_DEPLOYMENT_NAME = "sol-dep";
+    const summarise = summariserReturning("FACTS: on the thread's model.");
+
+    await recordHistoryCompaction({
+      threadId: "t1",
+      userId: "user-hash",
+      droppedMessages: dropped,
+      coversThroughMessageId: "m2",
+      selectedModel: "gpt-5.6-sol",
+      summarise,
+    });
+
+    const [call] = summarise.mock.calls as unknown as [
+      [{ deployment: string }],
+    ];
+    expect(call[0].deployment).toBe("sol-dep");
   });
 });

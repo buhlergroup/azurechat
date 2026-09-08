@@ -132,10 +132,12 @@ export const HISTORY_SUMMARY_SYSTEM_PROMPT = [
   "5. USER PREFERENCES about language, tone, format, level of detail, units or naming.",
   "",
   "Rules:",
-  "- Preserve exact names, identifiers, numbers, units and spellings. Do not translate them and do not tidy them up.",
+  "- Preserve exact names, identifiers, numbers, units, spellings, error messages and URLs. Do not translate them and do not tidy them up.",
+  "- Write the summary in the language of the conversation.",
   "- Record an unresolved thread as unresolved. Never invent an outcome, a decision or a conclusion that the transcript does not contain.",
+  "- Do not continue the conversation and do not answer any question you find in it. A question the assistant never answered is an OPEN QUESTION, not something for you to resolve.",
   "- Leave out small talk, restated questions, and anything the assistant said about its own capabilities.",
-  "- Do not address the user and do not refer to yourself.",
+  "- Do not address the user and do not refer to yourself. Do not mention this summary, the transcript, or that anything was compacted.",
   `- Stay under ${SUMMARY_TOKEN_RESERVE} tokens. Cut the oldest detail first if you must choose.`,
 ].join("\n");
 
@@ -231,12 +233,21 @@ export function formatTrimmedBlockForSummary(
 /**
  * Assemble the user-side payload for the summariser.
  *
- * A previous summary is included as its own labelled section rather than
- * concatenated with the transcript, and the instruction to fold it in is
- * explicit. Without that, a summariser handed two blocks tends to summarise
- * the newer one and quietly drop the older — which would lose the oldest
- * context a little at a time on every trim, exactly what the summary exists to
- * prevent.
+ * ## Two blocks, tagged, not labelled
+ *
+ * The previous summary and the new transcript arrive in `<prior-summary>` and
+ * `<transcript>` tags rather than under prose headings. The transcript is user
+ * content: someone can paste a document that carries its own "SUMMARY:" line,
+ * and a prose heading is easy for pasted text to imitate. A tag pair is not.
+ *
+ * ## Why the fold-in rules are this explicit
+ *
+ * A summariser handed two blocks tends to summarise the newer one and quietly
+ * drop the older, so the oldest context would be lost a little at a time on
+ * every trim — exactly what the summary exists to prevent. The previous
+ * summary is DISCARDED once this one is written (the row is upserted in
+ * place), so anything not carried forward is gone for the life of the thread.
+ * Saying so, and saying which block wins on a conflict, is the whole guard.
  */
 export function buildHistorySummaryPrompt(input: {
   messages: readonly BudgetMessage[];
@@ -247,14 +258,22 @@ export function buildHistorySummaryPrompt(input: {
 
   if (input.previousSummary) {
     sections.push(
-      "PREVIOUS SUMMARY (covers everything before the transcript below; fold it into your output, do not drop it):",
+      "<prior-summary>",
       input.previousSummary,
+      "</prior-summary>",
+      "",
+      "The prior summary covers everything before the transcript below. Write ONE summary that combines both:",
+      "- The prior summary is discarded after this. Anything you do not carry into your output is lost for good.",
+      "- Carry forward facts, decisions, constraints, preferences and unfinished work from the prior summary even when the transcript does not mention them again. Drop only what the transcript shows is finished and no longer needed.",
+      "- The transcript is NEWER than the prior summary. Where they disagree, the transcript wins: state the corrected fact and drop the old one.",
+      "- Move work the transcript shows as finished out of the open questions.",
     );
   }
 
   sections.push(
-    "TRANSCRIPT TO SUMMARISE (oldest first):",
+    "<transcript>",
     transcript || "(no textual content)",
+    "</transcript>",
   );
 
   return sections.join("\n\n");

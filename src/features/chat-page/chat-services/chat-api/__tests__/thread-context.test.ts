@@ -327,6 +327,66 @@ describe("chat-page.unit.thread-context.002 — the token budget trims once and 
     expect(firstItem(second)).toBe(firstItem(first));
   });
 
+  it("reports the trim on the context, so the UI can say it happened", async () => {
+    // The rows stay in Cosmos and keep rendering, so a trim is invisible
+    // unless the turn says so. This outcome is what /api/chat turns into the
+    // data-compaction part.
+    process.env.HISTORY_TOKEN_BUDGET = "10000";
+    summaryEnabled = true;
+    const rows = makeTurns(40, 500); // ~20,000 estimated tokens
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({ status: "OK", response: rows });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(ctx.compaction).toBeDefined();
+    expect(ctx.compaction!.trimmedTurns).toBeGreaterThan(0);
+    expect(ctx.compaction!.tokensAfter).toBeLessThan(ctx.compaction!.tokensBefore);
+    expect(ctx.compaction!.summarised).toBe(true);
+    expect(ctx.compaction!.summaryText).toContain("the earlier turns said things");
+    expect(ctx.compaction!.summaryModel).toBe("luna-dep");
+    expect(ctx.compaction!.durationMs).toBeGreaterThanOrEqual(0);
+    // The anchor the persisted divider is drawn after.
+    const call = mockRecordCompaction.mock.calls[0][0] as unknown as {
+      coversThroughMessageId: string;
+    };
+    expect(ctx.compaction!.coversThroughMessageId).toBe(call.coversThroughMessageId);
+  });
+
+  it("reports a trim with no summary as exactly that", async () => {
+    // Feature off: the turns are dropped and nothing stands in for them. The
+    // notice must not claim a summary exists, even if the row carries text
+    // from a trim taken while the feature was on.
+    process.env.HISTORY_TOKEN_BUDGET = "10000";
+    summaryEnabled = false;
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: makeTurns(40, 500),
+    });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(ctx.compaction).toBeDefined();
+    expect(ctx.compaction!.summarised).toBe(false);
+    expect(ctx.compaction!.summaryText).toBeUndefined();
+    expect(ctx.compaction!.summaryModel).toBeUndefined();
+  });
+
+  it("reports nothing when the thread fitted (negative)", async () => {
+    process.env.HISTORY_TOKEN_BUDGET = "100000";
+    mockEnsureThread.mockResolvedValue({ status: "OK", response: makeThread() });
+    mockFindHistory.mockResolvedValue({
+      status: "OK",
+      response: makeTurns(20, 100),
+    });
+
+    const ctx = await loadThreadContext(makeUserPrompt());
+
+    expect(ctx.compaction).toBeUndefined();
+    expect(mockRecordCompaction).not.toHaveBeenCalled();
+  });
+
   it("passes the newest dropped row as the watermark", async () => {
     process.env.HISTORY_TOKEN_BUDGET = "10000";
     const rows = makeTurns(40, 500);

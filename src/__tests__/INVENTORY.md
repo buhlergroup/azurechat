@@ -318,6 +318,15 @@ This is the largest feature folder with complex state management and streaming.
   - `withPromptCacheBreakpoint(system, messages)` — The same provider-neutral "the reusable prefix ends here" breakpoint in the Responses-seam wire form (`providerOptions.openai.promptCacheBreakpoint {mode:"explicit"}`); gated by `PROMPT_CACHE_PERSONA_BREAKPOINT`, which is a no-op on Anthropic
   - **Tests:** `chat-services/chat-api/prompt-builder.test.ts` (Vitest)
 
+**Compaction Notice (with tests):**
+- `chat-services/chat-api/compaction-part.ts` — Pure, client-safe. The `data-compaction` wire contract shared by the route, the transcript and the thread loader, plus the copy derived from it
+  - `compactionRunningPart` / `compactionDonePart` — Both phases, one stable part id so a later write replaces the earlier notice
+  - `threadCompactionMarker(row)` / `compactionMarkerPlacement({marker, messages})` — The persisted divider: what it renders, and the message it is drawn after (`coversThroughMessageId`), with the turn count derived from the transcript
+  - `compactionNoticeText` / `compactionMarkerText` / `formatTokenCount` — The words on screen
+  - **Tests:** `chat-services/chat-api/compaction-part.test.ts` (Vitest)
+- `chat-page/compaction-notice.tsx` — `CompactionNotice` (streamed part: running / done / trimmed-without-summary) and `CompactionMarker` (persisted divider). Muted centred row, `Collapsible` "Show summary"
+  - **Tests:** `chat-page/compaction-notice.test.tsx` (Vitest + testing-library)
+
 **History Budget & Summarisation (with tests):**
 - `chat-services/chat-api/history-budget.ts` — Pure. Deterministic token estimate, turn segmentation, watermark, and the trim plan (trim only over budget, then to 60 % in one block, cutting only at turn boundaries, never the newest two turns)
   - `estimateTextTokens` / `estimateMessageTokens` / `estimateHistoryTokens`
@@ -329,7 +338,7 @@ This is the largest feature folder with complex state management and streaming.
   - **Tests:** `chat-services/chat-api/history-budget.test.ts` (Vitest)
 - `chat-services/chat-api/history-summary.ts` — Pure. Row shape, summariser prompt, replay text
   - **Tests:** `chat-services/chat-api/history-summary.test.ts` (Vitest)
-- `chat-services/chat-api/history-summary-service.ts` — Cosmos read/write of the compaction row plus the summariser call (injectable; unit tests never reach a model). Gated by `HISTORY_SUMMARY_ENABLED`; deployment from `HISTORY_SUMMARY_DEPLOYMENT_NAME`, else luna, else mini
+- `chat-services/chat-api/history-summary-service.ts` — Cosmos read/write of the compaction row plus the summariser call (injectable; unit tests never reach a model). Gated by `HISTORY_SUMMARY_ENABLED`; deployment from `HISTORY_SUMMARY_DEPLOYMENT_NAME`, else terra, else luna, else mini
   - `FindChatHistorySummary` / `UpsertChatHistorySummary` / `SoftDeleteChatHistorySummary`
   - `recordHistoryCompaction(input)` — Advances the watermark; summarises when enabled
   - **Tests:** `chat-services/chat-api/history-summary-service.test.ts` (Vitest)

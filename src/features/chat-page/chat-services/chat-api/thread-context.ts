@@ -40,6 +40,7 @@ import { uiMessagesFromChatMessages } from "./message-adapter";
 import { compareByCodepoint } from "../tools/stabilize-toolset";
 import { getBase64ImageReference } from "../chat-image-persistence-service";
 import { isImageReference } from "../chat-image-persistence-utils";
+import type { HistoryCompactionOutcome } from "./compaction-part";
 import {
   applyHistoryWatermark,
   planHistoryTrim,
@@ -232,7 +233,12 @@ async function compactHistory(input: {
   threadId: string;
   selectedModel: ChatThreadModel["selectedModel"];
   rows: ChatMessageModel[];
-}): Promise<{ rows: ChatMessageModel[]; summary: ChatHistorySummaryModel | null }> {
+}): Promise<{
+  rows: ChatMessageModel[];
+  summary: ChatHistorySummaryModel | null;
+  /** Set only on a turn that actually trimmed. Drives the UI notice. */
+  compaction: HistoryCompactionOutcome | undefined;
+}> {
   const existingSummary = await FindChatHistorySummary(input.threadId);
 
   const { retained, alreadyCompacted } = applyHistoryWatermark(
@@ -296,7 +302,11 @@ async function compactHistory(input: {
         turnCount: plan.keptTurnCount,
       });
     }
-    return { rows: plan.kept, summary: summaryWithContent(existingSummary) };
+    return {
+      rows: plan.kept,
+      summary: summaryWithContent(existingSummary),
+      compaction: undefined,
+    };
   }
 
   logInfo("thread-context: trimmed history to token budget", {
@@ -312,13 +322,40 @@ async function compactHistory(input: {
     summaryEnabled,
   });
 
+  // Wall-clock of the trim as the user experiences it: the summariser call is
+  // a model call on the request path, so this is the wait the notice explains.
+  const startedAt = Date.now();
   const recorded = await recordHistoryCompaction({
     threadId: input.threadId,
     userId: await userHashedId(),
     droppedMessages: plan.dropped,
     coversThroughMessageId: plan.coversThroughMessageId!,
     previous: existingSummary,
+    // Summarise on the thread's own model: it is the model that just had this
+    // block in context, and re-sending the block to another deployment pays
+    // for all of it again, cold.
+    ...(input.selectedModel ? { selectedModel: input.selectedModel } : {}),
   });
+  const durationMs = Date.now() - startedAt;
+
+  // `summarised` answers "does anything stand in for the dropped turns?".
+  // With the feature off the answer is no, whatever the row holds — a row can
+  // still carry text from a trim taken while the feature was on, and claiming
+  // this block was summarised when it was not would be a lie on screen.
+  const summaryContent = recorded?.content?.trim() ?? "";
+  const summarised = summaryEnabled && summaryContent.length > 0;
+  const compaction: HistoryCompactionOutcome = {
+    trimmedTurns: plan.droppedTurnCount,
+    tokensBefore: plan.estimatedTokensBefore,
+    tokensAfter: plan.estimatedTokensAfter,
+    summarised,
+    durationMs,
+    ...(summarised && recorded?.model ? { summaryModel: recorded.model } : {}),
+    ...(summarised ? { summaryText: summaryContent } : {}),
+    ...(plan.coversThroughMessageId
+      ? { coversThroughMessageId: plan.coversThroughMessageId }
+      : {}),
+  };
 
   // A failed write leaves the watermark where it was. This turn is still
   // trimmed (the user gets the cheap prompt); the next turn will re-derive the
@@ -326,6 +363,7 @@ async function compactHistory(input: {
   return {
     rows: plan.kept,
     summary: summaryWithContent(recorded ?? existingSummary),
+    compaction,
   };
 }
 
@@ -498,6 +536,13 @@ export interface ThreadContext {
    * detection.
    */
   turnId: string;
+  /**
+   * What the history trim did on THIS turn, or undefined when nothing was
+   * trimmed. The route turns it into the `data-compaction` part the transcript
+   * renders, which is the only way the user learns that the model can no
+   * longer quote turns they can still scroll to.
+   */
+  compaction: HistoryCompactionOutcome | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -553,7 +598,11 @@ export async function loadThreadContext(
   // FindAllChatMessagesForCurrentUser orders by createdAt ASC, which is the
   // oldest-first order every adapter downstream expects.
 
-  const { rows: keptRows, summary: activeSummary } = await compactHistory({
+  const {
+    rows: keptRows,
+    summary: activeSummary,
+    compaction,
+  } = await compactHistory({
     threadId: thread.id,
     selectedModel: thread.selectedModel,
     rows: allRows,
@@ -729,5 +778,6 @@ export async function loadThreadContext(
     extensions,
     attachedFiles: thread.attachedFiles ?? [],
     turnId,
+    compaction,
   };
 }

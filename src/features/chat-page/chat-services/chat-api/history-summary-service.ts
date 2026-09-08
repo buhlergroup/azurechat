@@ -56,6 +56,7 @@ import { HistoryContainer } from "@/features/common/services/cosmos";
 import { OpenAIMiniInstance, OpenAIV1Instance } from "@/features/common/services/openai";
 import { logError, logInfo, logWarn } from "@/features/common/services/logger";
 import { estimateTextTokens, type BudgetMessage } from "./history-budget";
+import { MODEL_CONFIGS, type ChatModel } from "../models";
 import {
   HISTORY_SUMMARY_ATTRIBUTE,
   HISTORY_SUMMARY_SYSTEM_PROMPT,
@@ -76,17 +77,52 @@ export function isHistorySummaryEnabled(): boolean {
 /**
  * Deployment used for summarising.
  *
- * Order: `HISTORY_SUMMARY_DEPLOYMENT_NAME` if set, otherwise the cheapest 5.6
- * model (luna), otherwise the deployment already used for thread titles.
+ * Order: `HISTORY_SUMMARY_DEPLOYMENT_NAME` if set, otherwise THE THREAD'S OWN
+ * MODEL, then Terra, then Luna, then the deployment already used for thread
+ * titles.
  *
- * Luna is the right default. Summarising a 50k-token block is the kind of
- * mechanical compression the cheapest model in the family does about as well
- * as the flagship, at a fraction of the input price — and running it on the
- * flagship would eat much of what the trim just saved.
+ * ## Why the thread's own model
+ *
+ * The block being summarised is the block that model just had in its context.
+ * Sending it to a different deployment means paying for every one of those
+ * tokens again, cold, on a deployment that has never seen them — and the
+ * summary is the only thing that stands in for the dropped turns, so it is
+ * also the wrong place to save a few cents. Keeping the call on the thread's
+ * model keeps the block on the deployment that already holds it, keeps the
+ * summary at the quality the user chose for the thread, and keeps one thread's
+ * traffic on one deployment.
+ *
+ * NOTE on caching: a cache READ still requires the request to share a byte
+ * prefix with an earlier one. The summariser sends its own instructions
+ * followed by the transcript, so today it matches nothing and is billed as
+ * uncached input either way. Same deployment is what makes a prefix-sharing
+ * summariser call POSSIBLE later; it is not on its own a discount.
+ *
+ * ## Why only some models
+ *
+ * `callSummariserModel` speaks Azure OpenAI Chat Completions. A thread on the
+ * Anthropic or Foundry seam has a deployment name this client cannot call, so
+ * those fall through to Terra rather than producing a 404 on every trim.
  */
-export function resolveHistorySummaryDeployment(): string | undefined {
+export function resolveHistorySummaryDeployment(input?: {
+  selectedModel?: ChatModel | string;
+}): string | undefined {
+  const explicit = process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME;
+  if (explicit) return explicit;
+
+  const selected = input?.selectedModel
+    ? MODEL_CONFIGS[input.selectedModel as ChatModel]
+    : undefined;
+  const selectedIsAzureOpenAI =
+    selected !== undefined &&
+    selected.provider !== "anthropic" &&
+    selected.provider !== "foundry";
+  if (selectedIsAzureOpenAI && selected.deploymentName) {
+    return selected.deploymentName;
+  }
+
   return (
-    process.env.HISTORY_SUMMARY_DEPLOYMENT_NAME ||
+    process.env.AZURE_OPENAI_API_GPT56_TERRA_DEPLOYMENT_NAME ||
     process.env.AZURE_OPENAI_API_GPT56_LUNA_DEPLOYMENT_NAME ||
     process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME
   );
@@ -287,8 +323,8 @@ export type SummariserFn = (input: {
  *
  * Chat Completions rather than the Responses API on purpose. There is no
  * thread state, no tool and no reasoning to carry here — one prompt in, one
- * block of text out — and Chat Completions is the surface both candidate
- * deployments (luna, and the mini already used for thread titles) are
+ * block of text out — and Chat Completions is the surface every candidate
+ * deployment (terra, luna, and the mini already used for thread titles) is
  * guaranteed to expose.
  */
 async function callSummariserModel(input: {
@@ -297,9 +333,10 @@ async function callSummariserModel(input: {
   deployment: string;
   signal?: AbortSignal;
 }): Promise<string> {
-  // The V1 client serves the 5.6 deployments; the mini client is the one wired
+  // The V1 client serves the 5.x deployments; the mini client is the one wired
   // to the titles deployment. Pick by which env var the deployment name came
-  // from, so a HISTORY_SUMMARY_DEPLOYMENT_NAME pointing at either still works.
+  // from, so a HISTORY_SUMMARY_DEPLOYMENT_NAME — or a thread model — pointing
+  // at either still works.
   const isMiniDeployment =
     input.deployment === process.env.AZURE_OPENAI_API_MINI_DEPLOYMENT_NAME;
   const client = isMiniDeployment ? OpenAIMiniInstance() : OpenAIV1Instance();
@@ -326,6 +363,14 @@ async function callSummariserModel(input: {
 // ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
+//
+// NOT BILLED TO THE USER, on purpose. This module reports no usage: it does
+// not call the metrics service and does not touch the budget service, so the
+// summariser's tokens land in neither the user's daily cost cap nor the usage
+// figure the chat header shows. The user did not ask for this call — the
+// budget did, to make their thread cheaper — so charging their quota for it
+// would be charging them for our own housekeeping. It stays visible in the
+// platform's own Azure bill, which is where it belongs.
 
 export interface RecordHistoryCompactionInput {
   threadId: string;
@@ -337,6 +382,12 @@ export interface RecordHistoryCompactionInput {
   coversThroughMessageId: string;
   /** The row being replaced, if the thread had already been compacted. */
   previous?: ChatHistorySummaryModel | null;
+  /**
+   * The thread's model. The summariser runs on it by default — the dropped
+   * block is the block this model just had in context, and re-sending it to
+   * another deployment pays for all of it again, cold.
+   */
+  selectedModel?: ChatModel | string;
   /** Test seam. Defaults to the real model call. */
   summarise?: SummariserFn;
 }
@@ -370,6 +421,7 @@ export async function recordHistoryCompaction(
       threadId: input.threadId,
       droppedMessages: input.droppedMessages,
       previousSummary: previousContent,
+      ...(input.selectedModel ? { selectedModel: input.selectedModel } : {}),
       summarise: input.summarise,
     });
     if (summarised) {
@@ -432,9 +484,12 @@ async function summariseDroppedBlock(input: {
   threadId: string;
   droppedMessages: readonly BudgetMessage[];
   previousSummary?: string;
+  selectedModel?: ChatModel | string;
   summarise?: SummariserFn;
 }): Promise<{ content: string; model: string } | null> {
-  const deployment = resolveHistorySummaryDeployment();
+  const deployment = resolveHistorySummaryDeployment(
+    input.selectedModel ? { selectedModel: input.selectedModel } : undefined,
+  );
   if (!deployment) {
     logWarn(
       "history-summary: enabled but no deployment resolved; falling back to plain trimming",
