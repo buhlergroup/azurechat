@@ -127,7 +127,7 @@ function anthropicCacheControl(): { anthropic: { cacheControl: { type: "ephemera
 export function withAnthropicPromptCache(
   system: string,
   messages: readonly ModelMessage[],
-): { system: SystemModelMessage; messages: ModelMessage[] } {
+): { instructions: SystemModelMessage; messages: ModelMessage[] } {
   const cachedSystem: SystemModelMessage = {
     role: "system",
     content: system,
@@ -184,7 +184,7 @@ export function withAnthropicPromptCache(
 export function withPromptCacheBreakpoint(
   system: string,
   messages: readonly ModelMessage[],
-): { system: SystemModelMessage; messages: ModelMessage[] } {
+): { instructions: SystemModelMessage; messages: ModelMessage[] } {
   return {
     instructions: {
       role: "system",

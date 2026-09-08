@@ -1,13 +1,13 @@
 /**
  * Exercises the core invariant of the /api/chat route:
  *
- *   streamText.onFinish fires when the LLM finishes — independent of
+ *   streamText.onEnd fires when the LLM finishes — independent of
  *   whether the response stream's consumer is still alive.
  *
  * We control the LLM speed with a hand-rolled LanguageModelV3 mock that
  * waits a configurable delay between deltas, then we never consume the
  * response stream (simulating a client that navigated away). The route's
- * `result.consumeStream()` should drain the source so onFinish runs and
+ * `result.consumeStream()` should drain the source so onEnd runs and
  * persists the assistant message.
  */
 import { describe, it, expect, vi } from "vitest";
@@ -94,9 +94,9 @@ function makeSlowModel(words: string[], delayMs: number) {
   };
 }
 
-describe("streamText.onFinish — background completion", () => {
-  it("fires onFinish with the full text even when the response stream is never consumed", async () => {
-    const onFinish = vi.fn(async () => undefined);
+describe("streamText.onEnd — background completion", () => {
+  it("fires onEnd with the full text even when the response stream is never consumed", async () => {
+    const onEnd = vi.fn(async () => undefined);
     const result = streamText({
       // The mock's structural shape satisfies LanguageModelV3 for the
       // public surface streamText reaches in this test.
@@ -109,8 +109,8 @@ describe("streamText.onFinish — background completion", () => {
     // response — equivalent to the browser navigating away mid-stream.
     await result.consumeStream();
 
-    expect(onFinish).toHaveBeenCalledTimes(1);
-    const event = onFinish.mock.calls[0]![0]!;
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    const event = onEnd.mock.calls[0]![0]!;
     expect(event.text).toBe("hello world from background");
     expect(event.finishReason).toBe("stop");
   });
@@ -156,7 +156,7 @@ describe("streamText.onFinish — background completion", () => {
             dynamic: true,
           },
         ],
-        totalUsage: { inputTokens: 5, outputTokens: 2 },
+        usage: { inputTokens: 5, outputTokens: 2 },
         // The remaining OnFinishEvent fields aren't read by our code path,
         // so we leave them unset; the function's parameter type is
         // OnFinishEvent<TOOLS> for shape inference at the call site.
@@ -203,7 +203,7 @@ describe("streamText.onFinish — background completion", () => {
         reasoningText: undefined,
         toolResults: [],
         finishReason: "length",
-        totalUsage: { inputTokens: 5, outputTokens: 32000 },
+        usage: { inputTokens: 5, outputTokens: 32000 },
       } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["event"],
       modelConfig: truncatingModelConfig,
     });
@@ -225,7 +225,7 @@ describe("streamText.onFinish — background completion", () => {
         reasoningText: undefined,
         toolResults: [],
         finishReason: "stop",
-        totalUsage: { inputTokens: 5, outputTokens: 3 },
+        usage: { inputTokens: 5, outputTokens: 3 },
       } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["event"],
       modelConfig: truncatingModelConfig,
     });
@@ -248,7 +248,7 @@ describe("streamText.onFinish — background completion", () => {
         reasoningText: undefined,
         toolResults: [],
         finishReason: "length",
-        totalUsage: { inputTokens: 5, outputTokens: 0 },
+        usage: { inputTokens: 5, outputTokens: 0 },
       } as unknown as Parameters<typeof persistAssistantFromFinishEvent>[0]["event"],
       modelConfig: truncatingModelConfig,
     });

@@ -1,8 +1,8 @@
 /**
- * /api/chat — AI SDK v6 streamText route.
+ * /api/chat — AI SDK 7 streamText route.
  *
  * Built-in Azure server-side tools (code_interpreter, image_generation,
- * web_search_preview) ARE exposed by @ai-sdk/azure v3 via azure.tools.*
+ * web_search_preview) ARE exposed by @ai-sdk/azure v4 via azure.tools.*
  * — confirmed from node_modules/@ai-sdk/azure/dist/index.d.ts which re-exports
  * them from @ai-sdk/openai/internal as azureOpenaiTools, accessible as
  * azure.tools.codeInterpreter / .imageGeneration / .webSearchPreview.
@@ -555,12 +555,24 @@ export async function POST(req: Request) {
       ? withAnthropicPromptCache(system, modelMessages)
       : usePersonaBreakpoint
         ? withPromptCacheBreakpoint(system, modelMessages)
-        : { instructions, messages: modelMessages };
+        : { instructions: system, messages: modelMessages };
 
   const result = streamText({
     model: resolved.model,
     instructions: streamPrompt.instructions,
     messages: streamPrompt.messages,
+    // The prompt carries app-authored system messages INSIDE `messages`: the
+    // document-hint tail (thread-context.ts) and the replayed history summary
+    // are both `role: "system"` UIMessages, and convertToModelMessages maps
+    // them to system ModelMessages at the same index. AI SDK 7 rejects that by
+    // default (InvalidPromptError, "System messages are not allowed in the
+    // prompt or messages fields") because a system message coming from
+    // untrusted, persisted chat data is an injection vector. Ours are neither
+    // user-supplied nor round-tripped from the model — the loader builds both
+    // from server-side state — and their POSITION is the whole point (the hint
+    // has to sit at the prompt tail to stay out of the cached prefix), so they
+    // cannot move to `instructions`.
+    allowSystemInMessages: true,
     tools: allTools,
     // Per-model ceiling on emitted tokens, via the resolver so the env
     // override applies here and in the sub-agent identically. Reasoning
@@ -574,7 +586,7 @@ export async function POST(req: Request) {
     // Repairs bare, pre-namespacing extension tool names the model may
     // echo from old persisted thread history (see repairExtensionToolCall)
     // instead of letting NoSuchToolError kill the turn.
-    experimental_repairToolCall: repairExtensionToolCall,
+    repairToolCall: repairExtensionToolCall,
     abortSignal: abortController.signal,
     experimental_transform: (() => {
       // Shared map populated by the code-interpreter rewriter when it
@@ -645,7 +657,7 @@ export async function POST(req: Request) {
             reasoningText: accumulatedReasoning || undefined,
             toolResults: aggregatedToolResults,
             finishReason: "other",
-            totalUsage: {
+            usage: {
               inputTokens: 0,
               outputTokens: 0,
               totalTokens: 0,
@@ -965,10 +977,10 @@ export async function POST(req: Request) {
         if (!ctx.compaction) return;
         // Awaiting AFTER the merge is what keeps the stream open long enough
         // to write again: createUIMessageStream closes when this callback's
-        // promise settles and the merged stream is done. `totalUsage` resolves
+        // promise settles and the merged stream is done. `usage` resolves
         // at the model's finish event.
         try {
-          const usage = await result.totalUsage;
+          const usage = await result.usage;
           const tokensAfter = usage?.inputTokens ?? 0;
           if (tokensAfter <= 0) return;
           writer.write(

@@ -289,7 +289,7 @@ export function ChatStoreProvider({
     // it into the store so the header updates every turn without a reload.
     // Thread running totals are accumulated client-side here (the per-request
     // block carries only this turn); a reload reconciles from persisted usage.
-    onEnd: ({ message }) => {
+    onFinish: ({ message }) => {
       const usage = (message.metadata as ChatMessageMetadata | undefined)?.usage;
       if (!usage) return;
       const s = store.getState();

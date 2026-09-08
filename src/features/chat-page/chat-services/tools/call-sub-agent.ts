@@ -164,18 +164,22 @@ export function callSubAgentTool(ctx: ToolContext) {
         abortSignal,
       });
 
-      // ai@6's LanguageModelUsage keeps cache accounting under
-      // inputTokenDetails (cacheReadTokens / cacheWriteTokens);
-      // `cachedInputTokens` is the deprecated flat alias for reads. Probe both
-      // so the tool keeps reporting on either SDK line.
+      // ai@7's LanguageModelUsage keeps cache accounting under
+      // inputTokenDetails (cacheReadTokens / cacheWriteTokens) only — the flat
+      // `cachedInputTokens` alias v6 also exposed is gone, so there is no
+      // second field left to probe.
+      //
+      // `result.usage` is now the roll-up over ALL steps. In v6 it was the
+      // FINAL step's usage, so a sub-agent that used its 8-step budget
+      // reported only its last step here and the delegation looked cheaper
+      // than it was. Nothing to do but take the new number: it is the one the
+      // provider billed.
       const inputTokens = result.usage?.inputTokens ?? 0;
       const outputTokens = result.usage?.outputTokens ?? 0;
       const cachedTokens =
-        (result.usage as any)?.inputTokenDetails?.cacheReadTokens ??
-        (result.usage as any).inputTokenDetails.cacheReadTokens ??
-        0;
+        result.usage?.inputTokenDetails?.cacheReadTokens ?? 0;
       const cacheWriteTokens =
-        (result.usage as any)?.inputTokenDetails?.cacheWriteTokens ?? 0;
+        result.usage?.inputTokenDetails?.cacheWriteTokens ?? 0;
       const totalTokens =
         result.usage?.totalTokens ?? inputTokens + outputTokens;
 

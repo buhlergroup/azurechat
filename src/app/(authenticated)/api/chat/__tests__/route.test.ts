@@ -116,12 +116,12 @@ vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
   return {
     ...actual,
-    streamText: vi.fn((options: { onFinish?: typeof capturedOnFinish }) => {
-      capturedOnFinish = options.onFinish;
+    streamText: vi.fn((options: { onEnd?: typeof capturedOnFinish }) => {
+      capturedOnFinish = options.onEnd;
       return {
         consumeStream: mockConsumeStream,
         toUIMessageStream: mockToUIMessageStream,
-        totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
+        usage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
       };
     }),
     convertToModelMessages: vi.fn(async () => []),
@@ -206,7 +206,7 @@ describe("/api/chat route (AI SDK v6)", () => {
     mockFindAllExtensions.mockResolvedValue({ status: "OK", response: [] });
   });
 
-  it("returns 200 text/event-stream and fires persistAssistantFromFinishEvent when streamText.onFinish fires", async () => {
+  it("returns 200 text/event-stream and fires persistAssistantFromFinishEvent when streamText.onEnd fires", async () => {
     const req = makeRequest({ message: "hello", id: "t1" });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -217,7 +217,7 @@ describe("/api/chat route (AI SDK v6)", () => {
       text: "hi",
       reasoningText: undefined,
       toolResults: [],
-      totalUsage: { inputTokens: 10, outputTokens: 20 },
+      usage: { inputTokens: 10, outputTokens: 20 },
       finishReason: "stop",
     });
 
@@ -230,21 +230,21 @@ describe("/api/chat route (AI SDK v6)", () => {
     );
   });
 
-  it("wires repairExtensionToolCall into streamText's experimental_repairToolCall option", async () => {
+  it("wires repairExtensionToolCall into streamText's repairToolCall option", async () => {
     const { streamText } = await import("ai");
     const req = makeRequest({ message: "hello", id: "t1" });
     await POST(req);
 
     const streamTextMock = streamText as unknown as { mock: { calls: unknown[][] } };
     const options = streamTextMock.mock.calls[0][0] as {
-      experimental_repairToolCall?: (...args: unknown[]) => unknown;
+      repairToolCall?: (...args: unknown[]) => unknown;
     };
-    expect(typeof options.experimental_repairToolCall).toBe("function");
+    expect(typeof options.repairToolCall).toBe("function");
 
     // The wired function is a thin wrapper (module-mock hoisting pattern
     // used throughout this file) — prove it forwards to the real export
     // rather than asserting on function identity.
-    await options.experimental_repairToolCall?.("repair-args");
+    await options.repairToolCall?.("repair-args");
     expect(mockRepairExtensionToolCall).toHaveBeenCalledWith("repair-args");
   });
 
@@ -436,7 +436,7 @@ describe("/api/chat route (AI SDK v6)", () => {
       const { streamText } = await import("ai");
       await POST(makeRequest({ message: "hello", id: "t1" }));
       const options = (streamText as unknown as { mock: { calls: unknown[][] } })
-        .mock.calls[0][0] as { system?: unknown };
+        .mock.calls[0][0] as { instructions?: unknown };
       expect(typeof options.instructions).toBe("string");
     });
 
@@ -457,7 +457,7 @@ describe("/api/chat route (AI SDK v6)", () => {
         await POST(makeRequest({ message: "hello", id: "t1" }));
         const options = (streamText as unknown as { mock: { calls: unknown[][] } })
           .mock.calls[0][0] as {
-          system?: { role?: string; providerOptions?: Record<string, unknown> };
+          instructions?: { role?: string; providerOptions?: Record<string, unknown> };
         };
         expect(options.instructions?.role).toBe("system");
         expect(
@@ -495,7 +495,7 @@ describe("/api/chat route (AI SDK v6)", () => {
           await POST(makeRequest({ message: "hello", id: "t1" }));
           const options = (streamText as unknown as { mock: { calls: unknown[][] } })
             .mock.calls[0][0] as {
-            system?: { role?: string; providerOptions?: Record<string, unknown> };
+            instructions?: { role?: string; providerOptions?: Record<string, unknown> };
           };
           expect(options.instructions?.role).toBe("system");
           // Anthropic's wire form of the same breakpoint.
@@ -526,7 +526,7 @@ describe("/api/chat route (AI SDK v6)", () => {
         // MODEL_RESULT's config has no promptCacheOptionsSupported flag.
         await POST(makeRequest({ message: "hello", id: "t1" }));
         const options = (streamText as unknown as { mock: { calls: unknown[][] } })
-          .mock.calls[0][0] as { system?: unknown };
+          .mock.calls[0][0] as { instructions?: unknown };
         expect(typeof options.instructions).toBe("string");
       } finally {
         if (saved === undefined)

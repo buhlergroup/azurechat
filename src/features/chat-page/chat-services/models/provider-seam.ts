@@ -4,7 +4,7 @@
  * Generic provider abstraction. Resolves a model id (any provider) into
  * everything `streamText` needs to actually invoke that provider:
  *
- *   - `model`              the LanguageModelV3 instance
+ *   - `model`              the LanguageModelV4 instance
  *   - `builtInTools(...)`  provider-native server-side tools merged into
  *                          the user's effective-toggles set
  *   - `providerOptions(...)` per-provider options block (reasoning,
@@ -17,7 +17,7 @@
  *
  * What goes where on addition of a new provider:
  *   1. Add `provider: "anthropic"` (or similar) to the model's ModelConfig.
- *   2. Add a branch below resolving that provider's LanguageModelV3 +
+ *   2. Add a branch below resolving that provider's LanguageModelV4 +
  *      built-in tools + providerOptions shape.
  *   3. If Anthropic exposes tools we want to surface (e.g. their server-
  *      side bash tool), wire those into builtInTools branch. Otherwise
@@ -28,7 +28,7 @@
  * providerOptions.openai.* in route.ts" coupling.
  */
 
-import type { LanguageModelV3, JSONValue } from "@ai-sdk/provider";
+import type { LanguageModelV4, JSONValue } from "@ai-sdk/provider";
 import { azure } from "@ai-sdk/azure";
 import { anthropic } from "@ai-sdk/anthropic";
 import { resolveAzureModel, resolveFoundryModel, resolveAnthropicModel } from "./provider";
@@ -52,7 +52,7 @@ export interface BuiltInToggles {
 }
 
 export interface ResolvedProvider {
-  model: LanguageModelV3;
+  model: LanguageModelV4;
   /**
    * Map of provider-native tools keyed by stable tool-name (used as part
    * type by the AI SDK stream). Merged with custom tools by the route.
@@ -61,7 +61,7 @@ export interface ResolvedProvider {
   /**
    * Object passed verbatim into streamText({ providerOptions }).
    * Provider-specific keys; AI SDK ignores unknown providers' keys.
-   * Values must be JSON-serialisable per AI SDK's SharedV3ProviderOptions.
+   * Values must be JSON-serialisable per AI SDK's SharedV4ProviderOptions.
    */
   providerOptions: Record<string, Record<string, JSONValue>>;
 }

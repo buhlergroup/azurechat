@@ -4,13 +4,13 @@ import "server-only";
  * persist-assistant.ts
  *
  * Persists the completed assistant turn to Cosmos and records usage.
- * Called from the streamText onFinish callback (or the equivalent completion
+ * Called from the streamText onEnd callback (or the equivalent completion
  * hook in the new /api/chat rewrite).
  *
  * Design notes:
  * - Does NOT re-walk sub-agent results; the `usage` parameter is the parent
- *   streamText total which already includes all step usage (AI SDK v6 rolls up
- *   per-step usage into the final onFinish usage object automatically).
+ *   streamText total which already includes all step usage (AI SDK 7 rolls up
+ *   per-step usage into the final onEnd `usage` object automatically).
  * - Writer plumbing for `data-usage-warning` SSE events is not yet available at
  *   this layer; errors surface as logger warnings until the cutover route passes
  *   a writer here.  TODO: accept an optional writer param and emit the event.
@@ -706,7 +706,7 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
       turnId,
       modelId: modelConfig.id,
       maxOutputTokens: modelConfig.maxOutputTokens,
-      outputTokens: event.totalUsage?.outputTokens,
+      outputTokens: event.usage?.outputTokens,
       textLength: event.text?.length ?? 0,
     });
   }
@@ -776,26 +776,24 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
     });
   }
 
-  // AI SDK v6 surfaces cache accounting under inputTokenDetails:
+  // AI SDK 7 keeps cache accounting under `inputTokenDetails` only:
   // `cacheReadTokens` (prefix served from cache) and `cacheWriteTokens`
-  // (prefix written into it — @ai-sdk/openai >= 3.0.84 maps the Responses
-  // API's input_tokens_details.cache_write_tokens onto it). `cachedInputTokens`
-  // is the deprecated flat alias for reads; keep reading it as a fallback so
-  // an SDK downgrade doesn't silently zero the telemetry. Writes have no
-  // legacy alias — undefined there means "this provider reports no writes".
-  const usageDetails = event.totalUsage as {
+  // (prefix written into it — @ai-sdk/openai maps the Responses API's
+  // input_tokens_details.cache_write_tokens onto it). v6's flat
+  // `cachedInputTokens` alias is GONE, so there is nothing left to fall back
+  // to; `undefined` on either field means "this provider reported no number",
+  // which is what the header panel and the cost formula already expect.
+  // `event.usage` (was `totalUsage` in v6, still accepted as a deprecated
+  // alias) is the all-steps roll-up — a tool turn's tokens must all be billed.
+  const usageDetails = event.usage as {
     inputTokens?: number;
     outputTokens?: number;
-    cachedInputTokens?: number;
     inputTokenDetails?: {
       cacheReadTokens?: number;
       cacheWriteTokens?: number;
     };
   };
-  const cachedTokens =
-    usageDetails.inputTokenDetails?.cacheReadTokens ??
-    usageDetails.inputTokenDetails.cacheReadTokens ??
-    undefined;
+  const cachedTokens = usageDetails.inputTokenDetails?.cacheReadTokens;
   const cacheWriteTokens = usageDetails.inputTokenDetails?.cacheWriteTokens;
 
   await persistThread({
