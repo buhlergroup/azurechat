@@ -174,13 +174,36 @@ export interface ModelConfig {
   /**
    * Ceiling on ESTIMATED history tokens carried into a prompt for threads on
    * this model. Absent means the shared default in history-budget.ts
-   * (80,000); `HISTORY_TOKEN_BUDGET` overrides both.
+   * (256,000); `HISTORY_TOKEN_BUDGET` overrides both.
    *
    * Not a context limit — the 5.6 family has ~1M tokens of context. It is a
    * cost limit on the history that is re-sent every turn. Set it per model
    * only where the price per input token justifies a different cut-off.
+   *
+   * Whatever is configured here is still BOUNDED at resolution time by
+   * `longContextThresholdTokens` (minus a reserve) or, failing that, by 60 % of
+   * `contextWindow` — see `resolveHistoryBudget`. So this field can lower the
+   * budget for an expensive model but cannot raise it past what the model can
+   * afford to be handed.
    */
   historyTokenBudget?: number;
+  /**
+   * Input-token count above which the provider switches this model to a
+   * separate, more expensive billing tier — NOT a context limit and not a
+   * failure mode. Azure bills GPT-5.6 input above 272k at a "long context"
+   * tier at 2x the normal rate (visible as the `LongCo*` meters); nothing
+   * errors, the invoice just doubles for the whole request, cached tokens
+   * included.
+   *
+   * `resolveHistoryBudget` keeps the carried history under
+   * `longContextThresholdTokens − HISTORY_LONG_CONTEXT_RESERVE`, so a long
+   * thread cannot drift over the cliff on its own — which would otherwise be
+   * the most expensive way to cross it, since history is re-sent every turn.
+   *
+   * Absent means "no tier boundary known", and the guard falls back to a
+   * fraction of `contextWindow`.
+   */
+  longContextThresholdTokens?: number;
 }
 
 export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
@@ -190,6 +213,9 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
   // Luna 0.20 / 1.20 / 0.02 / 0.25. Cache reads keep the 90% cached-input
   // discount; cache WRITES are billed at 1.25x the uncached input rate and
   // are modelled via ModelPricing.cacheWritePerMillion.
+  // Above 272k input tokens the whole request moves to the "long context" tier
+  // at 2x the normal rate (the LongCo* meters), which is what
+  // longContextThresholdTokens keeps the carried history clear of.
   "gpt-5.6-sol": {
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",
@@ -205,6 +231,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 5.00, outputPerMillion: 30.00, cachedInputPerMillion: 0.50, cacheWritePerMillion: 6.25 },
     contextWindow: 1050000,
+    longContextThresholdTokens: 272000,
     maxOutputTokens: 32000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
@@ -226,6 +253,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 2.00, outputPerMillion: 12.00, cachedInputPerMillion: 0.20, cacheWritePerMillion: 2.50 },
     contextWindow: 1050000,
+    longContextThresholdTokens: 272000,
     maxOutputTokens: 32000,
     fallbackModel: "gpt-5.6-luna",
     capabilities: ["vision", "imageGen", "webSearch", "code"],
@@ -244,6 +272,7 @@ export const MODEL_CONFIGS: Record<ChatModel, ModelConfig> = {
     supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
     pricing: { inputPerMillion: 0.20, outputPerMillion: 1.20, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25 },
     contextWindow: 400000,
+    longContextThresholdTokens: 272000,
     maxOutputTokens: 32000,
     hardCapEligible: true,
     capabilities: ["vision", "webSearch", "code"],

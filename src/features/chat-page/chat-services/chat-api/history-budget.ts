@@ -53,19 +53,52 @@
  * Default ceiling on estimated history tokens, used when the model config
  * carries no `historyTokenBudget`.
  *
- * The 5.6 family has a ~1M-token context window, so this is not a context
- * limit — it is a COST limit, and it is deliberately moderate.
+ * Not a context limit — the 5.6 family has a ~1M-token context window — but a
+ * COST limit on the history that is re-sent every turn.
  *
- * Removing the row cap means a long thread now grows without bound until this
- * ceiling stops it. That is the right trade while the prefix is cached, but
- * a cache entry is not forever: once it is evicted, the NEXT turn rewrites the
- * whole prompt, and a cache write bills at 1.25x the uncached input rate. The
- * bigger the carried history, the bigger that periodic re-write. 80k keeps the
- * worst case affordable while still holding dozens of turns of context — far
- * more than the 30 rows it replaces — and leaves ample room for the reply,
- * tool results and attached documents.
+ * 256k, i.e. summarisation only kicks in for genuinely long threads. Trimming
+ * is lossy: the dropped block survives only as a ~1,500-token summary, and a
+ * user who scrolls up can still see the turns the model can no longer quote.
+ * That is a real cost, and it should be paid late rather than early. The
+ * counter-pressure is that a cache entry is not forever: once it is evicted the
+ * NEXT turn rewrites the whole prompt at 1.25x the uncached input rate, so the
+ * bigger the carried history the bigger that periodic re-write.
+ *
+ * 256k is also where the long-context guard below happens to bite on the 5.6
+ * family (272k threshold − 16k reserve = 256k), so on the default model the
+ * configured budget and the guard agree, and no thread is carried into the 2x
+ * long-context billing tier by history alone.
  */
-export const DEFAULT_HISTORY_TOKEN_BUDGET = 80_000;
+export const DEFAULT_HISTORY_TOKEN_BUDGET = 256_000;
+
+/**
+ * Tokens held back from the model's own ceiling for everything in the prompt
+ * that is NOT carried history: the developer/system message (static prompt,
+ * persona, instruction blocks, tool definitions), the document hint, and the
+ * user's current turn.
+ *
+ * 16k is generous for that set — a large persona plus a full toolset lands well
+ * under it — and being generous is the right error: the guard exists to keep a
+ * request off a billing cliff, so the reserve should absorb a prompt that grew
+ * since the last measurement rather than track it exactly.
+ *
+ * Overridable via `HISTORY_LONG_CONTEXT_RESERVE`; see
+ * `resolveHistoryLongContextReserve`.
+ */
+export const HISTORY_LONG_CONTEXT_RESERVE = 16_000;
+
+/**
+ * Fraction of a model's context window the history may occupy when the model
+ * declares no `longContextThresholdTokens`, i.e. when there is no billing cliff
+ * to stay under and the only thing to avoid is filling the window.
+ *
+ * 60 % leaves 40 % for the developer message, the current turn, the tool
+ * results this turn will produce, and the reply (which on a reasoning model
+ * includes the thinking tokens). A prompt that overflows the window is an
+ * HTTP 400, not a bigger bill, so this branch is a correctness guard rather
+ * than a cost one.
+ */
+export const CONTEXT_WINDOW_GUARD_RATIO = 0.6;
 
 /**
  * Default fraction of the budget a trim lands on. The gap between 1.0
@@ -348,27 +381,157 @@ export function applyHistoryWatermark<T extends BudgetMessage>(
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the effective budget. Precedence: `HISTORY_TOKEN_BUDGET` env
- * override > the model config's `historyTokenBudget` > the module default.
+ * Reserve for the non-history part of the prompt, from
+ * `HISTORY_LONG_CONTEXT_RESERVE`, else `HISTORY_LONG_CONTEXT_RESERVE`'s
+ * default. Zero is honoured (an operator may explicitly want the whole
+ * threshold available); anything unparseable or negative is not.
+ */
+export function resolveHistoryLongContextReserve(input?: {
+  envReserve?: string;
+}): number {
+  const raw = input?.envReserve;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return HISTORY_LONG_CONTEXT_RESERVE;
+  }
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
+  return HISTORY_LONG_CONTEXT_RESERVE;
+}
+
+/** Where the base budget came from. */
+export type HistoryBudgetSource = "env" | "model" | "default";
+
+/** Which model ceiling produced the guard, if any. */
+export type HistoryGuardSource = "longContextThreshold" | "contextWindow" | "none";
+
+export interface HistoryBudgetDecision {
+  /** What to hand `planHistoryTrim` — the base budget after the guard. */
+  budget: number;
+  /** The configured budget, before the guard. */
+  baseBudget: number;
+  baseSource: HistoryBudgetSource;
+  /** The model-derived ceiling; undefined when the model declares neither. */
+  guard?: number;
+  guardSource: HistoryGuardSource;
+  /** Tokens held back for the developer message and the current turn. */
+  reserve: number;
+  /** True when the guard, not the configured budget, decided. */
+  cappedByGuard: boolean;
+}
+
+/**
+ * Resolve the effective history budget: the CONFIGURED budget, bounded by what
+ * the model that will answer can afford to be handed.
  *
- * The env override wins so the budget can be dialled down in one place during
- * an incident without a deploy. A value that is absent, unparseable or
- * non-positive is ignored rather than honoured — a typo in an env var must not
- * silently reduce every thread to no history at all.
+ * ## Base budget
+ *
+ * Precedence: `HISTORY_TOKEN_BUDGET` env override > the model config's
+ * `historyTokenBudget` > the module default. The env override wins so the
+ * budget can be dialled down in one place during an incident without a deploy.
+ * A value that is absent, unparseable or non-positive is ignored rather than
+ * honoured — a typo in an env var must not silently reduce every thread to no
+ * history at all.
+ *
+ * ## The guard, and why the configured number is not the last word
+ *
+ * A budget large enough to be worth configuring is also large enough to walk a
+ * request over a per-model boundary, and the boundaries are not the same shape:
+ *
+ *   - `longContextThresholdTokens` — a BILLING cliff. Azure bills GPT-5.6 input
+ *     above 272k tokens at a separate "long context" tier at 2x the normal rate
+ *     (it shows up as the `LongCo*` meters). Nothing fails; the invoice just
+ *     doubles for every token of that request, cached tokens included. Carrying
+ *     history over the line is the worst way to cross it, because history is
+ *     re-sent every single turn. Guard = threshold − reserve.
+ *   - `contextWindow` — a CORRECTNESS limit. No cliff to price, just a wall:
+ *     overflow it and the provider answers HTTP 400. Guard =
+ *     `CONTEXT_WINDOW_GUARD_RATIO` (60 %) of the window, which leaves the other
+ *     40 % for the developer message, the current turn, tool results and the
+ *     reply.
+ *
+ * The threshold wins when both are declared: it is always the lower of the two
+ * and it is the one with a price attached. With neither declared there is
+ * nothing to bound against, so the configured budget stands.
+ *
+ * A guard that comes out at or below zero (a reserve larger than the model's
+ * own threshold — i.e. a misconfiguration) is discarded rather than applied:
+ * the alternative is a budget of zero, which would carry no history at all on
+ * every thread of that model.
+ */
+export function resolveHistoryBudget(input?: {
+  modelBudget?: number;
+  envBudget?: string;
+  longContextThresholdTokens?: number;
+  contextWindow?: number;
+  envReserve?: string;
+}): HistoryBudgetDecision {
+  let baseBudget = DEFAULT_HISTORY_TOKEN_BUDGET;
+  let baseSource: HistoryBudgetSource = "default";
+
+  const parsedEnv = Number(input?.envBudget);
+  const modelBudget = input?.modelBudget;
+  if (Number.isFinite(parsedEnv) && parsedEnv > 0) {
+    baseBudget = Math.floor(parsedEnv);
+    baseSource = "env";
+  } else if (
+    typeof modelBudget === "number" &&
+    Number.isFinite(modelBudget) &&
+    modelBudget > 0
+  ) {
+    baseBudget = Math.floor(modelBudget);
+    baseSource = "model";
+  }
+
+  const reserve = resolveHistoryLongContextReserve({
+    envReserve: input?.envReserve,
+  });
+
+  let guard: number | undefined;
+  let guardSource: HistoryGuardSource = "none";
+  const threshold = input?.longContextThresholdTokens;
+  const contextWindow = input?.contextWindow;
+  if (typeof threshold === "number" && Number.isFinite(threshold) && threshold > 0) {
+    guard = Math.floor(threshold) - reserve;
+    guardSource = "longContextThreshold";
+  } else if (
+    typeof contextWindow === "number" &&
+    Number.isFinite(contextWindow) &&
+    contextWindow > 0
+  ) {
+    guard = Math.floor(contextWindow * CONTEXT_WINDOW_GUARD_RATIO);
+    guardSource = "contextWindow";
+  }
+
+  if (guard !== undefined && guard <= 0) {
+    guard = undefined;
+    guardSource = "none";
+  }
+
+  const budget = guard === undefined ? baseBudget : Math.min(baseBudget, guard);
+
+  return {
+    budget,
+    baseBudget,
+    baseSource,
+    guard,
+    guardSource,
+    reserve,
+    cappedByGuard: guard !== undefined && guard < baseBudget,
+  };
+}
+
+/**
+ * The effective budget only. Thin wrapper over `resolveHistoryBudget` for
+ * callers that do not need to log which value won.
  */
 export function resolveHistoryTokenBudget(input?: {
   modelBudget?: number;
   envBudget?: string;
+  longContextThresholdTokens?: number;
+  contextWindow?: number;
+  envReserve?: string;
 }): number {
-  const parsed = Number(input?.envBudget);
-  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
-
-  const modelBudget = input?.modelBudget;
-  if (typeof modelBudget === "number" && Number.isFinite(modelBudget) && modelBudget > 0) {
-    return Math.floor(modelBudget);
-  }
-
-  return DEFAULT_HISTORY_TOKEN_BUDGET;
+  return resolveHistoryBudget(input).budget;
 }
 
 /**

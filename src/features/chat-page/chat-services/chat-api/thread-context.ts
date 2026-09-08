@@ -29,7 +29,7 @@ import "server-only";
  */
 
 import { getCurrentUser, userHashedId } from "@/features/auth-page/helpers";
-import { logError, logInfo, logWarn } from "@/features/common/services/logger";
+import { logDebug, logError, logInfo, logWarn } from "@/features/common/services/logger";
 import type { UIMessage } from "ai";
 import { createIdGenerator } from "ai";
 import { CreateChatMessage } from "../chat-message-service";
@@ -43,7 +43,7 @@ import { isImageReference } from "../chat-image-persistence-utils";
 import {
   applyHistoryWatermark,
   planHistoryTrim,
-  resolveHistoryTokenBudget,
+  resolveHistoryBudget,
   resolveHistoryTrimTargetRatio,
   SUMMARY_TOKEN_RESERVE,
 } from "./history-budget";
@@ -245,11 +245,33 @@ async function compactHistory(input: {
   // resolved later in route.ts. A downgrade changes who answers the turn, not
   // how much of the thread is worth carrying, and reading it here keeps the
   // decision (and therefore the prefix) independent of per-turn routing.
-  const budget = resolveHistoryTokenBudget({
-    modelBudget: input.selectedModel
-      ? MODEL_CONFIGS[input.selectedModel]?.historyTokenBudget
-      : undefined,
+  const budgetModelConfig = input.selectedModel
+    ? MODEL_CONFIGS[input.selectedModel]
+    : undefined;
+  // The configured budget, bounded by what this model can afford to be handed:
+  // its long-context billing threshold minus a reserve, else a fraction of its
+  // context window. See resolveHistoryBudget.
+  const budgetDecision = resolveHistoryBudget({
+    modelBudget: budgetModelConfig?.historyTokenBudget,
     envBudget: process.env.HISTORY_TOKEN_BUDGET,
+    longContextThresholdTokens: budgetModelConfig?.longContextThresholdTokens,
+    contextWindow: budgetModelConfig?.contextWindow,
+    envReserve: process.env.HISTORY_LONG_CONTEXT_RESERVE,
+  });
+  const budget = budgetDecision.budget;
+  // Which of the four candidates actually decided. Debug, not info: it is the
+  // same answer on every turn of every thread on a given model, and it is only
+  // interesting when a budget looks wrong.
+  logDebug("thread-context: resolved history token budget", {
+    threadId: input.threadId,
+    selectedModel: input.selectedModel,
+    budget,
+    baseBudget: budgetDecision.baseBudget,
+    baseSource: budgetDecision.baseSource,
+    guard: budgetDecision.guard,
+    guardSource: budgetDecision.guardSource,
+    reserve: budgetDecision.reserve,
+    cappedByGuard: budgetDecision.cappedByGuard,
   });
 
   const plan = planHistoryTrim(retained, {

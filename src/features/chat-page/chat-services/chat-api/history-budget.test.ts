@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   CHARS_PER_TOKEN,
+  CONTEXT_WINDOW_GUARD_RATIO,
   DEFAULT_HISTORY_TOKEN_BUDGET,
+  HISTORY_LONG_CONTEXT_RESERVE,
   HISTORY_TRIM_TARGET_RATIO,
   IMAGE_TOKEN_ESTIMATE,
   MIN_KEPT_TURNS,
@@ -10,6 +12,8 @@ import {
   estimateMessageTokens,
   estimateTextTokens,
   planHistoryTrim,
+  resolveHistoryBudget,
+  resolveHistoryLongContextReserve,
   resolveHistoryTokenBudget,
   resolveHistoryTrimTargetRatio,
   splitIntoTurns,
@@ -419,11 +423,12 @@ describe("chat-page.unit.history-budget.007 — applyHistoryWatermark makes a tr
 });
 
 describe("chat-page.unit.history-budget.008 — resolveHistoryTokenBudget precedence", () => {
-  it("defaults to a deliberately moderate 80,000 tokens", () => {
-    // Not a context limit (the 5.6 family holds ~1M) but a cost limit. Once a
-    // cache entry is evicted the next turn rewrites the whole prompt at 1.25x,
-    // so the carried history has to stay affordable at the worst case.
-    expect(DEFAULT_HISTORY_TOKEN_BUDGET).toBe(80_000);
+  it("defaults to 256,000 tokens, so summarisation is a late event", () => {
+    // Trimming is lossy - the dropped block survives only as a ~1,500-token
+    // summary - so it should be paid late. 256k is also exactly where the 5.6
+    // guard lands (272k threshold - 16k reserve), so on the default model the
+    // configured budget and the model ceiling agree.
+    expect(DEFAULT_HISTORY_TOKEN_BUDGET).toBe(256_000);
   });
 
   it("falls back to the module default", () => {
@@ -462,6 +467,134 @@ describe("chat-page.unit.history-budget.008 — resolveHistoryTokenBudget preced
 
   it("floors a fractional value so the budget is always a whole number", () => {
     expect(resolveHistoryTokenBudget({ envBudget: "1234.9" })).toBe(1234);
+  });
+});
+
+describe("chat-page.unit.history-budget.010 - long-context guard", () => {
+  it("reserves 16,000 tokens for the developer message and the current turn", () => {
+    expect(HISTORY_LONG_CONTEXT_RESERVE).toBe(16_000);
+    expect(resolveHistoryLongContextReserve()).toBe(16_000);
+    expect(resolveHistoryLongContextReserve({})).toBe(16_000);
+    expect(resolveHistoryLongContextReserve({ envReserve: "32000" })).toBe(32_000);
+    // An explicit zero is a choice; junk is not.
+    expect(resolveHistoryLongContextReserve({ envReserve: "0" })).toBe(0);
+    for (const envReserve of ["", "  ", "abc", "-1", "NaN"]) {
+      expect(resolveHistoryLongContextReserve({ envReserve })).toBe(
+        HISTORY_LONG_CONTEXT_RESERVE,
+      );
+    }
+  });
+
+  it("keeps a 5.6 thread just under the 272k long-context billing tier", () => {
+    // Azure bills 5.6 input above 272k at 2x (the LongCo* meters). 272k minus
+    // the 16k reserve is 256k, which is also the configured default, so the
+    // two agree and neither is silently doing the other's job.
+    const decision = resolveHistoryBudget({
+      longContextThresholdTokens: 272_000,
+      contextWindow: 1_050_000,
+    });
+    expect(decision.budget).toBe(256_000);
+    expect(decision.guard).toBe(256_000);
+    expect(decision.guardSource).toBe("longContextThreshold");
+    expect(decision.baseSource).toBe("default");
+    expect(decision.cappedByGuard).toBe(false);
+  });
+
+  it("takes 60 % of the context window when the model declares no threshold", () => {
+    // No billing cliff to price, just a wall: a 128k window gives 76,800 and
+    // leaves 40 % for the developer message, the current turn, tool results
+    // and the reply.
+    const decision = resolveHistoryBudget({ contextWindow: 128_000 });
+    expect(decision.budget).toBe(76_800);
+    expect(decision.guard).toBe(76_800);
+    expect(decision.guardSource).toBe("contextWindow");
+    expect(decision.cappedByGuard).toBe(true);
+    expect(CONTEXT_WINDOW_GUARD_RATIO).toBe(0.6);
+  });
+
+  it("caps an env budget that is larger than the guard", () => {
+    // The env override wins the BASE budget and still loses to the guard: it
+    // is a lever for dialling the budget down, not for overrunning a model.
+    const capped = resolveHistoryBudget({
+      envBudget: "900000",
+      longContextThresholdTokens: 272_000,
+      contextWindow: 1_050_000,
+    });
+    expect(capped.baseBudget).toBe(900_000);
+    expect(capped.baseSource).toBe("env");
+    expect(capped.budget).toBe(256_000);
+    expect(capped.cappedByGuard).toBe(true);
+
+    // Same for a small-window model.
+    expect(
+      resolveHistoryBudget({ envBudget: "500000", contextWindow: 128_000 }).budget,
+    ).toBe(76_800);
+
+    // Below the guard the env value stands, untouched.
+    const under = resolveHistoryBudget({
+      envBudget: "40000",
+      longContextThresholdTokens: 272_000,
+    });
+    expect(under.budget).toBe(40_000);
+    expect(under.cappedByGuard).toBe(false);
+  });
+
+  it("prefers the threshold over the context window, and honours the reserve", () => {
+    const decision = resolveHistoryBudget({
+      envBudget: "900000",
+      longContextThresholdTokens: 272_000,
+      contextWindow: 128_000,
+      envReserve: "32000",
+    });
+    // The priced cliff decides, not the wall.
+    expect(decision.guardSource).toBe("longContextThreshold");
+    expect(decision.reserve).toBe(32_000);
+    expect(decision.budget).toBe(240_000);
+  });
+
+  it("stands the configured budget when the model declares neither ceiling", () => {
+    const decision = resolveHistoryBudget({ modelBudget: 40_000 });
+    expect(decision.budget).toBe(40_000);
+    expect(decision.baseSource).toBe("model");
+    expect(decision.guard).toBeUndefined();
+    expect(decision.guardSource).toBe("none");
+    expect(decision.cappedByGuard).toBe(false);
+  });
+
+  it("discards a guard that would come out at or below zero (negative)", () => {
+    // A reserve bigger than the model's own threshold is a misconfiguration.
+    // Applying it would carry NO history on every thread of that model.
+    const decision = resolveHistoryBudget({
+      longContextThresholdTokens: 8_000,
+      envReserve: "16000",
+    });
+    expect(decision.guard).toBeUndefined();
+    expect(decision.guardSource).toBe("none");
+    expect(decision.budget).toBe(DEFAULT_HISTORY_TOKEN_BUDGET);
+  });
+
+});
+
+describe("chat-page.unit.history-budget.011 - the trim follows the effective budget", () => {
+  it("trims to 60 % of the EFFECTIVE budget, not of the configured one", () => {
+    // Configured 900k, guarded down to 76,800 by a 128k window: the trim has
+    // to land on 60 % of 76,800, otherwise the hysteresis is measured against
+    // a budget the model never had.
+    const budget = resolveHistoryTokenBudget({
+      envBudget: "900000",
+      contextWindow: 128_000,
+    });
+    expect(budget).toBe(76_800);
+
+    const rows = turns(400, 800); // ~80k estimated tokens, over the guard
+    const plan = planHistoryTrim(rows, {
+      budget,
+      targetRatio: resolveHistoryTrimTargetRatio(),
+    });
+    expect(plan.trimmed).toBe(true);
+    expect(plan.budget).toBe(76_800);
+    expect(plan.target).toBe(46_080); // 76,800 x 0.6
+    expect(estimateHistoryTokens(plan.kept)).toBeLessThanOrEqual(46_080);
   });
 });
 

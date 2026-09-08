@@ -19,6 +19,11 @@ import {
   MODEL_CONFIGS,
   resolveDefaultModel,
 } from "./models";
+import {
+  DEFAULT_HISTORY_TOKEN_BUDGET,
+  resolveHistoryBudget,
+  resolveHistoryTokenBudget,
+} from "./chat-api/history-budget";
 
 describe("resolveDefaultModel", () => {
   it("returns the code default when DEFAULT_MODEL_ID is unset", () => {
@@ -300,5 +305,71 @@ describe("chat-page.unit.models.effort-clamp — the picker follows the provider
     const once = clampReasoningEffort("gpt-5.6-sol", "minimal");
     expect(clampReasoningEffort("gpt-5.6-sol", once)).toBe(once);
     expect(clampReasoningEffort(undefined, "minimal")).toBe("minimal");
+  });
+});
+
+describe("chat-page.unit.models.history-guard - the effective history budget per model", () => {
+  // The configured budget (256k by default) is bounded by what each model can
+  // afford to be handed: its long-context billing threshold minus a reserve,
+  // else 60 % of its context window. These assert the real MODEL_CONFIGS
+  // numbers, not fixtures, so a new model cannot quietly get an unguarded one.
+  it("gives every 5.6 model an effective budget of 256,000 (272k tier - 16k reserve)", () => {
+    for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const) {
+      const config = MODEL_CONFIGS[id];
+      expect(config.longContextThresholdTokens).toBe(272_000);
+      expect(
+        resolveHistoryTokenBudget({
+          modelBudget: config.historyTokenBudget,
+          longContextThresholdTokens: config.longContextThresholdTokens,
+          contextWindow: config.contextWindow,
+        }),
+      ).toBe(256_000);
+    }
+  });
+
+  it("leaves Claude on the configured default - its 1M window guards higher", () => {
+    for (const id of ["claude-opus-4-8", "claude-sonnet-5"] as const) {
+      const config = MODEL_CONFIGS[id];
+      // No known billing cliff on the Azure /anthropic seam.
+      expect(config.longContextThresholdTokens).toBeUndefined();
+      const decision = resolveHistoryBudget({
+        modelBudget: config.historyTokenBudget,
+        longContextThresholdTokens: config.longContextThresholdTokens,
+        contextWindow: config.contextWindow,
+      });
+      // 60 % of 1M is 600k, well above the 256k default, so the default wins.
+      expect(decision.guard).toBe(600_000);
+      expect(decision.guardSource).toBe("contextWindow");
+      expect(decision.budget).toBe(DEFAULT_HISTORY_TOKEN_BUDGET);
+      expect(decision.cappedByGuard).toBe(false);
+    }
+  });
+
+  it("caps a small-window model below the default (negative)", () => {
+    // DeepSeek's 163,840-token window cannot hold a 256k history, so the guard
+    // - not the configured budget - decides.
+    const config = MODEL_CONFIGS["DeepSeek-V4-Pro"];
+    const decision = resolveHistoryBudget({
+      modelBudget: config.historyTokenBudget,
+      contextWindow: config.contextWindow,
+    });
+    expect(decision.budget).toBe(Math.floor(163_840 * 0.6));
+    expect(decision.budget).toBeLessThan(DEFAULT_HISTORY_TOKEN_BUDGET);
+    expect(decision.cappedByGuard).toBe(true);
+  });
+
+  it("keeps every model's effective budget inside its own context window", () => {
+    for (const [id, config] of Object.entries(MODEL_CONFIGS)) {
+      const budget = resolveHistoryTokenBudget({
+        modelBudget: config.historyTokenBudget,
+        longContextThresholdTokens: config.longContextThresholdTokens,
+        contextWindow: config.contextWindow,
+      });
+      expect(budget, id).toBeLessThanOrEqual(config.contextWindow);
+      // and clear of the priced tier where one is declared.
+      if (config.longContextThresholdTokens !== undefined) {
+        expect(budget, id).toBeLessThan(config.longContextThresholdTokens);
+      }
+    }
   });
 });

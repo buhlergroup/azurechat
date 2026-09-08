@@ -324,7 +324,8 @@ This is the largest feature folder with complex state management and streaming.
   - `splitIntoTurns(messages)` — A turn opens at every user row
   - `applyHistoryWatermark(messages, coversThroughMessageId)` — Makes a trim stick instead of sliding forward a turn per turn
   - `planHistoryTrim(messages, options)` — The trim decision
-  - `resolveHistoryTokenBudget` / `resolveHistoryTrimTargetRatio` — env `HISTORY_TOKEN_BUDGET` / `HISTORY_TRIM_TARGET_RATIO` > per-model `historyTokenBudget` > defaults (80 000 / 0.6)
+  - `resolveHistoryBudget(input)` — The whole budget decision, with the source of every number for logging: base budget (env `HISTORY_TOKEN_BUDGET` > per-model `historyTokenBudget` > 256 000 default) bounded by the model guard (`longContextThresholdTokens − reserve`, else 60 % of `contextWindow`, else none)
+  - `resolveHistoryTokenBudget` / `resolveHistoryTrimTargetRatio` / `resolveHistoryLongContextReserve` — The effective budget only, the trim ratio (`HISTORY_TRIM_TARGET_RATIO`, default 0.6), and the reserve (`HISTORY_LONG_CONTEXT_RESERVE`, default 16 000)
   - **Tests:** `chat-services/chat-api/history-budget.test.ts` (Vitest)
 - `chat-services/chat-api/history-summary.ts` — Pure. Row shape, summariser prompt, replay text
   - **Tests:** `chat-services/chat-api/history-summary.test.ts` (Vitest)
