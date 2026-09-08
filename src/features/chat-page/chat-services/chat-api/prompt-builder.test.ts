@@ -178,7 +178,7 @@ describe("withAnthropicPromptCache", () => {
   ];
 
   it("returns the system prompt as a cached SystemModelMessage (breakpoint #1: tools+system)", () => {
-    const { system } = withAnthropicPromptCache("SYSTEM PROMPT", userMsgs);
+    const { instructions: system } = withAnthropicPromptCache("SYSTEM PROMPT", userMsgs);
     expect(system.role).toBe("system");
     expect(system.content).toBe("SYSTEM PROMPT");
     expect(system.providerOptions?.anthropic?.cacheControl).toEqual(EPHEMERAL);
@@ -230,13 +230,13 @@ describe("withAnthropicPromptCache", () => {
   });
 
   it("handles an empty messages array (still caches the system prompt)", () => {
-    const { system, messages } = withAnthropicPromptCache("SYS", []);
+    const { instructions: system, messages } = withAnthropicPromptCache("SYS", []);
     expect(system.providerOptions?.anthropic?.cacheControl).toEqual(EPHEMERAL);
     expect(messages).toEqual([]);
   });
 
   it("uses fresh cacheControl objects per breakpoint (no aliasing across messages)", () => {
-    const { system, messages } = withAnthropicPromptCache("SYS", userMsgs);
+    const { instructions: system, messages } = withAnthropicPromptCache("SYS", userMsgs);
     const sysCc = system.providerOptions?.anthropic?.cacheControl;
     const lastCc = messages[messages.length - 1].providerOptions?.anthropic?.cacheControl;
     expect(sysCc).not.toBe(lastCc); // distinct object identities
@@ -291,7 +291,7 @@ describe("withPromptCacheBreakpoint", () => {
   ];
 
   it("returns the system prompt as a SystemModelMessage carrying the breakpoint", () => {
-    const { system } = withPromptCacheBreakpoint("SYSTEM PROMPT", msgs);
+    const { instructions: system } = withPromptCacheBreakpoint("SYSTEM PROMPT", msgs);
     expect(system.role).toBe("system");
     expect(system.content).toBe("SYSTEM PROMPT");
     // The wire shape @ai-sdk/openai emits as prompt_cache_breakpoint.

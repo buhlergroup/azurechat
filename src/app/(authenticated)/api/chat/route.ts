@@ -12,7 +12,7 @@
 import {
   streamText,
   convertToModelMessages,
-  stepCountIs,
+  isStepCount,
   createIdGenerator,
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -555,11 +555,11 @@ export async function POST(req: Request) {
       ? withAnthropicPromptCache(system, modelMessages)
       : usePersonaBreakpoint
         ? withPromptCacheBreakpoint(system, modelMessages)
-        : { system, messages: modelMessages };
+        : { instructions, messages: modelMessages };
 
   const result = streamText({
     model: resolved.model,
-    system: streamPrompt.system,
+    instructions: streamPrompt.instructions,
     messages: streamPrompt.messages,
     tools: allTools,
     // Per-model ceiling on emitted tokens, via the resolver so the env
@@ -570,7 +570,7 @@ export async function POST(req: Request) {
       modelId: effectiveModel,
       modelValue: modelConfig.maxOutputTokens,
     }),
-    stopWhen: stepCountIs(15),
+    stopWhen: isStepCount(15),
     // Repairs bare, pre-namespacing extension tool names the model may
     // echo from old persisted thread history (see repairExtensionToolCall)
     // instead of letting NoSuchToolError kill the turn.
@@ -671,7 +671,7 @@ export async function POST(req: Request) {
     // Cosmos when the LLM finishes — not when the response stream closes
     // (which happens early on client disconnect and would persist a
     // partial message).
-    onFinish: async (event) => {
+    onEnd: async (event) => {
       logInfo("/api/chat streamText.onFinish fired", {
         threadId: ctx.thread.id,
         finishReason: event.finishReason,

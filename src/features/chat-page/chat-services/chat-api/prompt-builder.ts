@@ -151,7 +151,7 @@ export function withAnthropicPromptCache(
     } as ModelMessage;
   }
 
-  return { system: cachedSystem, messages: out };
+  return { instructions: cachedSystem, messages: out };
 }
 
 /**
@@ -186,7 +186,7 @@ export function withPromptCacheBreakpoint(
   messages: readonly ModelMessage[],
 ): { system: SystemModelMessage; messages: ModelMessage[] } {
   return {
-    system: {
+    instructions: {
       role: "system",
       content: system,
       providerOptions: { openai: { promptCacheBreakpoint: { mode: "explicit" } } },

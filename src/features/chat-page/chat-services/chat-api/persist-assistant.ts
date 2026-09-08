@@ -794,7 +794,7 @@ export async function persistAssistantFromFinishEvent<TOOLS extends ToolSet>({
   };
   const cachedTokens =
     usageDetails.inputTokenDetails?.cacheReadTokens ??
-    usageDetails.cachedInputTokens ??
+    usageDetails.inputTokenDetails.cacheReadTokens ??
     undefined;
   const cacheWriteTokens = usageDetails.inputTokenDetails?.cacheWriteTokens;
 

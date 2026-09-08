@@ -48,7 +48,7 @@ describe("Anthropic prompt cache — wire level", () => {
       fetch: cap.fetch,
     });
 
-    const { system, messages } = withAnthropicPromptCache(
+    const { instructions: system, messages } = withAnthropicPromptCache(
       "A SUFFICIENTLY LARGE, STABLE SYSTEM PROMPT FOR CACHING",
       [
         { role: "user", content: "earlier question" },
@@ -59,15 +59,15 @@ describe("Anthropic prompt cache — wire level", () => {
 
     await generateText({
       model: provider("claude-opus-4-8"),
-      system,
+      instructions,
       messages,
     });
 
     const body = cap.getBody();
 
     // Breakpoint #1 — the system block (caches tools + system together).
-    expect(Array.isArray(body.system)).toBe(true);
-    const cachedSystemBlocks = body.system.filter(
+    expect(Array.isArray(body.instructions)).toBe(true);
+    const cachedSystemBlocks = body.instructions.filter(
       (b: any) => b.cache_control?.type === "ephemeral",
     );
     expect(cachedSystemBlocks.length).toBe(1);

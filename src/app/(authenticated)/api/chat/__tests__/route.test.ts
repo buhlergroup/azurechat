@@ -437,7 +437,7 @@ describe("/api/chat route (AI SDK v6)", () => {
       await POST(makeRequest({ message: "hello", id: "t1" }));
       const options = (streamText as unknown as { mock: { calls: unknown[][] } })
         .mock.calls[0][0] as { system?: unknown };
-      expect(typeof options.system).toBe("string");
+      expect(typeof options.instructions).toBe("string");
     });
 
     it("marks an explicit breakpoint on the developer message when the flag is on and the model is 5.6", async () => {
@@ -459,9 +459,9 @@ describe("/api/chat route (AI SDK v6)", () => {
           .mock.calls[0][0] as {
           system?: { role?: string; providerOptions?: Record<string, unknown> };
         };
-        expect(options.system?.role).toBe("system");
+        expect(options.instructions?.role).toBe("system");
         expect(
-          (options.system?.providerOptions as { openai?: Record<string, unknown> })
+          (options.instructions?.providerOptions as { openai?: Record<string, unknown> })
             ?.openai?.promptCacheBreakpoint,
         ).toEqual({ mode: "explicit" });
       } finally {
@@ -497,16 +497,16 @@ describe("/api/chat route (AI SDK v6)", () => {
             .mock.calls[0][0] as {
             system?: { role?: string; providerOptions?: Record<string, unknown> };
           };
-          expect(options.system?.role).toBe("system");
+          expect(options.instructions?.role).toBe("system");
           // Anthropic's wire form of the same breakpoint.
           expect(
-            (options.system?.providerOptions as {
+            (options.instructions?.providerOptions as {
               anthropic?: Record<string, unknown>;
             })?.anthropic?.cacheControl,
           ).toEqual({ type: "ephemeral" });
           // and NOT the Responses-seam field.
           expect(
-            (options.system?.providerOptions as {
+            (options.instructions?.providerOptions as {
               openai?: Record<string, unknown>;
             })?.openai,
           ).toBeUndefined();
@@ -527,7 +527,7 @@ describe("/api/chat route (AI SDK v6)", () => {
         await POST(makeRequest({ message: "hello", id: "t1" }));
         const options = (streamText as unknown as { mock: { calls: unknown[][] } })
           .mock.calls[0][0] as { system?: unknown };
-        expect(typeof options.system).toBe("string");
+        expect(typeof options.instructions).toBe("string");
       } finally {
         if (saved === undefined)
           delete process.env.PROMPT_CACHE_PERSONA_BREAKPOINT;

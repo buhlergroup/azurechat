@@ -473,7 +473,7 @@ async function callSummariserModel(input: {
 
   const result = await generateText({
     model: resolved.model,
-    system: input.systemPrompt,
+    instructions: input.systemPrompt,
     messages: [{ role: "user", content: input.userPrompt }],
     maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
     providerOptions,

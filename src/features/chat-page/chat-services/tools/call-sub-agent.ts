@@ -1,7 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
-import { tool, generateText, stepCountIs } from "ai";
+import { tool, generateText, isStepCount } from "ai";
 import { logInfo, logDebug, logError } from "@/features/common/services/logger";
 import { FindPersonaByID } from "@/features/persona-page/persona-services/persona-service";
 import { MODEL_CONFIGS, DEFAULT_MODEL, type ChatModel } from "../models";
@@ -147,7 +147,7 @@ export function callSubAgentTool(ctx: ToolContext) {
 
       const result = await generateText({
         model: resolved.model,
-        system: persona.personaMessage,
+        instructions: persona.personaMessage,
         messages: [{ role: "user", content: args.task }],
         // Same canonical tool order as the main path — a sub-agent's prefix
         // is cached under its own key and has to be just as stable.
@@ -159,7 +159,7 @@ export function callSubAgentTool(ctx: ToolContext) {
           modelId,
           modelValue: modelConfig.maxOutputTokens,
         }),
-        stopWhen: stepCountIs(8),
+        stopWhen: isStepCount(8),
         providerOptions: resolved.providerOptions,
         abortSignal,
       });
@@ -172,7 +172,7 @@ export function callSubAgentTool(ctx: ToolContext) {
       const outputTokens = result.usage?.outputTokens ?? 0;
       const cachedTokens =
         (result.usage as any)?.inputTokenDetails?.cacheReadTokens ??
-        (result.usage as any)?.cachedInputTokens ??
+        (result.usage as any).inputTokenDetails.cacheReadTokens ??
         0;
       const cacheWriteTokens =
         (result.usage as any)?.inputTokenDetails?.cacheWriteTokens ?? 0;

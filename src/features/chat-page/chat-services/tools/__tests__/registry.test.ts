@@ -734,9 +734,9 @@ describe("repairExtensionToolCall", () => {
   }
 
   const baseRepairArgs = {
-    system: undefined,
+    instructions: undefined,
     messages: [],
-    inputSchema: async () => ({}) as any,
+    inputSchema: async () => (({}) as any),
   };
 
   it("returns null when the error is not a NoSuchToolError", async () => {

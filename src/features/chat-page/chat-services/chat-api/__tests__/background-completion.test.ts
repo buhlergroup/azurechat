@@ -102,7 +102,7 @@ describe("streamText.onFinish — background completion", () => {
       // public surface streamText reaches in this test.
       model: makeSlowModel(["hello ", "world ", "from ", "background"], 20) as unknown as Parameters<typeof streamText>[0]["model"],
       messages: [{ role: "user", content: "hi" }],
-      onFinish,
+      onEnd,
     });
 
     // Drain the stream like the route does. We DELIBERATELY never read the

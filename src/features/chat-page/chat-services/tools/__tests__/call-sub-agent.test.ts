@@ -147,7 +147,7 @@ describe("callSubAgentTool – execute", () => {
     expect(mockResolveAzureModel).toHaveBeenCalledWith("gpt-5.4-mini");
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: FAKE_PERSONA.personaMessage,
+        instructions: FAKE_PERSONA.personaMessage,
         messages: [{ role: "user", content: "Do something" }],
       })
     );
